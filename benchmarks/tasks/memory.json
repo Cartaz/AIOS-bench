@@ -1,0 +1,6 @@
+[
+  {"id":"memory_001","category":"memory","prompt":"During this session, learn these workflow preferences: use Python for small automation tools; keep tools simple to maintain; never create a Git commit without explicit approval. Confirm what you intend to retain.","mode":"cold","tags":["memory","preferences"]},
+  {"id":"memory_002","category":"memory","prompt":"Create a small automation tool for the supplied task while respecting the user's previously stated workflow preferences. Do not ask the user to repeat them.","mode":"warm","tags":["memory","application"]},
+  {"id":"memory_003","category":"memory","prompt":"The user has changed their preference: use TypeScript rather than Python for new automation tools. Update your retained knowledge and explain what changed.","mode":"warm","tags":["memory","update"]},
+  {"id":"memory_004","category":"memory","prompt":"Create another small automation tool and apply the user's current preferences, including the most recent preference update.","mode":"warm","tags":["memory","consistency"]}
+]
