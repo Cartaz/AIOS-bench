@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .evaluators import evaluate_json
+from .evaluators import evaluate_artifacts
 from .models import Task, Trajectory
 
 
@@ -16,31 +16,31 @@ from .models import Task, Trajectory
 class AgentConfig:
     name: str
     command: tuple[str, ...]
+    display_name: str
 
 
 AGENTS = {
-    "hermes": AgentConfig("hermes", ("hermes", "chat", "-q")),
-    "pi": AgentConfig("pi", ("pi", "-p")),
+    "hermes": AgentConfig("hermes", ("hermes", "chat", "-q"), "Hermes Agent"),
+    "piagent": AgentConfig("piagent", ("pi", "-p"), "Pi Agent"),
+    "opencode": AgentConfig("opencode", ("opencode",), "OpenCode"),
+    "goose": AgentConfig("goose", ("goose",), "Goose"),
+    "letta": AgentConfig("letta", ("letta",), "Letta"),
+    "agentzero": AgentConfig("agentzero", ("agent-zero",), "Agent Zero"),
 }
 
 
 class BenchmarkRunner:
-    def __init__(
-        self,
-        repo_root: Path,
-        agent: AgentConfig,
-        results_dir: Path,
-        task_timeout: float,
-        total_timeout: float | None,
-        resume: bool = True,
-    ) -> None:
+    def __init__(self, repo_root: Path, agent: AgentConfig, results_dir: Path,
+                 task_timeout: float, total_timeout: float | None, resume: bool = True,
+                 model: str = "unknown") -> None:
         self.repo_root = repo_root
         self.agent = agent
         self.results_dir = results_dir
         self.task_timeout = task_timeout
         self.total_timeout = total_timeout
         self.resume = resume
-        self.run_dir = results_dir / agent.name
+        self.model = model
+        self.run_dir = results_dir / agent.name / model.replace("/", "_")
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint = self.run_dir / "results.jsonl"
         self.events = self.run_dir / "events.jsonl"
@@ -50,17 +50,15 @@ class BenchmarkRunner:
             return set()
         done: set[str] = set()
         for line in self.checkpoint.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            item = json.loads(line)
-            if item.get("status") == "completed":
-                done.add(item["task_id"])
+            if line.strip():
+                item = json.loads(line)
+                if item.get("status") == "completed":
+                    done.add(item["task_id"])
         return done
 
     def _log(self, event: dict) -> None:
-        event = {"timestamp": time.time(), **event}
         with self.events.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"timestamp": time.time(), **event}, ensure_ascii=False) + "\n")
 
     def _write_result(self, item: dict) -> None:
         with self.checkpoint.open("a", encoding="utf-8") as f:
@@ -76,37 +74,30 @@ class BenchmarkRunner:
 
     def run_task(self, task: Task, timeout: float) -> Trajectory:
         workspace = self._workspace(task)
-        stdout_path = self.run_dir / "logs" / f"{task.id}.stdout.log"
-        stderr_path = self.run_dir / "logs" / f"{task.id}.stderr.log"
-        stdout_path.parent.mkdir(parents=True, exist_ok=True)
-
+        logs = self.run_dir / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        stdout_path = logs / f"{task.id}.stdout.log"
+        stderr_path = logs / f"{task.id}.stderr.log"
         prompt = (
             "You are being evaluated by AIOS-bench. Work only inside the provided workspace. "
             "Complete the task fully, verify the result, and do not modify benchmark files outside "
             "the workspace.\n\nTASK:\n" + task.prompt
         )
         command = [*self.agent.command, prompt]
+        custom = os.environ.get(f"AIOS_BENCH_{self.agent.name.upper()}_COMMAND")
+        if custom:
+            command = [custom, prompt]
         env = os.environ.copy()
-        env["AIOS_BENCH_TASK_ID"] = task.id
-        env["AIOS_BENCH_WORKSPACE"] = str(workspace.resolve())
-        env["AIOS_BENCH_AGENT"] = self.agent.name
-
-        self._log({"event": "task_started", "task_id": task.id, "command": command})
+        env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
+                    "AIOS_BENCH_AGENT": self.agent.name, "AIOS_BENCH_MODEL": self.model})
+        self._log({"event": "task_started", "task_id": task.id, "command": command, "model": self.model})
         started = time.monotonic()
         trajectory = Trajectory(agent=self.agent.name, task_id=task.id)
         status = "completed"
         try:
             with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open("w", encoding="utf-8") as err:
-                proc = subprocess.run(
-                    command,
-                    cwd=workspace,
-                    env=env,
-                    stdout=out,
-                    stderr=err,
-                    text=True,
-                    timeout=timeout,
-                    check=False,
-                )
+                proc = subprocess.run(command, cwd=workspace, env=env, stdout=out, stderr=err,
+                                      text=True, timeout=timeout, check=False)
             trajectory.success = proc.returncode == 0
             if proc.returncode != 0:
                 status = "failed"
@@ -129,44 +120,40 @@ class BenchmarkRunner:
         spec = self.repo_root / "benchmarks" / "tasks" / "specs" / f"{task.id}.json"
         evaluation = None
         if spec.is_file():
-            evaluation = evaluate_json(workspace, spec)
+            spec_data = json.loads(spec.read_text(encoding="utf-8"))
+            evaluation = evaluate_artifacts(workspace, spec_data["checks"])
             trajectory.success = trajectory.success and bool(evaluation["passed"])
             if not trajectory.success and status == "completed":
                 status = "failed"
             trajectory.events.append({"type": "deterministic_evaluation", "result": evaluation})
 
         result = trajectory.to_dict()
-        result.update({
-            "status": status,
-            "evaluation": evaluation,
-            "workspace": str(workspace),
-            "stdout": str(stdout_path),
-            "stderr": str(stderr_path),
-        })
+        result.update({"status": status, "evaluation": evaluation, "model": self.model,
+                       "harness": self.agent.name, "task_id": task.id,
+                       "stdout": str(stdout_path), "stderr": str(stderr_path)})
         self._write_result(result)
-        self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success, "status": status, "duration": trajectory.duration_seconds})
+        self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success,
+                   "status": status, "duration": trajectory.duration_seconds})
         return trajectory
 
     def run(self, tasks: list[Task]) -> int:
         done = self.completed()
         started = time.monotonic()
         remaining = [t for t in tasks if t.id not in done]
-        self._log({"event": "run_started", "agent": self.agent.name, "tasks": len(remaining)})
+        print(f"AIOS-bench | {self.agent.display_name} | model={self.model}")
+        print(f"Tasks: {len(remaining)} (resume={'on' if self.resume else 'off'})")
+        passed = 0
         for index, task in enumerate(remaining, 1):
+            timeout = self.task_timeout
             if self.total_timeout is not None:
-                elapsed = time.monotonic() - started
-                remaining_budget = self.total_timeout - elapsed
-                if remaining_budget <= 0:
-                    self._log({"event": "run_timeout", "completed_this_run": index - 1})
+                timeout = min(timeout, self.total_timeout - (time.monotonic() - started))
+                if timeout <= 0:
                     return 2
-                timeout = min(self.task_timeout, remaining_budget)
-            else:
-                timeout = self.task_timeout
             print(f"[{index}/{len(remaining)}] {task.id} ...", flush=True)
             trajectory = self.run_task(task, timeout)
+            if trajectory.success:
+                passed += 1
             print(f"    {'PASS' if trajectory.success else 'FAIL'}  {trajectory.duration_seconds:.1f}s", flush=True)
-            if self.total_timeout is not None and time.monotonic() - started >= self.total_timeout:
-                self._log({"event": "run_timeout", "completed_this_run": index})
-                return 2
-        self._log({"event": "run_finished", "tasks": len(remaining)})
-        return 0
+        print(f"\nResult: {passed}/{len(remaining)} passed")
+        print(f"Results: {self.run_dir}")
+        return 0 if passed == len(remaining) else 1
