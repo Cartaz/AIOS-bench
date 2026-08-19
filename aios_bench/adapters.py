@@ -14,6 +14,7 @@ class AgentInvocation:
 
 class Adapter:
     name: str
+    capabilities: frozenset[str] = frozenset()
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
         raise NotImplementedError
@@ -24,9 +25,10 @@ class Adapter:
 
 class HermesAdapter(Adapter):
     name = "hermes"
+    capabilities = frozenset({"memory", "skills", "delegation", "terminal", "browser", "sessions"})
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        command = ["hermes", "chat"]
+        command = ["hermes", "chat", "--quiet"]
         if model and model != "unknown":
             command += ["--model", model]
         command += ["-q", prompt]
@@ -35,9 +37,9 @@ class HermesAdapter(Adapter):
 
 class PiAgentAdapter(Adapter):
     name = "piagent"
+    capabilities = frozenset({"json_events", "rpc", "sessions", "extensions"})
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        # JSON mode is machine-readable and preferable to scraping TUI output.
         command = ["pi", "--mode", "json"]
         if model and model != "unknown":
             command += ["--model", model]
@@ -47,6 +49,7 @@ class PiAgentAdapter(Adapter):
 
 class OpenCodeAdapter(Adapter):
     name = "opencode"
+    capabilities = frozenset({"json_events", "sessions", "server", "mcp", "token_stats"})
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
         command = ["opencode", "run", "--dir", str(workspace.resolve()), "--format", "json", "--auto"]
@@ -58,9 +61,9 @@ class OpenCodeAdapter(Adapter):
 
 class GooseAdapter(Adapter):
     name = "goose"
+    capabilities = frozenset({"recipes", "extensions", "sessions", "provider_model"})
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        # Goose's non-interactive run mode is the cleanest deterministic entry point.
         command = ["goose", "run", "--no-session"]
         provider = os.environ.get("AIOS_BENCH_GOOSE_PROVIDER")
         if provider:
@@ -73,26 +76,26 @@ class GooseAdapter(Adapter):
 
 class LettaAdapter(Adapter):
     name = "letta"
+    capabilities = frozenset({"memory", "skills", "subagents", "longitudinal", "headless", "sessions"})
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        # -p is Letta Code's headless/print path. Keep the agent ID optional so
-        # cold runs can create/use the configured default while longitudinal runs
-        # can pin AIOS_BENCH_LETTA_AGENT.
         command = ["letta", "-p"]
         agent_id = os.environ.get("AIOS_BENCH_LETTA_AGENT")
         if agent_id:
             command += ["--agent", agent_id]
         environment = {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())}
+        # Letta model selection is normally configured inside the agent/provider
+        # rather than as a stable top-level CLI flag. Do not fake a model flag.
+        if model and model != "unknown":
+            environment["AIOS_BENCH_REQUESTED_MODEL"] = model
         return AgentInvocation(command + [prompt], environment)
 
 
 class AgentZeroAdapter(Adapter):
     name = "agentzero"
+    capabilities = frozenset({"memory", "knowledge", "projects", "api", "persistent_state"})
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        # Agent Zero is primarily a server/UI application. Its documented external
-        # API is invoked through the bundled client module rather than an invented
-        # CLI flag. The client requires a local A0 server and API key.
         command = ["python", "-m", "aios_bench.agentzero_client", prompt]
         environment = {
             "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
@@ -102,6 +105,8 @@ class AgentZeroAdapter(Adapter):
         project = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECT")
         if project:
             environment["AIOS_BENCH_AGENTZERO_PROJECT"] = project
+        if model and model != "unknown":
+            environment["AIOS_BENCH_REQUESTED_MODEL"] = model
         return AgentInvocation(command, environment)
 
 
