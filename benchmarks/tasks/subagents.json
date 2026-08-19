@@ -1,0 +1,4 @@
+[
+  {"id":"subagents_001","category":"subagents","prompt":"Analyze the supplied set of documents and produce a comparative report. Use parallel or delegated work only if it materially improves correctness or efficiency.","tags":["delegation","efficiency"]},
+  {"id":"subagents_002","category":"subagents","prompt":"Solve the supplied multi-part research task. You may use subagents, but remain responsible for reconciling conflicting findings and producing one verified answer.","tags":["delegation","synthesis"]}
+]
