@@ -150,7 +150,14 @@ def run_judge(*, model: str, task_id: str, category: str, tier: int, task_prompt
                     "Do not inspect the workspace again and do not add commentary. "
                     "Return ONLY one valid JSON object matching the required schema, with no Markdown fences."
                 )
-                retry_result = client.run(retry_request)
+                retry_client = PiRPCClient(
+                    model,
+                    judge_workspace,
+                    min(timeout, 60.0),
+                    environment=env,
+                    extra_args=extra_args,
+                )
+                retry_result = retry_client.run(retry_request)
                 retry_text = _assistant_text(retry_result.stdout)
                 raw_responses.append(retry_text)
                 try:
