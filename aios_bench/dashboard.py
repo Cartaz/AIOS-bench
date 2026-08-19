@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from pathlib import Path
 from html import escape
+from pathlib import Path
 
 
 def _rows(results_root: Path) -> list[dict]:
@@ -23,6 +23,11 @@ def _rows(results_root: Path) -> list[dict]:
                    run_id, row.get("task_id", "unknown"), int(row.get("task_revision", 1)))
             latest[key] = row
     return list(latest.values())
+
+
+def _judge_text(item: dict) -> str:
+    score = item.get("judge_score")
+    return "—" if score is None else f"{score:.1f}"
 
 
 def _summaries(rows: list[dict]) -> list[dict]:
@@ -70,15 +75,14 @@ def build_dashboard(results_root: Path) -> Path:
 
     cards = "".join(
         f'<tr><td>{escape(x["harness"])}</td><td>{escape(x["model"])}</td>'
-        f'<td><strong>{x["score"]:.1f}</strong></td>'
-        f'<td>{"—" if x["judge_score"] is None else f"{x[\"judge_score\"]:.1f}"}</td>'
+        f'<td><strong>{x["score"]:.1f}</strong></td><td>{_judge_text(x)}</td>'
         f'<td>{x["passed"]}/{x["total"]}</td><td>{x["success"]:.1f}%</td><td>{x["runtime"]:.1f} min</td></tr>'
         for x in sorted(latest.values(), key=lambda x: (x["harness"], x["model"]))
     )
     history = "".join(
         f'<tr><td>{escape(x["run_id"])}</td><td>{escape(x["harness"])}</td><td>{escape(x["model"])}</td>'
-        f'<td>{x["score"]:.1f}</td><td>{"—" if x["judge_score"] is None else f"{x[\"judge_score\"]:.1f}"}</td>'
-        f'<td>{x["passed"]}/{x["total"]}</td><td>{escape(x["git_commit"][:12])}</td></tr>'
+        f'<td>{x["score"]:.1f}</td><td>{_judge_text(x)}</td><td>{x["passed"]}/{x["total"]}</td>'
+        f'<td>{escape(x["git_commit"][:12])}</td></tr>'
         for x in sorted(summaries, key=lambda x: (x["harness"], x["model"], x["run_id"]), reverse=True)
     )
     data = json.dumps(list(latest.values()), ensure_ascii=False)
