@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .dashboard import build_dashboard
 from .models import Trajectory
+from .report import write_summary
 from .runner import AGENTS, BenchmarkRunner
 from .scoring import overall_score
 from .tasks import load_tasks
@@ -57,8 +58,10 @@ def main() -> None:
         print(f"{overall_score(Trajectory(**data)):.2f}")
         return
     if args.command == "dashboard":
-        path = build_dashboard(RESULTS)
-        print(path)
+        dashboard = build_dashboard(RESULTS)
+        summary = write_summary(RESULTS)
+        print(f"Dashboard: {dashboard}")
+        print(f"Summary:   {summary}")
         return
     if not harnesses:
         raise SystemExit("Select a harness, e.g. aiosbench --hermes --model Qwen3.6-35B-Q4_K_XL, or use --all")
@@ -72,9 +75,12 @@ def main() -> None:
         code = runner.run(tasks)
         exit_code = max(exit_code, code)
         build_dashboard(RESULTS)
+        write_summary(RESULTS)
 
     dashboard = build_dashboard(RESULTS)
+    summary = write_summary(RESULTS)
     print(f"\nDashboard: {dashboard}")
+    print(f"Summary:   {summary}")
     raise SystemExit(exit_code)
 
 
