@@ -11,6 +11,7 @@ dependencies = []
 
 [project.scripts]
 aios-bench = "aios_bench.cli:main"
+aiosbench = "aios_bench.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["aios_bench*"]
