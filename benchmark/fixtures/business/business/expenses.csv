@@ -1,0 +1,7 @@
+date,category,amount,status
+2026-08-02,software,90,paid
+2026-08-04,travel,450,paid
+2026-08-07,hardware,1350,paid
+2026-08-11,software,110,paid
+2026-08-16,consulting,2400,paid
+2026-08-19,travel,180,cancelled
