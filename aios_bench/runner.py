@@ -16,11 +16,10 @@ from .models import Task, Trajectory
 class AgentConfig:
     name: str
     command: tuple[str, ...]
-    prompt_flag: str = "-q"
 
 
 AGENTS = {
-    "hermes": AgentConfig("hermes", ("hermes", "chat")),
+    "hermes": AgentConfig("hermes", ("hermes", "chat", "-q")),
     "pi": AgentConfig("pi", ("pi", "-p")),
 }
 
@@ -54,7 +53,7 @@ class BenchmarkRunner:
             if not line.strip():
                 continue
             item = json.loads(line)
-            if item.get("status") in {"completed", "failed", "timeout", "error"}:
+            if item.get("status") == "completed":
                 done.add(item["task_id"])
         return done
 
@@ -75,7 +74,7 @@ class BenchmarkRunner:
         shutil.copytree(source, path)
         return path
 
-    def run_task(self, task: Task) -> Trajectory:
+    def run_task(self, task: Task, timeout: float) -> Trajectory:
         workspace = self._workspace(task)
         stdout_path = self.run_dir / "logs" / f"{task.id}.stdout.log"
         stderr_path = self.run_dir / "logs" / f"{task.id}.stderr.log"
@@ -86,7 +85,7 @@ class BenchmarkRunner:
             "Complete the task fully, verify the result, and do not modify benchmark files outside "
             "the workspace.\n\nTASK:\n" + task.prompt
         )
-        command = [*self.agent.command, task.prompt if self.agent.prompt_flag == "" else prompt]
+        command = [*self.agent.command, prompt]
         env = os.environ.copy()
         env["AIOS_BENCH_TASK_ID"] = task.id
         env["AIOS_BENCH_WORKSPACE"] = str(workspace.resolve())
@@ -95,6 +94,7 @@ class BenchmarkRunner:
         self._log({"event": "task_started", "task_id": task.id, "command": command})
         started = time.monotonic()
         trajectory = Trajectory(agent=self.agent.name, task_id=task.id)
+        status = "completed"
         try:
             with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open("w", encoding="utf-8") as err:
                 proc = subprocess.run(
@@ -104,20 +104,24 @@ class BenchmarkRunner:
                     stdout=out,
                     stderr=err,
                     text=True,
-                    timeout=self.task_timeout,
+                    timeout=timeout,
                     check=False,
                 )
             trajectory.success = proc.returncode == 0
             if proc.returncode != 0:
+                status = "failed"
                 trajectory.errors = 1
                 trajectory.events.append({"type": "process_exit", "returncode": proc.returncode})
         except subprocess.TimeoutExpired:
+            status = "timeout"
             trajectory.errors = 1
-            trajectory.events.append({"type": "timeout", "seconds": self.task_timeout})
+            trajectory.events.append({"type": "timeout", "seconds": timeout})
         except FileNotFoundError as exc:
+            status = "error"
             trajectory.errors = 1
             trajectory.events.append({"type": "agent_not_found", "error": str(exc)})
         except Exception as exc:
+            status = "error"
             trajectory.errors = 1
             trajectory.events.append({"type": "runner_error", "error": repr(exc)})
         trajectory.duration_seconds = time.monotonic() - started
@@ -125,20 +129,22 @@ class BenchmarkRunner:
         spec = self.repo_root / "benchmarks" / "tasks" / "specs" / f"{task.id}.json"
         evaluation = None
         if spec.is_file():
-            evaluation = evaluate_json(workspace, f"../../../tasks/specs/{task.id}.json") if False else evaluate_json(self.repo_root / "benchmarks" / "tasks", f"specs/{task.id}.json")
+            evaluation = evaluate_json(workspace, spec)
             trajectory.success = trajectory.success and bool(evaluation["passed"])
+            if not trajectory.success and status == "completed":
+                status = "failed"
             trajectory.events.append({"type": "deterministic_evaluation", "result": evaluation})
 
         result = trajectory.to_dict()
         result.update({
-            "status": "completed" if trajectory.success else "failed",
+            "status": status,
             "evaluation": evaluation,
             "workspace": str(workspace),
             "stdout": str(stdout_path),
             "stderr": str(stderr_path),
         })
         self._write_result(result)
-        self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success, "duration": trajectory.duration_seconds})
+        self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success, "status": status, "duration": trajectory.duration_seconds})
         return trajectory
 
     def run(self, tasks: list[Task]) -> int:
@@ -147,11 +153,20 @@ class BenchmarkRunner:
         remaining = [t for t in tasks if t.id not in done]
         self._log({"event": "run_started", "agent": self.agent.name, "tasks": len(remaining)})
         for index, task in enumerate(remaining, 1):
-            if self.total_timeout is not None and time.monotonic() - started >= self.total_timeout:
-                self._log({"event": "run_timeout", "completed_this_run": index - 1})
-                return 2
+            if self.total_timeout is not None:
+                elapsed = time.monotonic() - started
+                remaining_budget = self.total_timeout - elapsed
+                if remaining_budget <= 0:
+                    self._log({"event": "run_timeout", "completed_this_run": index - 1})
+                    return 2
+                timeout = min(self.task_timeout, remaining_budget)
+            else:
+                timeout = self.task_timeout
             print(f"[{index}/{len(remaining)}] {task.id} ...", flush=True)
-            trajectory = self.run_task(task)
+            trajectory = self.run_task(task, timeout)
             print(f"    {'PASS' if trajectory.success else 'FAIL'}  {trajectory.duration_seconds:.1f}s", flush=True)
+            if self.total_timeout is not None and time.monotonic() - started >= self.total_timeout:
+                self._log({"event": "run_timeout", "completed_this_run": index})
+                return 2
         self._log({"event": "run_finished", "tasks": len(remaining)})
         return 0
