@@ -6,17 +6,17 @@ Personal benchmark for local AI operating-system agents.
 
 AIOS-bench evaluates an agent as a long-lived work system, not only as a coding assistant. The suite measures tool use, knowledge work, memory, learning, coding, autonomy, browser/research work, subagent orchestration, and long-horizon execution.
 
-The benchmark is designed to compare different agent harnesses under the same model, local inference endpoint, workspace, and task set.
+The benchmark compares harnesses under the same model, local inference endpoint, workspace, and task set.
 
 ## One-command benchmark runs
 
-Install the package in the benchmark environment:
+Install the package:
 
 ```bash
 pip install -e .
 ```
 
-Then run an entire harness suite sequentially:
+Run an entire harness suite sequentially:
 
 ```bash
 aiosbench --hermes --model Qwen3.6-35B-Q4_K_XL
@@ -24,19 +24,31 @@ aiosbench --piagent --model Qwen3.6-35B-Q4_K_XL
 aiosbench --opencode --model Qwen3.6-35B-Q4_K_XL
 ```
 
-The equivalent explicit form is:
+Equivalent explicit form:
 
 ```bash
 aiosbench run --hermes --model Qwen3.6-35B-Q4_K_XL
 ```
 
-The runner executes every task in deterministic order, creates an isolated workspace for each task, records the execution trajectory, applies available deterministic acceptance checks, stores resumable results, and regenerates the comparison dashboard.
+The runner executes every task in deterministic order, creates an isolated workspace for each task, records execution output, applies available acceptance checks, stores resumable results, and regenerates the comparison dashboard.
 
 Use `--no-resume` to intentionally repeat every task:
 
 ```bash
 aiosbench --hermes --model Qwen3.6-35B-Q4_K_XL --no-resume
 ```
+
+## Harness adapters
+
+The adapter layer keeps harness-specific invocation separate from the benchmark itself. Current native adapters are:
+
+- **Hermes Agent** — `hermes chat -q`, with optional `--model`.
+- **Pi Agent** — `pi -p`, with optional `--model`.
+- **OpenCode** — `opencode run`, using the isolated workspace via `--dir`, JSON output, and optional `--model`.
+
+These invocation forms follow the harness CLIs rather than assuming that every agent accepts the same arguments. Hermes documents non-interactive `hermes chat -q`, Pi documents `pi -p`, and OpenCode documents `opencode run` with `--dir`, `--model`, and `--format json`. citeturn0search0turn0search9turn0search2
+
+Goose, Letta, and Agent Zero currently have generic adapter slots. They will receive dedicated adapters once their headless invocation and event formats are pinned down.
 
 ## Dashboard
 
@@ -46,25 +58,12 @@ Every run updates:
 results/dashboard.html
 ```
 
-The dashboard groups results by **harness + model**, so the same harness can be tested repeatedly with progressively stronger models without overwriting historical results. This is the basis for longitudinal comparisons such as:
+Results are grouped by **harness + model**, so historical runs remain comparable:
 
 ```text
 Hermes + Model A  →  Hermes + Model B  →  Hermes + Model C
 Pi + Model A      →  Pi + Model B      →  Pi + Model C
 ```
-
-## Current harnesses
-
-The CLI has adapters/configuration slots for:
-
-- Hermes Agent
-- Pi Agent
-- OpenCode
-- Goose
-- Letta
-- Agent Zero
-
-The commands are deliberately centralized in the runner so their invocation can later be replaced by dedicated adapters without changing the benchmark or scoring layer.
 
 ## Current task suite
 
@@ -84,7 +83,7 @@ Tasks support `cold` and `warm` modes. Longitudinal evaluation is performed by r
 
 ## Observability
 
-AIOS-bench does **not** require or expose private chain-of-thought. Adapters should emit observable execution trajectories instead:
+AIOS-bench does **not** require or expose private chain-of-thought. Adapters should capture observable execution data instead:
 
 - tool calls
 - commands
@@ -96,12 +95,10 @@ AIOS-bench does **not** require or expose private chain-of-thought. Adapters sho
 - human interventions
 - timing and token counts when available
 
-This makes the benchmark useful without treating hidden reasoning traces as a required metric.
-
 ## Repository layout
 
 ```text
-aios_bench/             Core models, task loader, runner, scoring and dashboard
+aios_bench/             Core models, adapters, runner, scoring and dashboard
 benchmarks/tasks/       Versioned benchmark task definitions and acceptance specs
 benchmarks/fixtures/    Deterministic isolated workspaces
 benchmarks/schemas/     Machine-readable trajectory schemas
@@ -114,4 +111,4 @@ The primary question is not simply "which agent is smartest?" It is:
 
 > Which agent can perform useful work reliably, proportionally, and with decreasing human supervision as it learns the user's workflow?
 
-The suite therefore tracks both **raw agent performance** and **learning performance** over repeated sessions. Model identity is a first-class dimension so harness improvements and model improvements can be separated over time.
+Model identity is a first-class dimension so harness improvements and model improvements can be separated over time.
