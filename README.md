@@ -16,7 +16,7 @@ Install the package:
 pip install -e .
 ```
 
-Run an entire harness suite sequentially:
+Run one harness at a time:
 
 ```bash
 aiosbench --hermes --model Qwen3.6-35B-Q4_K_XL
@@ -24,82 +24,49 @@ aiosbench --piagent --model Qwen3.6-35B-Q4_K_XL
 aiosbench --opencode --model Qwen3.6-35B-Q4_K_XL
 ```
 
-Equivalent explicit form:
+Or run every configured harness sequentially with `--all`.
 
-```bash
-aiosbench run --hermes --model Qwen3.6-35B-Q4_K_XL
-```
+The runner executes the calibrated frontier catalog in deterministic order, creates an isolated workspace for each task, records observable execution data, applies weighted deterministic acceptance checks, stores resumable results, and regenerates the comparison dashboard.
 
-The runner executes every task in deterministic order, creates an isolated workspace for each task, records execution output, applies available acceptance checks, stores resumable results, and regenerates the comparison dashboard.
+## Frontier task calibration
 
-Use `--no-resume` to intentionally repeat every task:
+The active catalog is `benchmarks/tasks/frontier_v2.json` and contains 26 tasks. Every task is intentionally Tier 3, 4, or 5:
 
-```bash
-aiosbench --hermes --model Qwen3.6-35B-Q4_K_XL --no-resume
-```
+- **Tier 3 — Advanced:** multi-step work with several independent failure points.
+- **Tier 4 — Expert:** requires synthesis, recovery, validation, or transfer across steps.
+- **Tier 5 — Frontier:** combines multiple difficult capabilities, negative constraints, ambiguity, or independent verification.
 
-## Harness adapters
+There are no Tier 1/2 tasks in the active suite. The goal is discrimination among capable agent/model combinations, not measuring whether an agent can perform trivial tool calls.
 
-The adapter layer keeps harness-specific invocation separate from the benchmark itself. Current native adapters are:
+The target calibration is qualitative rather than a hard quota: the current local model should encounter meaningful failures in T4/T5 while still solving a useful portion of T3. A future stronger model should have room to improve without the benchmark saturating near 100.
 
-- **Hermes Agent** — `hermes chat -q`, with optional `--model`.
-- **Pi Agent** — `pi -p`, with optional `--model`.
-- **OpenCode** — `opencode run`, using the isolated workspace via `--dir`, JSON output, and optional `--model`.
+### Context-window policy
 
-These invocation forms follow the harness CLIs rather than assuming that every agent accepts the same arguments. Hermes documents non-interactive `hermes chat -q`, Pi documents `pi -p`, and OpenCode documents `opencode run` with `--dir`, `--model`, and `--format json`. citeturn0search0turn0search9turn0search2
+Long-horizon tasks are designed around the practical **98k-token context ceiling**. They do not require an arbitrarily large prompt. Instead, they test whether an agent can maintain state through long execution using compaction, durable notes, files, or other harness-native mechanisms when available.
 
-Goose, Letta, and Agent Zero currently have generic adapter slots. They will receive dedicated adapters once their headless invocation and event formats are pinned down.
+A task that exceeds the available context because the harness cannot manage its own state is a meaningful failure; simply making prompts enormous is not the objective.
+
+## Scoring
+
+A task is not considered successful merely because the harness exits with code 0. The benchmark evaluates the resulting workspace with weighted deterministic checks such as required artifacts, required content, JSON validity, regex constraints, test commands, protected-input integrity, and minimum evidence/detail requirements.
+
+Acceptance contributes 60% of the task score. Execution success, recovery, human independence, and proportionality provide the remaining signal. This makes partial completion visible and prevents a plausible but incorrect report from receiving a near-perfect score.
+
+Task definitions carry an explicit revision number. Changing a task invalidates stale resumable results for that task.
 
 ## Dashboard
 
-Every run updates:
-
-```text
-results/dashboard.html
-```
-
-Results are grouped by **harness + model**, so historical runs remain comparable:
-
-```text
-Hermes + Model A  →  Hermes + Model B  →  Hermes + Model C
-Pi + Model A      →  Pi + Model B      →  Pi + Model C
-```
-
-## Current task suite
-
-The v0.1 suite contains task definitions across nine categories:
-
-- tool use
-- knowledge work
-- memory
-- learning
-- coding
-- autonomy
-- browser/research
-- subagents
-- long-horizon execution
-
-Tasks support `cold` and `warm` modes. Longitudinal evaluation is performed by running related warm tasks across multiple sessions and measuring improvement.
+Every run updates `results/dashboard.html`. Results are grouped by **harness + model** and include capability and Tier 3/4/5 breakdowns, allowing longitudinal comparison as models improve.
 
 ## Observability
 
-AIOS-bench does **not** require or expose private chain-of-thought. Adapters should capture observable execution data instead:
-
-- tool calls
-- commands
-- file reads/writes
-- memory reads/writes
-- skill creation or updates
-- subagent activity
-- errors and retries
-- human interventions
-- timing and token counts when available
+AIOS-bench does **not** require or expose private chain-of-thought. Adapters capture observable execution data instead: tool calls, commands, file reads/writes, memory activity, skill creation, subagent activity, errors/retries, human interventions, timing, and token counts when available.
 
 ## Repository layout
 
 ```text
 aios_bench/             Core models, adapters, runner, scoring and dashboard
-benchmarks/tasks/       Versioned benchmark task definitions and acceptance specs
+benchmarks/tasks/       Active frontier catalog plus legacy task definitions
 benchmarks/fixtures/    Deterministic isolated workspaces
 benchmarks/schemas/     Machine-readable trajectory schemas
 results/                Local benchmark runs and generated dashboard
