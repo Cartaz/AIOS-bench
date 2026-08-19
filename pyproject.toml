@@ -15,3 +15,6 @@ aiosbench = "aios_bench.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["aios_bench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
