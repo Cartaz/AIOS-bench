@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AIOS-bench Trajectory",
+  "type": "object",
+  "required": ["agent", "task_id", "success"],
+  "properties": {
+    "agent": {"type": "string"},
+    "task_id": {"type": "string"},
+    "success": {"type": "boolean"},
+    "duration_seconds": {"type": "number", "minimum": 0},
+    "input_tokens": {"type": "integer", "minimum": 0},
+    "output_tokens": {"type": "integer", "minimum": 0},
+    "tool_calls": {"type": "integer", "minimum": 0},
+    "errors": {"type": "integer", "minimum": 0},
+    "retries": {"type": "integer", "minimum": 0},
+    "human_interventions": {"type": "integer", "minimum": 0},
+    "files_read": {"type": "integer", "minimum": 0},
+    "files_written": {"type": "integer", "minimum": 0},
+    "memory_reads": {"type": "integer", "minimum": 0},
+    "memory_writes": {"type": "integer", "minimum": 0},
+    "skills_created": {"type": "integer", "minimum": 0},
+    "events": {"type": "array", "items": {"type": "object"}}
+  }
+}
