@@ -1,0 +1,5 @@
+[
+  {"id":"tool_use_001","category":"tool_use","prompt":"Inspect the workspace and report what files are present. Do not modify anything.","tags":["filesystem","read_only"]},
+  {"id":"tool_use_002","category":"tool_use","prompt":"Read README.md, identify the configuration file it references, and report the relevant settings. Do not edit files.","tags":["filesystem","navigation"]},
+  {"id":"tool_use_003","category":"tool_use","prompt":"Run the provided test command, diagnose any failure, and fix only the file responsible for the failure. Re-run the test afterward.","tags":["execution","recovery"]}
+]
