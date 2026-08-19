@@ -3,6 +3,7 @@
 - Francesco: review software subscriptions before next month.
 - Marta: prepare the July sales summary.
 - Luca: update the current operating procedure after the meeting.
+- Sara: verify the July expense totals before 2026-08-05.
 
 ## Decisions
 
