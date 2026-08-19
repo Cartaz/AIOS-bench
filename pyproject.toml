@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aios-bench"
+version = "0.1.0"
+description = "Reproducible benchmark suite for local AI operating-system agents"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+aios-bench = "aios_bench.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["aios_bench*"]
