@@ -1,0 +1,1 @@
+{"checks":[{"type":"exists","path":"projects/broken_tool.py"},{"type":"contains","path":"projects/broken_tool.py","text":"return total"}]}
