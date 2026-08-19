@@ -19,18 +19,13 @@ class PiRPCResult:
 
 
 class PiRPCClient:
-    """Small stdio JSONL client for pi --mode rpc.
+    """Small stdio JSONL client for pi --mode rpc."""
 
-    Pi keeps stdin open while the RPC session is alive. We therefore cannot use
-    subprocess.run with a one-shot input pipe: closing stdin immediately can
-    terminate a run before agent_settled. This client keeps the stream open,
-    sends one prompt, collects events through agent_settled, then shuts down.
-    """
-
-    def __init__(self, model: str, workspace: Path, timeout: float) -> None:
+    def __init__(self, model: str, workspace: Path, timeout: float, environment: dict[str, str] | None = None) -> None:
         self.model = model
         self.workspace = workspace
         self.timeout = timeout
+        self.environment = environment or {}
 
     def _command(self) -> list[str]:
         command = ["pi", "--mode", "rpc", "--no-session"]
@@ -40,16 +35,12 @@ class PiRPCClient:
 
     def run(self, prompt: str) -> PiRPCResult:
         env = os.environ.copy()
+        env.update(self.environment)
         env["AIOS_BENCH_WORKSPACE"] = str(self.workspace.resolve())
         proc = subprocess.Popen(
-            self._command(),
-            cwd=self.workspace,
-            env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
+            self._command(), cwd=self.workspace, env=env,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, bufsize=1,
         )
         started = time.monotonic()
         lines: list[str] = []
@@ -57,12 +48,10 @@ class PiRPCClient:
         timed_out = False
         selector = selectors.DefaultSelector()
         try:
-            assert proc.stdin is not None
-            assert proc.stdout is not None
+            assert proc.stdin is not None and proc.stdout is not None
             proc.stdin.write(json.dumps({"id": "aios-bench", "type": "prompt", "message": prompt}) + "\n")
             proc.stdin.flush()
             selector.register(proc.stdout, selectors.EVENT_READ)
-
             while True:
                 remaining = self.timeout - (time.monotonic() - started)
                 if remaining <= 0:
@@ -94,14 +83,7 @@ class PiRPCClient:
             try:
                 proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=2)
+                proc.kill(); proc.wait(timeout=2)
             if proc.stderr:
                 stderr_text = proc.stderr.read()
-
-        return PiRPCResult(
-            returncode=proc.returncode if proc.returncode is not None else 1,
-            stdout="".join(lines),
-            stderr=stderr_text,
-            timed_out=timed_out,
-        )
+        return PiRPCResult(proc.returncode if proc.returncode is not None else 1, "".join(lines), stderr_text, timed_out)
