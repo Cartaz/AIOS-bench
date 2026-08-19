@@ -1,0 +1,13 @@
+{
+  "benchmark": "AIOS-bench",
+  "suite": "frontier_v2",
+  "suite_revision": "ac0e892b67b03af771d8d6cc99b9b3520e4cdb466e2869f07996001045852ef9",
+  "harness": "piagent",
+  "model": "Qwen",
+  "model_id": "Qwen",
+  "run_id": "2026-08-19_123411_frontier-v2",
+  "started_at": "2026-08-19T10:34:11Z",
+  "git_commit": "6046d9a7603eaca6dd4629662fbeee727e876528",
+  "task_count": 28,
+  "finished_at": "2026-08-19T14:04:47Z"
+}
