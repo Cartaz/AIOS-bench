@@ -1,0 +1,4 @@
+[
+  {"id":"browser_001","category":"browser","prompt":"Research the requested topic using the available browser/research tools, collect evidence from multiple sources, and save a concise source-backed report. Do not fabricate sources.","tags":["research","browser"]},
+  {"id":"browser_002","category":"browser","prompt":"Find the official documentation for the requested technology, extract the relevant setup requirements, and produce a short implementation checklist with source references.","tags":["research","documentation"]}
+]
