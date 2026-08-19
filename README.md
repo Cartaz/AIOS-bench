@@ -4,8 +4,6 @@ Reproducible benchmark suite for local AI operating-system agents.
 
 ## Running
 
-Select a configured harness and model:
-
 ```bash
 aiosbench --piagent --model Qwen --no-resume
 ```
@@ -16,13 +14,13 @@ Or run every configured harness sequentially:
 aiosbench --all --model Qwen
 ```
 
-The runner executes the calibrated frontier catalog in deterministic order, creates an isolated workspace for each task, records observable execution data, applies deterministic artifact checks, stores resumable results, and regenerates the comparison dashboard.
+The runner executes the active frontier v3 catalog in deterministic order, creates an isolated workspace for each task, preserves explicit warm-state chains for memory and learning tasks, records observable execution data, applies deterministic reference checks, stores resumable results, and regenerates the comparison dashboard.
 
 ## Deterministic evaluation
 
-AIOS-bench deliberately uses **deterministic evaluators as the authoritative benchmark signal**. A task passes only when the agent execution and its required artifacts satisfy the configured acceptance checks. The final score is computed from reproducible telemetry and acceptance results; no LLM is asked to grade another LLM.
+AIOS-bench uses **deterministic evaluators as the authoritative benchmark signal**. There is no LLM judge. A task passes only when the agent execution and its required artifacts satisfy reproducible acceptance checks.
 
-This keeps benchmark runs reproducible, debuggable, and comparable across models and harnesses.
+Frontier v3 replaces weak "file exists + keyword" acceptance with benchmark-owned reference oracles for the tasks where content matters. These checks can validate exact evidence provenance, alternate datasets, hidden regression tests, negative constraints, dependency chains, persistent memory state, and delegation telemetry without asking another model to grade the result.
 
 ## Results layout
 
@@ -43,12 +41,12 @@ results/
 
 Historical runs use the same structure. Older benchmark data has been normalized into this layout rather than being kept in separately named `first_*` and `second_*` directories.
 
-`results/dashboard.html` and `results/summary.json` are generated from the run data.
+## Frontier v3
 
-## Frontier task calibration
-
-The active catalog is `benchmarks/tasks/frontier_v2.json` and contains **28 tasks**. Every task is intentionally Tier 3, 4, or 5:
+The active catalog is `benchmarks/tasks/frontier_v3/*.json` and contains **28 tasks** split by capability. The category files are loaded in lexical order, giving a stable execution order.
 
 - **Tier 3 — Advanced:** multi-step work with several independent failure points.
-- **Tier 4 — Expert:** requires synthesis, recovery, validation, or transfer across steps.
-- **Tier 5 — Frontier:** combines multiple difficult capabilities, negative constraints, ambiguity, or independent verification.
+- **Tier 4 — Expert:** synthesis, recovery, validation, transfer, or grounded research.
+- **Tier 5 — Frontier:** combines difficult capabilities with negative constraints, hidden checks, state persistence, or independent verification.
+
+The v3 fixtures deliberately include alternate datasets, malformed inputs, distractors, conflicting procedures, schema shifts, persistent-state chains, and hidden regression tests. The benchmark-owned reference checks live in `aios_bench/reference_checks_*.py` and never invoke an LLM.
