@@ -24,16 +24,11 @@ def build_summary(root: Path) -> dict:
     groups = defaultdict(list)
     for row in rows:
         groups[(row.get("harness", "unknown"), row.get("model", "unknown"), row.get("run_id", "legacy"))].append(row)
-
     comparisons = []
     for (harness, model, run_id), items in sorted(groups.items()):
         scores = [float(x.get("score", 0)) for x in items]
-        judge_scores = [float(x["llm_judge"]["score"]) for x in items
-                        if isinstance(x.get("llm_judge"), dict) and x["llm_judge"].get("status") == "ok"]
         comparisons.append({
-            "run_id": run_id,
-            "harness": harness,
-            "model": model,
+            "run_id": run_id, "harness": harness, "model": model,
             "suite": items[0].get("suite", "legacy"),
             "suite_revision": items[0].get("suite_revision", "legacy"),
             "git_commit": items[0].get("git_commit", "unknown"),
@@ -41,8 +36,6 @@ def build_summary(root: Path) -> dict:
             "passed": sum(bool(x.get("success")) for x in items),
             "success_rate": sum(bool(x.get("success")) for x in items) / len(items) * 100 if items else 0,
             "mean_score": sum(scores) / len(scores) if scores else 0,
-            "mean_llm_judge_score": sum(judge_scores) / len(judge_scores) if judge_scores else None,
-            "llm_judge_rate": len(judge_scores) / len(items) * 100 if items else 0,
             "runtime_seconds": sum(float(x.get("duration_seconds", 0)) for x in items),
             "telemetry_rate": sum(bool(x.get("telemetry_available")) for x in items) / len(items) * 100 if items else 0,
         })
@@ -51,5 +44,5 @@ def build_summary(root: Path) -> dict:
 
 def write_summary(root: Path) -> Path:
     path = root / "summary.json"
-    path.write_text(json.dumps(build_summary(root), indent=2), encoding="utf-8")
+    path.write_text(json.dumps(build_summary(root), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path

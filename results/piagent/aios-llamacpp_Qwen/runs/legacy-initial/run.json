@@ -1,0 +1,9 @@
+{
+  "benchmark": "AIOS-bench",
+  "suite": "frontier_v2",
+  "harness": "piagent",
+  "model": "aios-llamacpp_Qwen",
+  "model_id": "aios-llamacpp_Qwen",
+  "run_id": "legacy-initial",
+  "source": "historical benchmark result normalized from the original results archive"
+}

@@ -12,7 +12,6 @@ from pathlib import Path
 
 from .adapters import ADAPTERS, Adapter, PiAgentAdapter
 from .evaluators import evaluate_artifacts
-from .judge import run_judge
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
 from .retention import prune_run_artifacts
@@ -64,8 +63,7 @@ def _safe_run_id(value: str) -> str:
 class BenchmarkRunner:
     def __init__(self, repo_root: Path, agent: AgentConfig, results_dir: Path,
                  task_timeout: float, total_timeout: float | None, resume: bool = True,
-                 model: str = "unknown", keep_raw: bool = False, run_id: str | None = None,
-                 llm_judge: bool = False, judge_timeout: float = 300.0) -> None:
+                 model: str = "unknown", keep_raw: bool = False, run_id: str | None = None) -> None:
         self.repo_root = repo_root
         self.agent = agent
         self.results_dir = results_dir
@@ -74,8 +72,6 @@ class BenchmarkRunner:
         self.resume = resume
         self.model = model
         self.keep_raw = keep_raw
-        self.llm_judge = llm_judge
-        self.judge_timeout = judge_timeout
         self.model_dir = results_dir / agent.name / model.replace("/", "_")
         self.model_dir.mkdir(parents=True, exist_ok=True)
         if run_id is None:
@@ -96,7 +92,7 @@ class BenchmarkRunner:
             try:
                 existing = json.loads(self.metadata_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
-                existing = {}
+                pass
         metadata = {
             "benchmark": "AIOS-bench",
             "suite": "frontier_v2",
@@ -108,8 +104,6 @@ class BenchmarkRunner:
             "started_at": existing.get("started_at", _utc_now()),
             "git_commit": _git_commit(self.repo_root),
             "task_count": len(self._catalog_task_count()),
-            "llm_judge": self.llm_judge,
-            "judge_timeout_seconds": self.judge_timeout if self.llm_judge else None,
         }
         if finished_at is not None:
             metadata["finished_at"] = finished_at
@@ -119,8 +113,7 @@ class BenchmarkRunner:
 
     def _catalog_task_count(self) -> list[str]:
         catalog = self.repo_root / "benchmarks" / "tasks" / "frontier_v2.json"
-        data = json.loads(catalog.read_text(encoding="utf-8"))
-        return [str(item["id"]) for item in data]
+        return [str(item["id"]) for item in json.loads(catalog.read_text(encoding="utf-8"))]
 
     def _update_latest_pointer(self) -> None:
         latest = self.model_dir / "latest"
@@ -145,9 +138,8 @@ class BenchmarkRunner:
         for line in self.checkpoint.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 item = json.loads(line)
-                task_id = item.get("task_id")
-                if item.get("status") == "completed" and revisions.get(task_id) == item.get("task_revision", 1):
-                    done.add(task_id)
+                if item.get("status") == "completed" and revisions.get(item.get("task_id")) == item.get("task_revision", 1):
+                    done.add(item["task_id"])
         return done
 
     def _log(self, event: dict) -> None:
@@ -185,13 +177,13 @@ class BenchmarkRunner:
             command = [*shlex.split(custom), prompt]
         env = os.environ.copy()
         env.update(invocation.environment)
-        env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
-                    "AIOS_BENCH_MODEL": self.model,
-                    "AIOS_BENCH_RUN_ID": self.run_id,
-                    "AIOS_BENCH_FIXTURE_ROOT": str(self.repo_root / "benchmarks" / "fixtures" / "workspace")})
+        env.update({
+            "AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
+            "AIOS_BENCH_MODEL": self.model, "AIOS_BENCH_RUN_ID": self.run_id,
+            "AIOS_BENCH_FIXTURE_ROOT": str(self.repo_root / "benchmarks" / "fixtures" / "workspace"),
+        })
         self._log({"event": "task_started", "task_id": task.id, "command": command,
-                   "model": self.model, "tier": task.tier, "task_revision": task.revision,
-                   "llm_judge": self.llm_judge})
+                   "model": self.model, "tier": task.tier, "task_revision": task.revision})
         started = time.monotonic()
         trajectory = Trajectory(agent=self.agent.name, task_id=task.id)
         status = "completed"
@@ -232,8 +224,7 @@ class BenchmarkRunner:
 
         stdout = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
         stderr = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
-        parsed_events = parse_output(stdout, stderr, source=self.agent.name)
-        trajectory.apply_events([e.to_dict() for e in parsed_events])
+        trajectory.apply_events([e.to_dict() for e in parse_output(stdout, stderr, source=self.agent.name)])
         if trajectory.errors and status == "completed":
             status = "failed"
             trajectory.success = False
@@ -242,8 +233,7 @@ class BenchmarkRunner:
         checks = list(task.acceptance)
         spec = self.repo_root / "benchmarks" / "tasks" / "specs" / f"{task.id}.json"
         if not checks and spec.is_file():
-            spec_data = json.loads(spec.read_text(encoding="utf-8"))
-            checks = spec_data["checks"]
+            checks = json.loads(spec.read_text(encoding="utf-8"))["checks"]
         if checks:
             evaluation = evaluate_artifacts(workspace, checks)
             trajectory.evaluation_score = float(evaluation["acceptance_score"])
@@ -252,34 +242,18 @@ class BenchmarkRunner:
                 status = "failed"
             trajectory.events.append({"type": "deterministic_evaluation", "result": evaluation})
 
-        judge = None
-        if self.llm_judge:
-            judge = run_judge(
-                model=self.model,
-                task_id=task.id,
-                category=task.category,
-                tier=task.tier,
-                task_prompt=task.prompt,
-                workspace=workspace,
-                run_dir=self.run_dir,
-                timeout=self.judge_timeout,
-            )
-            trajectory.events.append({"type": "llm_judge", "result": judge})
-            self._log({"event": "llm_judge_finished", "task_id": task.id,
-                       "status": judge.get("status"), "score": judge.get("score")})
-
         result = trajectory.to_dict()
-        result.update({"status": status, "evaluation": evaluation, "llm_judge": judge,
-                       "score": overall_score(trajectory), "model": self.model,
-                       "harness": self.agent.name, "task_id": task.id, "task_revision": task.revision,
-                       "category": task.category, "tier": task.tier, "mode": task.mode,
-                       "run_id": self.run_id, "suite": "frontier_v2",
-                       "suite_revision": _suite_revision(self.repo_root), "git_commit": _git_commit(self.repo_root),
-                       "stdout": str(stdout_path), "stderr": str(stderr_path)})
+        result.update({
+            "status": status, "evaluation": evaluation, "score": overall_score(trajectory),
+            "model": self.model, "harness": self.agent.name, "task_id": task.id,
+            "task_revision": task.revision, "category": task.category, "tier": task.tier,
+            "mode": task.mode, "run_id": self.run_id, "suite": "frontier_v2",
+            "suite_revision": _suite_revision(self.repo_root), "git_commit": _git_commit(self.repo_root),
+            "stdout": str(stdout_path), "stderr": str(stderr_path),
+        })
         self._write_result(result)
         self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success,
                    "status": status, "duration": trajectory.duration_seconds, "score": result["score"],
-                   "llm_judge_score": (judge or {}).get("score"),
                    "telemetry_available": trajectory.telemetry_available, "tier": task.tier})
         return trajectory
 
@@ -291,7 +265,7 @@ class BenchmarkRunner:
         started = time.monotonic()
         remaining = [t for t in tasks if t.id not in done]
         print(f"AIOS-bench | {self.agent.display_name} | model={self.model} | run={self.run_id}")
-        print(f"Tasks: {len(remaining)} (resume={'on' if self.resume else 'off'}, judge={'on' if self.llm_judge else 'off'})")
+        print(f"Tasks: {len(remaining)} (resume={'on' if self.resume else 'off'})")
         passed = 0
         scores: list[float] = []
         for index, task in enumerate(remaining, 1):
@@ -308,13 +282,7 @@ class BenchmarkRunner:
             scores.append(score)
             if trajectory.success:
                 passed += 1
-            judge_score = None
-            for event in reversed(trajectory.events):
-                if event.get("type") == "llm_judge":
-                    judge_score = (event.get("result") or {}).get("score")
-                    break
-            suffix = f"  judge {float(judge_score):.1f}/100" if judge_score is not None else ""
-            print(f"    {'PASS' if trajectory.success else 'FAIL'}  {score:.1f}/100  {trajectory.duration_seconds:.1f}s{suffix}", flush=True)
+            print(f"    {'PASS' if trajectory.success else 'FAIL'}  {score:.1f}/100  {trajectory.duration_seconds:.1f}s", flush=True)
         avg = sum(scores) / len(scores) if scores else 0.0
         cleanup = self.cleanup()
         self._write_metadata(_utc_now())
