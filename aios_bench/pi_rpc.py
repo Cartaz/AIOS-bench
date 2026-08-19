@@ -21,16 +21,20 @@ class PiRPCResult:
 class PiRPCClient:
     """Small stdio JSONL client for pi --mode rpc."""
 
-    def __init__(self, model: str, workspace: Path, timeout: float, environment: dict[str, str] | None = None) -> None:
+    def __init__(self, model: str, workspace: Path, timeout: float,
+                 environment: dict[str, str] | None = None,
+                 extra_args: list[str] | None = None) -> None:
         self.model = model
         self.workspace = workspace
         self.timeout = timeout
         self.environment = environment or {}
+        self.extra_args = list(extra_args or [])
 
     def _command(self) -> list[str]:
         command = ["pi", "--mode", "rpc", "--no-session"]
         if self.model and self.model != "unknown":
             command += ["--model", self.model]
+        command += self.extra_args
         return command
 
     def run(self, prompt: str) -> PiRPCResult:

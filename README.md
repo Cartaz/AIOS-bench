@@ -28,6 +28,22 @@ Or run every configured harness sequentially with `--all`.
 
 The runner executes the calibrated frontier catalog in deterministic order, creates an isolated workspace for each task, records observable execution data, applies weighted deterministic acceptance checks, stores resumable results, and regenerates the comparison dashboard.
 
+## Optional blinded LLM judge
+
+The benchmark can also ask the **same model** to independently inspect the finished workspace using a separate, strict system prompt:
+
+```bash
+aiosbench --piagent --model Qwen --no-resume --llm-judge
+```
+
+The judge receives only the original task request and an isolated snapshot of the final workspace. It does **not** receive the deterministic score, the expected answer, the agent's execution transcript, or the model/harness identity. It has read-only tools and cannot modify the evaluated workspace.
+
+The judge returns a separate 0–100 qualitative score with seven criteria: correctness, completeness, problem solving, efficiency, robustness, independence, and creativity. Its score and evidence are stored under `llm_judge` in each task result and summarized in `results/summary.json` and the dashboard.
+
+The judge is deliberately **diagnostic, not authoritative**: it never changes pass/fail and never changes the deterministic benchmark score. This prevents the benchmark from becoming circular while still exposing cases where an artifact passes mechanical checks but is substantively poor, or where an objective checker is too strict.
+
+Use `--judge-timeout` to change the per-task judge timeout (default 300 seconds). Because the same local model performs a second inference pass, enabling the judge substantially increases total benchmark time.
+
 ## Frontier task calibration
 
 The active catalog is `benchmarks/tasks/frontier_v2.json` and contains **28 tasks**. Every task is intentionally Tier 3, 4, or 5:
@@ -56,7 +72,7 @@ Task definitions carry an explicit revision number. Changing a task invalidates 
 
 ## Dashboard
 
-Every run updates `results/dashboard.html`. Results are grouped by **harness + model** and include capability and Tier 3/4/5 breakdowns, allowing longitudinal comparison as models improve.
+Every run updates `results/dashboard.html`. Results are grouped by **harness + model** and include capability and Tier 3/4/5 breakdowns, allowing longitudinal comparison as models improve. When the LLM judge is enabled, the dashboard also shows its separate mean score.
 
 ## Observability
 
@@ -69,6 +85,7 @@ aios_bench/             Core models, adapters, runner, scoring and dashboard
 benchmarks/tasks/       Active frontier catalog plus legacy task definitions
 benchmarks/fixtures/    Deterministic isolated workspaces
 benchmarks/schemas/     Machine-readable trajectory schemas
+benchmarks/judge/       Blinded qualitative judge system prompt
 results/                Local benchmark runs and generated dashboard
 ```
 

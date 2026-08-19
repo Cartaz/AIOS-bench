@@ -28,6 +28,8 @@ def build_summary(root: Path) -> dict:
     comparisons = []
     for (harness, model, run_id), items in sorted(groups.items()):
         scores = [float(x.get("score", 0)) for x in items]
+        judge_scores = [float(x["llm_judge"]["score"]) for x in items
+                        if isinstance(x.get("llm_judge"), dict) and x["llm_judge"].get("status") == "ok"]
         comparisons.append({
             "run_id": run_id,
             "harness": harness,
@@ -39,6 +41,8 @@ def build_summary(root: Path) -> dict:
             "passed": sum(bool(x.get("success")) for x in items),
             "success_rate": sum(bool(x.get("success")) for x in items) / len(items) * 100 if items else 0,
             "mean_score": sum(scores) / len(scores) if scores else 0,
+            "mean_llm_judge_score": sum(judge_scores) / len(judge_scores) if judge_scores else None,
+            "llm_judge_rate": len(judge_scores) / len(items) * 100 if items else 0,
             "runtime_seconds": sum(float(x.get("duration_seconds", 0)) for x in items),
             "telemetry_rate": sum(bool(x.get("telemetry_available")) for x in items) / len(items) * 100 if items else 0,
         })

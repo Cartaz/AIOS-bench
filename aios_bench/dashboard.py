@@ -25,6 +25,11 @@ def _rows(results_root: Path) -> list[dict]:
     return list(latest.values())
 
 
+def _judge_text(item: dict) -> str:
+    score = item.get("judge_score")
+    return "—" if score is None else f"{score:.1f}"
+
+
 def _summaries(rows: list[dict]) -> list[dict]:
     grouped: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
     for row in rows:
@@ -34,6 +39,8 @@ def _summaries(rows: list[dict]) -> list[dict]:
     summaries = []
     for (harness, model, run_id), items in sorted(grouped.items(), key=lambda x: (x[0][0], x[0][1], x[0][2])):
         scores = [float(x.get("score", 100.0 if x.get("success") else 0.0)) for x in items]
+        judge_scores = [float(x["llm_judge"]["score"]) for x in items
+                        if isinstance(x.get("llm_judge"), dict) and x["llm_judge"].get("status") == "ok"]
         categories: dict[str, list[float]] = defaultdict(list)
         tiers: dict[str, list[float]] = defaultdict(list)
         for x in items:
@@ -44,6 +51,8 @@ def _summaries(rows: list[dict]) -> list[dict]:
             "passed": sum(bool(x.get("success")) for x in items), "total": len(items),
             "success": sum(bool(x.get("success")) for x in items) / len(items) * 100 if items else 0,
             "score": sum(scores) / len(scores) if scores else 0,
+            "judge_score": sum(judge_scores) / len(judge_scores) if judge_scores else None,
+            "judge_rate": len(judge_scores) / len(items) * 100 if items else 0,
             "runtime": sum(float(x.get("duration_seconds", 0)) for x in items) / 60,
             "categories": {k: sum(v) / len(v) for k, v in categories.items()},
             "tiers": {k: sum(v) / len(v) for k, v in tiers.items()},
@@ -66,13 +75,14 @@ def build_dashboard(results_root: Path) -> Path:
 
     cards = "".join(
         f'<tr><td>{escape(x["harness"])}</td><td>{escape(x["model"])}</td>'
-        f'<td><strong>{x["score"]:.1f}</strong></td><td>{x["passed"]}/{x["total"]}</td>'
-        f'<td>{x["success"]:.1f}%</td><td>{x["runtime"]:.1f} min</td></tr>'
+        f'<td><strong>{x["score"]:.1f}</strong></td><td>{_judge_text(x)}</td>'
+        f'<td>{x["passed"]}/{x["total"]}</td><td>{x["success"]:.1f}%</td><td>{x["runtime"]:.1f} min</td></tr>'
         for x in sorted(latest.values(), key=lambda x: (x["harness"], x["model"]))
     )
     history = "".join(
         f'<tr><td>{escape(x["run_id"])}</td><td>{escape(x["harness"])}</td><td>{escape(x["model"])}</td>'
-        f'<td>{x["score"]:.1f}</td><td>{x["passed"]}/{x["total"]}</td><td>{escape(x["git_commit"][:12])}</td></tr>'
+        f'<td>{x["score"]:.1f}</td><td>{_judge_text(x)}</td><td>{x["passed"]}/{x["total"]}</td>'
+        f'<td>{escape(x["git_commit"][:12])}</td></tr>'
         for x in sorted(summaries, key=lambda x: (x["harness"], x["model"], x["run_id"]), reverse=True)
     )
     data = json.dumps(list(latest.values()), ensure_ascii=False)
@@ -82,11 +92,11 @@ def build_dashboard(results_root: Path) -> Path:
 <style>
 :root{{color-scheme:dark}} body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}} h1{{margin-bottom:4px}} .meta{{color:#999;margin-bottom:24px}} table{{border-collapse:collapse;width:100%;max-width:1200px}} th,td{{padding:12px;border-bottom:1px solid #333;text-align:left}} th{{color:#aaa}} .panel{{margin-top:28px;max-width:1200px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto}} .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}} .card{{border:1px solid #333;border-radius:12px;padding:16px}} .bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}} .fill{{height:100%;background:#aaa}} small{{color:#999}}
 </style></head><body><h1>AIOS-bench</h1>
-<div class="meta">Harness × model comparison — deterministic task scores, difficulty tiers, and longitudinal run history.</div>
-<div class="panel"><h2>Latest leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Score</th><th>Passed</th><th>Success</th><th>Runtime</th></tr></thead>
-<tbody>{cards or '<tr><td colspan="6">No benchmark results yet.</td></tr>'}</tbody></table></div>
-<div class="panel"><h2>Run history</h2><table><thead><tr><th>Run</th><th>Harness</th><th>Model</th><th>Score</th><th>Passed</th><th>Git commit</th></tr></thead>
-<tbody>{history or '<tr><td colspan="6">No benchmark runs yet.</td></tr>'}</tbody></table></div>
+<div class="meta">Harness × model comparison — deterministic scores plus an optional blinded qualitative LLM judge. The judge does not affect pass/fail or the deterministic score.</div>
+<div class="panel"><h2>Latest leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Objective</th><th>LLM judge</th><th>Passed</th><th>Success</th><th>Runtime</th></tr></thead>
+<tbody>{cards or '<tr><td colspan="7">No benchmark results yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Run history</h2><table><thead><tr><th>Run</th><th>Harness</th><th>Model</th><th>Objective</th><th>LLM judge</th><th>Passed</th><th>Git commit</th></tr></thead>
+<tbody>{history or '<tr><td colspan="7">No benchmark runs yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Difficulty tiers</h2><p><small>T3 = advanced, T4 = expert, T5 = frontier.</small></p><div id="tiers" class="grid"></div></div>
 <div class="panel"><h2>Capability breakdown</h2><div id="capabilities" class="grid"></div></div>
 <script>
