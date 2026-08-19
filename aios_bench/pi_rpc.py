@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import selectors
 import subprocess
 import time
 from dataclasses import dataclass
@@ -54,17 +55,25 @@ class PiRPCClient:
         lines: list[str] = []
         stderr_text = ""
         timed_out = False
+        selector = selectors.DefaultSelector()
         try:
             assert proc.stdin is not None
             assert proc.stdout is not None
             proc.stdin.write(json.dumps({"id": "aios-bench", "type": "prompt", "message": prompt}) + "\n")
             proc.stdin.flush()
+            selector.register(proc.stdout, selectors.EVENT_READ)
 
             while True:
-                if time.monotonic() - started >= self.timeout:
+                remaining = self.timeout - (time.monotonic() - started)
+                if remaining <= 0:
                     timed_out = True
                     proc.kill()
                     break
+                ready = selector.select(timeout=min(remaining, 0.25))
+                if not ready:
+                    if proc.poll() is not None:
+                        break
+                    continue
                 line = proc.stdout.readline()
                 if line:
                     lines.append(line)
@@ -76,9 +85,8 @@ class PiRPCClient:
                         break
                 elif proc.poll() is not None:
                     break
-                else:
-                    time.sleep(0.01)
         finally:
+            selector.close()
             if proc.stdin and not proc.stdin.closed:
                 proc.stdin.close()
             if proc.poll() is None:
