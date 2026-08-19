@@ -30,7 +30,7 @@ The runner executes the calibrated frontier catalog in deterministic order, crea
 
 ## Frontier task calibration
 
-The active catalog is `benchmarks/tasks/frontier_v2.json` and contains 26 tasks. Every task is intentionally Tier 3, 4, or 5:
+The active catalog is `benchmarks/tasks/frontier_v2.json` and contains **28 tasks**. Every task is intentionally Tier 3, 4, or 5:
 
 - **Tier 3 — Advanced:** multi-step work with several independent failure points.
 - **Tier 4 — Expert:** requires synthesis, recovery, validation, or transfer across steps.
