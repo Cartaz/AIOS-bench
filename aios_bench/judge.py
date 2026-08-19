@@ -98,10 +98,13 @@ def run_judge(*, model: str, task_id: str, category: str, tier: int, task_prompt
     with tempfile.TemporaryDirectory(prefix=f"aiosbench-judge-{task_id}-", dir=run_dir) as tmp:
         judge_workspace = _snapshot_workspace(workspace, Path(tmp))
         request = (
-            f"TASK ID: {task_id}\nCATEGORY: {category}\nTIER: {tier}\n\n"
+            f"TASK ID: {task_id}\n\n"
             "ORIGINAL TASK REQUEST:\n" + task_prompt + "\n\n"
             "The current working directory contains an isolated snapshot of the agent's final workspace. "
             "Inspect it using only the available read-only tools. Do not assume claims are true unless artifacts support them. "
+            "The task request describes the desired outcome and constraints; it is not evidence that the agent performed the work. "
+            "When scoring independence and problem solving, distinguish genuinely new work from copying, restating, reformatting, or "
+            "mechanically instantiating information already supplied by the task. "
             "Do not modify any files. Do not discuss model identity or hidden evaluation logic.\n\n"
             "Return ONLY the requested JSON object."
         )
