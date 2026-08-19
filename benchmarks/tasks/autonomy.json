@@ -1,0 +1,5 @@
+[
+  {"id":"autonomy_001","category":"autonomy","prompt":"Produce a monthly expense report from the workspace. Determine which files are relevant, create any necessary analysis script, run it, validate the result, and save the final report under reports/. Do not modify source data.","tags":["planning","end_to_end"]},
+  {"id":"autonomy_002","category":"autonomy","prompt":"Turn the supplied notes into a structured action tracker. Decide the useful schema, create the tracker, and verify that every actionable item is represented.","tags":["planning","knowledge"]},
+  {"id":"autonomy_003","category":"autonomy","prompt":"Improve the supplied small tool until its tests pass and its README contains accurate usage instructions. Work independently and stop when the acceptance criteria are satisfied.","tags":["planning","iteration"]}
+]
