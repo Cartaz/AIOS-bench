@@ -13,12 +13,18 @@ def main() -> int:
     payload = json.loads(sys.argv[1])
     task = payload["task"]
     workspace = Path(payload["workspace"])
+    state_dir = Path(payload["state_dir"])
     prompt = (
         "You are being evaluated by AIOS-bench. Work only inside the supplied workspace. "
         "Complete the task exactly as written. Do not expose private chain-of-thought. "
         "Observable actions and concise final summaries are sufficient.\n\nTASK:\n" + task["prompt"]
     )
-    cmd = [os.environ.get("PI_COMMAND", "pi"), "--mode", "json", "--no-session"]
+    cmd = [os.environ.get("PI_COMMAND", "pi"), "--mode", "json"]
+    persistent = task.get("mode") in {"warm", "longitudinal"}
+    if not persistent:
+        cmd.append("--no-session")
+    else:
+        cmd += ["--session-dir", str(state_dir)]
     provider = os.environ.get("PI_PROVIDER")
     model = os.environ.get("PI_MODEL")
     if provider:
@@ -40,14 +46,10 @@ def main() -> int:
         except json.JSONDecodeError:
             continue
         events.append(e)
-        typ = str(e.get("type", ""))
-        low = typ.lower()
-        if "error" in low or e.get("isError") is True:
-            errors += 1
-        if "retry" in low:
-            retries += 1
-        if "subagent" in low:
-            subagents += 1
+        typ = str(e.get("type", "")); low = typ.lower()
+        if "error" in low or e.get("isError") is True: errors += 1
+        if "retry" in low: retries += 1
+        if "subagent" in low: subagents += 1
         usage = e.get("usage") or {}
         input_tokens += int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
         output_tokens += int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
@@ -60,8 +62,7 @@ def main() -> int:
         "tool_calls": sum(1 for e in events if "tool" in str(e.get("type", "")).lower()),
         "errors": errors + (1 if proc.returncode != 0 else 0), "retries": retries,
         "human_interventions": 0, "files_read": sum(1 for e in events if "read" in str(e.get("type", "")).lower()),
-        "files_written": len(writes),
-        "memory_reads": sum(1 for e in events if "memory_read" in str(e.get("type", ""))),
+        "files_written": len(writes), "memory_reads": sum(1 for e in events if "memory_read" in str(e.get("type", ""))),
         "memory_writes": sum(1 for e in events if "memory_write" in str(e.get("type", ""))),
         "skills_created": sum(1 for e in events if "skill" in str(e.get("type", "")).lower() and "create" in str(e.get("type", "")).lower()),
         "subagents": subagents, "events": events, "notes": proc.stderr[-4000:] if proc.stderr else "",
