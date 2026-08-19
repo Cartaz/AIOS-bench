@@ -50,15 +50,17 @@ class BenchmarkRunner:
         self.checkpoint = self.run_dir / "results.jsonl"
         self.events = self.run_dir / "events.jsonl"
 
-    def completed(self) -> set[str]:
+    def completed(self, tasks: list[Task]) -> set[str]:
         if not self.resume or not self.checkpoint.exists():
             return set()
+        revisions = {t.id: t.revision for t in tasks}
         done: set[str] = set()
         for line in self.checkpoint.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 item = json.loads(line)
-                if item.get("status") == "completed":
-                    done.add(item["task_id"])
+                task_id = item.get("task_id")
+                if item.get("status") == "completed" and revisions.get(task_id) == item.get("task_revision", 1):
+                    done.add(task_id)
         return done
 
     def _log(self, event: dict) -> None:
@@ -98,7 +100,8 @@ class BenchmarkRunner:
         env.update(invocation.environment)
         env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
                     "AIOS_BENCH_MODEL": self.model})
-        self._log({"event": "task_started", "task_id": task.id, "command": command, "model": self.model, "tier": task.tier})
+        self._log({"event": "task_started", "task_id": task.id, "command": command,
+                   "model": self.model, "tier": task.tier, "task_revision": task.revision})
         started = time.monotonic()
         trajectory = Trajectory(agent=self.agent.name, task_id=task.id)
         status = "completed"
@@ -162,8 +165,8 @@ class BenchmarkRunner:
         result = trajectory.to_dict()
         result.update({"status": status, "evaluation": evaluation, "score": overall_score(trajectory),
                        "model": self.model, "harness": self.agent.name, "task_id": task.id,
-                       "category": task.category, "tier": task.tier, "mode": task.mode,
-                       "stdout": str(stdout_path), "stderr": str(stderr_path)})
+                       "task_revision": task.revision, "category": task.category, "tier": task.tier,
+                       "mode": task.mode, "stdout": str(stdout_path), "stderr": str(stderr_path)})
         self._write_result(result)
         self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success,
                    "status": status, "duration": trajectory.duration_seconds, "score": result["score"],
@@ -174,7 +177,7 @@ class BenchmarkRunner:
         return prune_run_artifacts(self.run_dir, keep_raw=self.keep_raw)
 
     def run(self, tasks: list[Task]) -> int:
-        done = self.completed()
+        done = self.completed(tasks)
         started = time.monotonic()
         remaining = [t for t in tasks if t.id not in done]
         print(f"AIOS-bench | {self.agent.display_name} | model={self.model}")
