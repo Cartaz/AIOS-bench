@@ -92,7 +92,8 @@ def main() -> int:
     s = sub.add_parser("validate"); s.set_defaults(func=cmd_validate)
     s = sub.add_parser("run"); s.add_argument("--adapter", required=True); s.add_argument("--agent", default="unknown"); s.add_argument("--run-id", required=True); s.add_argument("--output"); s.add_argument("--task"); s.set_defaults(func=cmd_run)
     s = sub.add_parser("score"); s.add_argument("results"); s.set_defaults(func=cmd_score)
-    return sub.choices["run"].func(p.parse_args()) if False else p.parse_args().func(p.parse_args())
+    args = p.parse_args()
+    return args.func(args)
 
 
 if __name__ == "__main__":
