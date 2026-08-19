@@ -2,12 +2,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from .models import Task
-TASK_FILE="frontier_v3.json"
+TASK_DIR="frontier_v3"
 def load_tasks(root: str|Path)->list[Task]:
-    path=Path(root)/TASK_FILE
-    if not path.is_file(): raise FileNotFoundError(f"Missing benchmark catalog: {path}")
-    data=json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data,list): raise ValueError(f"Task catalog must contain a JSON array: {path}")
+    directory=Path(root)/TASK_DIR
+    files=sorted(directory.glob("*.json"))
+    if not files: raise FileNotFoundError(f"Missing benchmark catalog: {directory}")
+    data=[]
+    for path in files:
+        chunk=json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(chunk,list): raise ValueError(f"Task catalog must contain arrays: {path}")
+        data.extend(chunk)
     tasks=[]
     for item in data:
         tier=int(item.get("tier",3))
