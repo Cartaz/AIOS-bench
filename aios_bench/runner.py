@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .evaluators import evaluate_artifacts
 from .models import Task, Trajectory
+from .scoring import overall_score
 
 
 @dataclass(frozen=True)
@@ -86,7 +87,8 @@ class BenchmarkRunner:
         command = [*self.agent.command, prompt]
         custom = os.environ.get(f"AIOS_BENCH_{self.agent.name.upper()}_COMMAND")
         if custom:
-            command = [custom, prompt]
+            import shlex
+            command = [*shlex.split(custom), prompt]
         env = os.environ.copy()
         env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
                     "AIOS_BENCH_AGENT": self.agent.name, "AIOS_BENCH_MODEL": self.model})
@@ -128,12 +130,21 @@ class BenchmarkRunner:
             trajectory.events.append({"type": "deterministic_evaluation", "result": evaluation})
 
         result = trajectory.to_dict()
-        result.update({"status": status, "evaluation": evaluation, "model": self.model,
-                       "harness": self.agent.name, "task_id": task.id,
-                       "stdout": str(stdout_path), "stderr": str(stderr_path)})
+        result.update({
+            "status": status,
+            "evaluation": evaluation,
+            "score": overall_score(trajectory),
+            "model": self.model,
+            "harness": self.agent.name,
+            "task_id": task.id,
+            "category": task.category,
+            "mode": task.mode,
+            "stdout": str(stdout_path),
+            "stderr": str(stderr_path),
+        })
         self._write_result(result)
         self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success,
-                   "status": status, "duration": trajectory.duration_seconds})
+                   "status": status, "duration": trajectory.duration_seconds, "score": result["score"]})
         return trajectory
 
     def run(self, tasks: list[Task]) -> int:
@@ -143,6 +154,7 @@ class BenchmarkRunner:
         print(f"AIOS-bench | {self.agent.display_name} | model={self.model}")
         print(f"Tasks: {len(remaining)} (resume={'on' if self.resume else 'off'})")
         passed = 0
+        scores: list[float] = []
         for index, task in enumerate(remaining, 1):
             timeout = self.task_timeout
             if self.total_timeout is not None:
@@ -151,9 +163,12 @@ class BenchmarkRunner:
                     return 2
             print(f"[{index}/{len(remaining)}] {task.id} ...", flush=True)
             trajectory = self.run_task(task, timeout)
+            score = overall_score(trajectory)
+            scores.append(score)
             if trajectory.success:
                 passed += 1
-            print(f"    {'PASS' if trajectory.success else 'FAIL'}  {trajectory.duration_seconds:.1f}s", flush=True)
-        print(f"\nResult: {passed}/{len(remaining)} passed")
+            print(f"    {'PASS' if trajectory.success else 'FAIL'}  {score:.1f}/100  {trajectory.duration_seconds:.1f}s", flush=True)
+        avg = sum(scores) / len(scores) if scores else 0.0
+        print(f"\nResult: {passed}/{len(remaining)} passed | average score {avg:.1f}/100")
         print(f"Results: {self.run_dir}")
         return 0 if passed == len(remaining) else 1
