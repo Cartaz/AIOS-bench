@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIOS-bench Dashboard</title>
+<style>
+:root{color-scheme:dark} body{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee} h1{margin-bottom:4px} .meta{color:#999;margin-bottom:24px} table{border-collapse:collapse;width:100%;max-width:1200px} th,td{padding:12px;border-bottom:1px solid #333;text-align:left} th{color:#aaa} .panel{margin-top:28px;max-width:1200px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto} .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px} .card{border:1px solid #333;border-radius:12px;padding:16px} .bar{height:8px;background:#333;border-radius:4px;overflow:hidden} .fill{height:100%;background:#aaa} small{color:#999}
+</style></head><body><h1>AIOS-bench</h1>
+<div class="meta">Harness × model comparison — deterministic task scores, difficulty tiers, and longitudinal run history.</div>
+<div class="panel"><h2>Latest leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Score</th><th>Passed</th><th>Success</th><th>Runtime</th></tr></thead>
+<tbody><tr><td>piagent</td><td>Qwen</td><td><strong>64.1</strong></td><td>12/28</td><td>42.9%</td><td>210.6 min</td></tr></tbody></table></div>
+<div class="panel"><h2>Run history</h2><table><thead><tr><th>Run</th><th>Harness</th><th>Model</th><th>Score</th><th>Passed</th><th>Git commit</th></tr></thead>
+<tbody><tr><td>2026-08-19_123411_frontier-v2</td><td>piagent</td><td>Qwen</td><td>64.1</td><td>12/28</td><td>6046d9a7603e</td></tr></tbody></table></div>
+<div class="panel"><h2>Difficulty tiers</h2><p><small>T3 = advanced, T4 = expert, T5 = frontier.</small></p><div id="tiers" class="grid"></div></div>
+<div class="panel"><h2>Capability breakdown</h2><div id="capabilities" class="grid"></div></div>
+<script>
+const results=[{"harness": "piagent", "model": "Qwen", "run_id": "2026-08-19_123411_frontier-v2", "passed": 12, "total": 28, "success": 42.857142857142854, "score": 64.1323982272314, "runtime": 210.56206917513458, "categories": {"autonomy": 86.09948778565798, "browser": 60.03107457898958, "coding": 63.61412512218964, "knowledge": 99.12775383141762, "learning": 68.21289334447229, "long_horizon": 27.179824561403507, "memory": 61.08416481892092, "subagents": 48.46224457215836, "tool_use": 63.201743051576194}, "tiers": {"3": 73.22503398838215, "4": 64.57423833311049, "5": 59.93877989636275}, "suite": "frontier_v2", "suite_revision": "ac0e892b67b03af771d8d6cc99b9b3520e4cdb466e2869f07996001045852ef9", "git_commit": "6046d9a7603eaca6dd4629662fbeee727e876528"}];
+const root=document.getElementById('capabilities');
+const tiers=document.getElementById('tiers');
+for(const r of results){
+  const entries=Object.entries(r.categories||{});
+  const card=document.createElement('div'); card.className='card';
+  card.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong><br><small>'+r.run_id+'</small>';
+  for(const [name,value] of entries){
+    card.innerHTML+='<p><small>'+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';
+  }
+  root.appendChild(card);
+  const tierCard=document.createElement('div'); tierCard.className='card';
+  tierCard.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong><br><small>'+r.run_id+'</small>';
+  for(const [name,value] of Object.entries(r.tiers||{}).sort()){
+    tierCard.innerHTML+='<p><small>Tier '+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';
+  }
+  tiers.appendChild(tierCard);
+}
+</script></body></html>
