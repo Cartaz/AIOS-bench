@@ -98,7 +98,7 @@ class BenchmarkRunner:
         env.update(invocation.environment)
         env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
                     "AIOS_BENCH_MODEL": self.model})
-        self._log({"event": "task_started", "task_id": task.id, "command": command, "model": self.model})
+        self._log({"event": "task_started", "task_id": task.id, "command": command, "model": self.model, "tier": task.tier})
         started = time.monotonic()
         trajectory = Trajectory(agent=self.agent.name, task_id=task.id)
         status = "completed"
@@ -145,11 +145,15 @@ class BenchmarkRunner:
             status = "failed"
             trajectory.success = False
 
-        spec = self.repo_root / "benchmarks" / "tasks" / "specs" / f"{task.id}.json"
         evaluation = None
-        if spec.is_file():
+        checks = list(task.acceptance)
+        spec = self.repo_root / "benchmarks" / "tasks" / "specs" / f"{task.id}.json"
+        if not checks and spec.is_file():
             spec_data = json.loads(spec.read_text(encoding="utf-8"))
-            evaluation = evaluate_artifacts(workspace, spec_data["checks"])
+            checks = spec_data["checks"]
+        if checks:
+            evaluation = evaluate_artifacts(workspace, checks)
+            trajectory.evaluation_score = float(evaluation["acceptance_score"])
             trajectory.success = trajectory.success and bool(evaluation["passed"])
             if not trajectory.success and status == "completed":
                 status = "failed"
@@ -158,12 +162,12 @@ class BenchmarkRunner:
         result = trajectory.to_dict()
         result.update({"status": status, "evaluation": evaluation, "score": overall_score(trajectory),
                        "model": self.model, "harness": self.agent.name, "task_id": task.id,
-                       "category": task.category, "mode": task.mode, "stdout": str(stdout_path),
-                       "stderr": str(stderr_path)})
+                       "category": task.category, "tier": task.tier, "mode": task.mode,
+                       "stdout": str(stdout_path), "stderr": str(stderr_path)})
         self._write_result(result)
         self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success,
                    "status": status, "duration": trajectory.duration_seconds, "score": result["score"],
-                   "telemetry_available": trajectory.telemetry_available})
+                   "telemetry_available": trajectory.telemetry_available, "tier": task.tier})
         return trajectory
 
     def cleanup(self) -> dict[str, int | bool]:
@@ -184,7 +188,7 @@ class BenchmarkRunner:
                 if timeout <= 0:
                     self.cleanup()
                     return 2
-            print(f"[{index}/{len(remaining)}] {task.id} ...", flush=True)
+            print(f"[{index}/{len(remaining)}] {task.id} [T{task.tier}] ...", flush=True)
             trajectory = self.run_task(task, timeout)
             score = overall_score(trajectory)
             scores.append(score)
