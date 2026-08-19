@@ -11,6 +11,7 @@ class Task:
     prompt: str
     mode: str = "cold"
     tier: int = 3
+    revision: int = 1
     tags: tuple[str, ...] = ()
     expected_artifacts: tuple[str, ...] = ()
     acceptance: tuple[dict[str, Any], ...] = ()
