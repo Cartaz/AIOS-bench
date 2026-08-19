@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .adapters import ADAPTERS, Adapter, PiAgentAdapter
@@ -33,10 +35,35 @@ AGENTS = {
 }
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _git_commit(repo_root: Path) -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def _suite_revision(repo_root: Path) -> str:
+    catalog = repo_root / "benchmarks" / "tasks" / "frontier_v2.json"
+    return hashlib.sha256(catalog.read_bytes()).hexdigest()
+
+
+def _safe_run_id(value: str) -> str:
+    cleaned = value.strip().replace("/", "_").replace("\\", "_")
+    if not cleaned or cleaned in {".", ".."}:
+        raise ValueError("run_id must not be empty")
+    return cleaned
+
+
 class BenchmarkRunner:
     def __init__(self, repo_root: Path, agent: AgentConfig, results_dir: Path,
                  task_timeout: float, total_timeout: float | None, resume: bool = True,
-                 model: str = "unknown", keep_raw: bool = False) -> None:
+                 model: str = "unknown", keep_raw: bool = False, run_id: str | None = None) -> None:
         self.repo_root = repo_root
         self.agent = agent
         self.results_dir = results_dir
@@ -45,10 +72,64 @@ class BenchmarkRunner:
         self.resume = resume
         self.model = model
         self.keep_raw = keep_raw
-        self.run_dir = results_dir / agent.name / model.replace("/", "_")
+        self.model_dir = results_dir / agent.name / model.replace("/", "_")
+        self.model_dir.mkdir(parents=True, exist_ok=True)
+        if run_id is None:
+            timestamp = datetime.now().astimezone().strftime("%Y-%m-%d_%H%M%S")
+            run_id = f"{timestamp}_frontier-v2"
+        self.run_id = _safe_run_id(run_id)
+        self.run_dir = self.model_dir / "runs" / self.run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint = self.run_dir / "results.jsonl"
         self.events = self.run_dir / "events.jsonl"
+        self.metadata_path = self.run_dir / "run.json"
+        self._write_metadata()
+        self._update_latest_pointer()
+
+    def _write_metadata(self, finished_at: str | None = None) -> None:
+        existing: dict = {}
+        if self.metadata_path.exists():
+            try:
+                existing = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                existing = {}
+        metadata = {
+            "benchmark": "AIOS-bench",
+            "suite": "frontier_v2",
+            "suite_revision": _suite_revision(self.repo_root),
+            "harness": self.agent.name,
+            "model": self.model,
+            "model_id": self.model,
+            "run_id": self.run_id,
+            "started_at": existing.get("started_at", _utc_now()),
+            "git_commit": _git_commit(self.repo_root),
+            "task_count": len(self._catalog_task_count()),
+        }
+        if finished_at is not None:
+            metadata["finished_at"] = finished_at
+        elif existing.get("finished_at"):
+            metadata["finished_at"] = existing["finished_at"]
+        self.metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    def _catalog_task_count(self) -> list[str]:
+        catalog = self.repo_root / "benchmarks" / "tasks" / "frontier_v2.json"
+        data = json.loads(catalog.read_text(encoding="utf-8"))
+        return [str(item["id"]) for item in data]
+
+    def _update_latest_pointer(self) -> None:
+        latest = self.model_dir / "latest"
+        try:
+            if latest.is_symlink() or latest.exists():
+                if latest.is_dir() and not latest.is_symlink():
+                    shutil.rmtree(latest)
+                else:
+                    latest.unlink()
+            latest.symlink_to(self.run_dir, target_is_directory=True)
+            fallback = self.model_dir / "latest.txt"
+            if fallback.exists():
+                fallback.unlink()
+        except OSError:
+            (self.model_dir / "latest.txt").write_text(self.run_id + "\n", encoding="utf-8")
 
     def completed(self, tasks: list[Task]) -> set[str]:
         if not self.resume or not self.checkpoint.exists():
@@ -65,7 +146,7 @@ class BenchmarkRunner:
 
     def _log(self, event: dict) -> None:
         with self.events.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"timestamp": time.time(), **event}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"timestamp": time.time(), "run_id": self.run_id, **event}, ensure_ascii=False) + "\n")
 
     def _write_result(self, item: dict) -> None:
         with self.checkpoint.open("a", encoding="utf-8") as f:
@@ -100,6 +181,7 @@ class BenchmarkRunner:
         env.update(invocation.environment)
         env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
                     "AIOS_BENCH_MODEL": self.model,
+                    "AIOS_BENCH_RUN_ID": self.run_id,
                     "AIOS_BENCH_FIXTURE_ROOT": str(self.repo_root / "benchmarks" / "fixtures" / "workspace")})
         self._log({"event": "task_started", "task_id": task.id, "command": command,
                    "model": self.model, "tier": task.tier, "task_revision": task.revision})
@@ -167,7 +249,9 @@ class BenchmarkRunner:
         result.update({"status": status, "evaluation": evaluation, "score": overall_score(trajectory),
                        "model": self.model, "harness": self.agent.name, "task_id": task.id,
                        "task_revision": task.revision, "category": task.category, "tier": task.tier,
-                       "mode": task.mode, "stdout": str(stdout_path), "stderr": str(stderr_path)})
+                       "mode": task.mode, "run_id": self.run_id, "suite": "frontier_v2",
+                       "suite_revision": _suite_revision(self.repo_root), "git_commit": _git_commit(self.repo_root),
+                       "stdout": str(stdout_path), "stderr": str(stderr_path)})
         self._write_result(result)
         self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success,
                    "status": status, "duration": trajectory.duration_seconds, "score": result["score"],
@@ -181,7 +265,7 @@ class BenchmarkRunner:
         done = self.completed(tasks)
         started = time.monotonic()
         remaining = [t for t in tasks if t.id not in done]
-        print(f"AIOS-bench | {self.agent.display_name} | model={self.model}")
+        print(f"AIOS-bench | {self.agent.display_name} | model={self.model} | run={self.run_id}")
         print(f"Tasks: {len(remaining)} (resume={'on' if self.resume else 'off'})")
         passed = 0
         scores: list[float] = []
@@ -191,6 +275,7 @@ class BenchmarkRunner:
                 timeout = min(timeout, self.total_timeout - (time.monotonic() - started))
                 if timeout <= 0:
                     self.cleanup()
+                    self._write_metadata(_utc_now())
                     return 2
             print(f"[{index}/{len(remaining)}] {task.id} [T{task.tier}] ...", flush=True)
             trajectory = self.run_task(task, timeout)
@@ -201,6 +286,7 @@ class BenchmarkRunner:
             print(f"    {'PASS' if trajectory.success else 'FAIL'}  {score:.1f}/100  {trajectory.duration_seconds:.1f}s", flush=True)
         avg = sum(scores) / len(scores) if scores else 0.0
         cleanup = self.cleanup()
+        self._write_metadata(_utc_now())
         print(f"\nResult: {passed}/{len(remaining)} passed | average score {avg:.1f}/100")
         if not self.keep_raw:
             print(f"Retention cleanup: removed {cleanup['files_removed']} files and {cleanup['dirs_removed']} dependency/cache directories")
