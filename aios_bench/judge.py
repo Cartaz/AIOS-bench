@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,17 +21,15 @@ def _assistant_text(rpc_stdout: str) -> str:
             item = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if item.get("type") == "message_end":
-            message = item.get("message") or {}
-            if message.get("role") != "assistant":
-                continue
-            content = message.get("content") or []
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    parts.append(str(block.get("text", "")))
-    if parts:
-        return "\n".join(parts).strip()
-    return ""
+        if item.get("type") != "message_end":
+            continue
+        message = item.get("message") or {}
+        if message.get("role") != "assistant":
+            continue
+        for block in message.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+    return "\n".join(parts).strip()
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -59,8 +57,25 @@ def _validate(result: dict[str, Any]) -> dict[str, Any]:
     score = float(result["score"])
     if not 0 <= score <= 100:
         raise ValueError("judge score must be between 0 and 100")
-    if not isinstance(result["criteria"], dict):
+    criteria = result["criteria"]
+    if not isinstance(criteria, dict):
         raise ValueError("judge criteria must be an object")
+    required_criteria = {"correctness", "completeness", "problem_solving", "efficiency", "robustness", "independence", "creativity"}
+    if set(criteria) != required_criteria:
+        raise ValueError("judge criteria keys do not match the required rubric")
+    for key in required_criteria:
+        value = float(criteria[key])
+        if not 0 <= value <= 100:
+            raise ValueError(f"judge criterion {key} must be between 0 and 100")
+        criteria[key] = round(value, 2)
+    expected = (
+        criteria["correctness"] * 0.30 + criteria["completeness"] * 0.15 +
+        criteria["problem_solving"] * 0.15 + criteria["efficiency"] * 0.15 +
+        criteria["robustness"] * 0.10 + criteria["independence"] * 0.10 +
+        criteria["creativity"] * 0.05
+    )
+    if abs(score - expected) > 1.0:
+        raise ValueError(f"judge score {score} disagrees with weighted criteria {expected:.2f}")
     for key in ("strengths", "weaknesses", "critical_failures", "evidence"):
         if not isinstance(result[key], list):
             raise ValueError(f"judge field {key} must be a list")
@@ -70,51 +85,48 @@ def _validate(result: dict[str, Any]) -> dict[str, Any]:
 
 def _snapshot_workspace(workspace: Path, root: Path) -> Path:
     judge_root = root / "judge_workspace"
-    if judge_root.exists():
-        shutil.rmtree(judge_root)
     shutil.copytree(workspace, judge_root)
     return judge_root
 
 
 def run_judge(*, model: str, task_id: str, category: str, tier: int, task_prompt: str,
               workspace: Path, run_dir: Path, timeout: float) -> dict[str, Any]:
-    """Run the same model as a read-only, blinded evaluator on a workspace snapshot."""
+    """Run the same model as a blinded evaluator on an isolated workspace snapshot."""
     if not JUDGE_PROMPT.is_file():
         return {"status": "error", "error": f"missing judge prompt: {JUDGE_PROMPT}"}
 
     with tempfile.TemporaryDirectory(prefix=f"aiosbench-judge-{task_id}-", dir=run_dir) as tmp:
-        tmp_root = Path(tmp)
-        judge_workspace = _snapshot_workspace(workspace, tmp_root)
+        judge_workspace = _snapshot_workspace(workspace, Path(tmp))
         request = (
-            f"TASK ID: {task_id}\n"
-            f"CATEGORY: {category}\n"
-            f"TIER: {tier}\n\n"
-            "ORIGINAL TASK REQUEST:\n"
-            f"{task_prompt}\n\n"
-            "The current working directory contains a read-only snapshot of the agent's final workspace. "
-            "Inspect it using the available read-only tools. Do not assume claims are true unless the artifacts support them. "
-            "Do not mention that you are the same model that produced the work.\n\n"
+            f"TASK ID: {task_id}\nCATEGORY: {category}\nTIER: {tier}\n\n"
+            "ORIGINAL TASK REQUEST:\n" + task_prompt + "\n\n"
+            "The current working directory contains an isolated snapshot of the agent's final workspace. "
+            "Inspect it using only the available read-only tools. Do not assume claims are true unless artifacts support them. "
+            "Do not modify any files. Do not discuss model identity or hidden evaluation logic.\n\n"
             "Return ONLY the requested JSON object."
         )
-        command = [
-            "pi", "--mode", "rpc", "--no-session", "--no-context-files", "--no-extensions", "--no-skills",
-            "--tools", "read,grep,find,ls", "--model", model, "--system-prompt", str(JUDGE_PROMPT),
+        extra_args = [
+            "--no-context-files", "--no-extensions", "--no-skills",
+            "--tools", "read,grep,find,ls", "--system-prompt", str(JUDGE_PROMPT),
         ]
         env = {"AIOS_BENCH_JUDGE": "1", "AIOS_BENCH_TASK_ID": task_id}
-        client = PiRPCClient(model, judge_workspace, timeout, environment=env)
-        original = client._command
-        client._command = lambda: command  # type: ignore[method-assign]
+        started = time.monotonic()
         try:
-            result = client.run(request)
+            result = PiRPCClient(model, judge_workspace, timeout, environment=env, extra_args=extra_args).run(request)
             text = _assistant_text(result.stdout)
             parsed = _validate(_extract_json(text))
-            parsed.update({"status": "ok", "raw_response": text, "duration_seconds": None})
+            parsed.update({
+                "status": "ok" if not result.timed_out and result.returncode == 0 else "error",
+                "raw_response": text,
+                "duration_seconds": round(time.monotonic() - started, 3),
+            })
+            if parsed["status"] != "ok":
+                parsed["error"] = "judge process did not exit cleanly"
             return parsed
         except Exception as exc:
             return {
                 "status": "error",
                 "error": str(exc),
                 "raw_response": _assistant_text(result.stdout) if "result" in locals() else "",
+                "duration_seconds": round(time.monotonic() - started, 3),
             }
-        finally:
-            client._command = original  # type: ignore[method-assign]
