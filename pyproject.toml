@@ -7,7 +7,9 @@ name = "aios-bench"
 version = "0.1.0"
 description = "Reproducible benchmark suite for local AI operating-system agents"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "pytest>=9.0",
+]
 
 [project.scripts]
 aios-bench = "aios_bench.cli:main"
