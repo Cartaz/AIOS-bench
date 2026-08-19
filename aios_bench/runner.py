@@ -8,6 +8,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .adapters import ADAPTERS, Adapter
 from .evaluators import evaluate_artifacts
 from .models import Task, Trajectory
 from .scoring import overall_score
@@ -16,17 +17,16 @@ from .scoring import overall_score
 @dataclass(frozen=True)
 class AgentConfig:
     name: str
-    command: tuple[str, ...]
     display_name: str
+    adapter: Adapter
 
 
 AGENTS = {
-    "hermes": AgentConfig("hermes", ("hermes", "chat", "-q"), "Hermes Agent"),
-    "piagent": AgentConfig("piagent", ("pi", "-p"), "Pi Agent"),
-    "opencode": AgentConfig("opencode", ("opencode",), "OpenCode"),
-    "goose": AgentConfig("goose", ("goose",), "Goose"),
-    "letta": AgentConfig("letta", ("letta",), "Letta"),
-    "agentzero": AgentConfig("agentzero", ("agent-zero",), "Agent Zero"),
+    name: AgentConfig(name, {
+        "hermes": "Hermes Agent", "piagent": "Pi Agent", "opencode": "OpenCode",
+        "goose": "Goose", "letta": "Letta", "agentzero": "Agent Zero",
+    }[name], adapter)
+    for name, adapter in ADAPTERS.items()
 }
 
 
@@ -84,14 +84,16 @@ class BenchmarkRunner:
             "Complete the task fully, verify the result, and do not modify benchmark files outside "
             "the workspace.\n\nTASK:\n" + task.prompt
         )
-        command = [*self.agent.command, prompt]
+        invocation = self.agent.adapter.build(prompt, workspace, self.model)
+        command = invocation.command
         custom = os.environ.get(f"AIOS_BENCH_{self.agent.name.upper()}_COMMAND")
         if custom:
             import shlex
             command = [*shlex.split(custom), prompt]
         env = os.environ.copy()
-        env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
-                    "AIOS_BENCH_AGENT": self.agent.name, "AIOS_BENCH_MODEL": self.model})
+        env.update(invocation.environment)
+        env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
+                    "AIOS_BENCH_MODEL": self.model})
         self._log({"event": "task_started", "task_id": task.id, "command": command, "model": self.model})
         started = time.monotonic()
         trajectory = Trajectory(agent=self.agent.name, task_id=task.id)
@@ -130,18 +132,10 @@ class BenchmarkRunner:
             trajectory.events.append({"type": "deterministic_evaluation", "result": evaluation})
 
         result = trajectory.to_dict()
-        result.update({
-            "status": status,
-            "evaluation": evaluation,
-            "score": overall_score(trajectory),
-            "model": self.model,
-            "harness": self.agent.name,
-            "task_id": task.id,
-            "category": task.category,
-            "mode": task.mode,
-            "stdout": str(stdout_path),
-            "stderr": str(stderr_path),
-        })
+        result.update({"status": status, "evaluation": evaluation, "score": overall_score(trajectory),
+                       "model": self.model, "harness": self.agent.name, "task_id": task.id,
+                       "category": task.category, "mode": task.mode, "stdout": str(stdout_path),
+                       "stderr": str(stderr_path)})
         self._write_result(result)
         self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success,
                    "status": status, "duration": trajectory.duration_seconds, "score": result["score"]})
