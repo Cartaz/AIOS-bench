@@ -29,13 +29,16 @@ def build_dashboard(results_root: Path) -> Path:
         scores = [float(x.get("score", 100.0 if x.get("success") else 0.0)) for x in items]
         seconds = sum(float(x.get("duration_seconds", 0)) for x in items)
         categories: dict[str, list[float]] = defaultdict(list)
+        tiers: dict[str, list[float]] = defaultdict(list)
         for x in items:
             categories[x.get("category", "unknown")].append(float(x.get("score", 0)))
+            tiers[str(x.get("tier", "unknown"))].append(float(x.get("score", 0)))
         summaries.append({"harness": harness, "model": model, "passed": passed, "total": total,
                           "success": (passed / total * 100 if total else 0),
                           "score": (sum(scores) / len(scores) if scores else 0),
                           "runtime": seconds / 60,
-                          "categories": {k: sum(v) / len(v) for k, v in categories.items()}})
+                          "categories": {k: sum(v) / len(v) for k, v in categories.items()},
+                          "tiers": {k: sum(v) / len(v) for k, v in tiers.items()}})
 
     cards = "".join(
         f'<tr><td>{escape(x["harness"])}</td><td>{escape(x["model"])}</td>'
@@ -50,16 +53,20 @@ def build_dashboard(results_root: Path) -> Path:
 <style>
 :root{{color-scheme:dark}} body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}} h1{{margin-bottom:4px}} .meta{{color:#999;margin-bottom:24px}} table{{border-collapse:collapse;width:100%;max-width:1100px}} th,td{{padding:12px;border-bottom:1px solid #333;text-align:left}} th{{color:#aaa}} .panel{{margin-top:28px;max-width:1100px;padding:20px;border:1px solid #333;border-radius:12px}} .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}} .card{{border:1px solid #333;border-radius:12px;padding:16px}} .bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}} .fill{{height:100%;background:#aaa}} small{{color:#999}}
 </style></head><body><h1>AIOS-bench</h1>
-<div class="meta">Harness × model comparison — deterministic task scores and longitudinal history.</div>
+<div class="meta">Harness × model comparison — deterministic task scores, difficulty tiers, and longitudinal history.</div>
 <div class="panel"><h2>Leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Score</th><th>Passed</th><th>Success</th><th>Runtime</th></tr></thead>
 <tbody>{cards or '<tr><td colspan="6">No benchmark results yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Difficulty tiers</h2><p><small>T3 = advanced, T4 = expert, T5 = frontier. The benchmark intentionally contains no basic/intermediate tasks.</small></p><div id="tiers" class="grid"></div></div>
 <div class="panel"><h2>Capability breakdown</h2><div id="capabilities" class="grid"></div></div>
 <div class="panel"><h2>Longitudinal model comparison</h2><p>Each run is keyed by <code>harness × model</code>. Re-running the same harness with a new model creates a new comparison point instead of overwriting history.</p></div>
 <script>
 const results={data};
 const root=document.getElementById('capabilities');
+const tiers=document.getElementById('tiers');
 for(const r of results){{const entries=Object.entries(r.categories||{{}});const card=document.createElement('div');card.className='card';card.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong>';
-for(const [name,value] of entries){{card.innerHTML+='<p><small>'+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';}}root.appendChild(card);}}
+for(const [name,value] of entries){{card.innerHTML+='<p><small>'+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';}}root.appendChild(card);
+const tierCard=document.createElement('div');tierCard.className='card';tierCard.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong>';
+for(const [name,value] of Object.entries(r.tiers||{{}}).sort()){{tierCard.innerHTML+='<p><small>Tier '+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';}}tiers.appendChild(tierCard);}}
 </script></body></html>'''
     output = results_root / "dashboard.html"
     output.write_text(html, encoding="utf-8")
