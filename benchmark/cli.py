@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
-import sys
 from pathlib import Path
 
+from .fixtures.seed import seed
 from .models import load_tasks
 from .scoring import aggregate, evaluate
 
 ROOT = Path(__file__).resolve().parents[1]
-TASKS = ROOT / "benchmark" / "tasks" / "pilot.json"
 
 
 def cmd_list(_: argparse.Namespace) -> int:
@@ -29,34 +29,60 @@ def cmd_validate(_: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    tasks = [t for t in load_tasks() if args.suite == "pilot" or t.id in set(args.task)]
+    all_tasks = load_tasks()
+    selected = all_tasks if args.suite == "pilot" else [t for t in all_tasks if t.id in set(args.task)]
     if args.category:
-        tasks = [t for t in tasks if t.category in args.category]
+        selected = [t for t in selected if t.category in args.category]
     if args.mode:
-        tasks = [t for t in tasks if t.mode == args.mode]
-    if not tasks:
+        selected = [t for t in selected if t.mode == args.mode]
+    if not selected:
         raise SystemExit("No tasks selected")
 
     out = Path(args.output or f"results/{args.run_id}.jsonl")
     out.parent.mkdir(parents=True, exist_ok=True)
-    workspace = Path(args.workspace or f"runs/{args.run_id}/workspace")
-    workspace.mkdir(parents=True, exist_ok=True)
+    run_root = Path(args.workspace or f"runs/{args.run_id}")
+    run_root.mkdir(parents=True, exist_ok=True)
+    persistent = run_root / "workspace"
 
     with out.open("w", encoding="utf-8") as fh:
-        for task in tasks:
+        for task in selected:
+            # Cold tasks are isolated. Warm/longitudinal tasks share state so that
+            # memory and skills can persist across the selected task sequence.
+            if task.mode == "cold":
+                workspace = run_root / "tasks" / task.id
+                if workspace.exists():
+                    shutil.rmtree(workspace)
+            else:
+                workspace = persistent
+            seed(workspace)
+            workspace.mkdir(parents=True, exist_ok=True)
+
             payload = {
                 "protocol": "aios-bench/0.1",
                 "task": task.__dict__,
                 "workspace": str(workspace.resolve()),
                 "run_id": args.run_id,
             }
-            proc = subprocess.run(
-                args.adapter + [json.dumps(payload)],
-                text=True,
-                capture_output=True,
-                timeout=task.timeout_s,
-            )
-            if proc.returncode != 0:
+            try:
+                proc = subprocess.run(
+                    args.adapter + [json.dumps(payload)],
+                    text=True,
+                    capture_output=True,
+                    timeout=task.timeout_s,
+                )
+            except subprocess.TimeoutExpired:
+                proc = None
+
+            if proc is None:
+                traj = {
+                    "agent": args.agent,
+                    "task_id": task.id,
+                    "success": False,
+                    "errors": 1,
+                    "notes": f"Timed out after {task.timeout_s}s",
+                    "events": [],
+                }
+            elif proc.returncode != 0:
                 traj = {
                     "agent": args.agent,
                     "task_id": task.id,
