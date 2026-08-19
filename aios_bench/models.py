@@ -31,7 +31,25 @@ class Trajectory:
     memory_reads: int = 0
     memory_writes: int = 0
     skills_created: int = 0
+    telemetry_available: bool = False
     events: list[dict[str, Any]] = field(default_factory=list)
+
+    def apply_events(self, events: list[dict[str, Any]]) -> None:
+        self.events = events
+        self.telemetry_available = bool(events)
+        counts: dict[str, int] = {}
+        for event in events:
+            kind = event.get("type", "unknown")
+            counts[kind] = counts.get(kind, 0) + 1
+        self.tool_calls = counts.get("tool_call", 0)
+        self.errors = max(self.errors, counts.get("error", 0))
+        self.retries = counts.get("retry", 0)
+        self.human_interventions = counts.get("human_intervention", 0)
+        self.files_read = counts.get("file_read", 0)
+        self.files_written = counts.get("file_write", 0)
+        self.memory_reads = counts.get("memory_read", 0)
+        self.memory_writes = counts.get("memory_write", 0)
+        self.skills_created = counts.get("skill_create", 0) + counts.get("skill_update", 0)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,5 +68,6 @@ class Trajectory:
             "memory_reads": self.memory_reads,
             "memory_writes": self.memory_writes,
             "skills_created": self.skills_created,
+            "telemetry_available": self.telemetry_available,
             "events": self.events,
         }
