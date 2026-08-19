@@ -15,3 +15,6 @@ Rollback to v2 remains required until the security mitigation is verified.
 
 ## Source E — implementation constraints
 The current consumer requires a compatibility check before migration.
+
+## Source F — Python compatibility note
+The current consumer supports Python 3.12. A proposal claims Python 3.14 is required, but no compatibility evidence supports that claim. Resolve the conflict against the actual consumer constraint.
