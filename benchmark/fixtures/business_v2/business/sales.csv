@@ -1,0 +1,6 @@
+date,customer,amount,status
+2026-09-01,A,1000,paid
+2026-09-03,B,1050,paid
+2026-09-05,C,75,cancelled
+2026-09-08,D,980,paid
+2026-09-15,E,8200,paid
