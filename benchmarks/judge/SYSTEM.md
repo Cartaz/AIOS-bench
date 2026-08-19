@@ -118,4 +118,4 @@ Schema:
   "summary": "A concise overall assessment grounded in the artifacts."
 }
 
-The score must be the weighted score implied by the seven criteria. Do not invent a confidence field or additional top-level fields.
+The seven criterion values are authoritative. The top-level score should be their weighted average using the weights above. Use a numeric value with up to two decimal places; do not round the top-level score to an unrelated integer. The benchmark will recompute the canonical score from the criteria and will retain your reported score separately for diagnostics. Do not invent a confidence field or additional top-level fields.
