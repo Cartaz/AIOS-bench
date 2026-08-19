@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -54,11 +55,21 @@ def rejudge_run(*, repo_root: Path, run_dir: Path, timeout: float, model_overrid
     tasks = {task.id: task for task in load_tasks(repo_root / "benchmarks" / "tasks")}
     output_path = run_dir / "judge_calibration.jsonl"
     records: list[dict[str, Any]] = []
+    total = len(results)
+
+    print("\n=== LLM Judge calibration ===\n", flush=True)
+    print(f"Model: {model}", flush=True)
+    print(f"Tasks: {total}", flush=True)
+    print(f"Timeout: {timeout:.0f}s per task\n", flush=True)
 
     with output_path.open("w", encoding="utf-8") as out:
-        for result in results:
+        for index, result in enumerate(results, 1):
             task_id = result["task_id"]
             task = tasks.get(task_id)
+            objective_score = float(result.get("score", 0.0))
+            started = time.perf_counter()
+            print(f"[{index}/{total}] {task_id} [T{task.tier if task else '?'}] ...", flush=True)
+
             if task is None:
                 record = {"task_id": task_id, "status": "error", "error": "task not found in current catalog"}
             else:
@@ -80,13 +91,25 @@ def rejudge_run(*, repo_root: Path, run_dir: Path, timeout: float, model_overrid
                         "task_id": task_id,
                         "category": task.category,
                         "tier": task.tier,
-                        "objective_score": float(result.get("score", 0.0)),
+                        "objective_score": objective_score,
                         "objective_passed": bool(result.get("success", result.get("passed", False))),
                         "judge": judge,
                     }
+
             records.append(record)
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
             out.flush()
+
+            elapsed = time.perf_counter() - started
+            judge = record.get("judge") or {}
+            if judge.get("status") == "ok":
+                judge_score = float(judge["score"])
+                gap = judge_score - objective_score
+                print(f"    JUDGE  {judge_score:.1f}/100  {elapsed:.1f}s  objective={objective_score:.1f}  gap={gap:+.1f}", flush=True)
+            elif record.get("status") == "error":
+                print(f"    ERROR  {record.get('error', 'unknown error')}  {elapsed:.1f}s", flush=True)
+            else:
+                print(f"    ERROR  judge failed: {judge.get('error', 'unknown error')}  {elapsed:.1f}s", flush=True)
 
     pairs = [
         (float(r["objective_score"]), float(r["judge"]["score"]))
@@ -125,4 +148,9 @@ def rejudge_run(*, repo_root: Path, run_dir: Path, timeout: float, model_overrid
     (run_dir / "judge_calibration_summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
+    print("\nJudge calibration complete", flush=True)
+    print(f"{len(pairs)}/{len(records)} evaluated successfully", flush=True)
+    if judged:
+        print(f"Average judge score: {sum(judged) / len(judged):.1f}/100", flush=True)
+    print(f"Judge errors: {len(records) - len(pairs)}", flush=True)
     return output_path
