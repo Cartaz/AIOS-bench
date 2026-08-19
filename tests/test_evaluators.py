@@ -21,7 +21,7 @@ def test_json_and_regex_checks(tmp_path: Path):
     (tmp_path / "report.md").write_text("Result: 42\n", encoding="utf-8")
     result = evaluate_artifacts(tmp_path, [
         {"type": "json_valid", "path": "data.json", "weight": 1},
-        {"type": "regex", "path": "report.md", "pattern": r"Result:\\s+\\d+", "weight": 1},
+        {"type": "regex", "path": "report.md", "pattern": r"Result:\s+\d+", "weight": 1},
     ])
     assert result["passed"] is True
     assert result["acceptance_score"] == 1.0
