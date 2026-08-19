@@ -20,25 +20,25 @@ def _events_from_line(line: str, source: str, collector: EventCollector) -> None
         return
     lower = text.lower()
     if "error" in lower or "exception" in lower or "traceback" in lower:
-        collector.add("error", source=source, message=text[:1000])
+        collector.add("error", source=source, message=text[:1000], inferred=True)
     if "retry" in lower or "retrying" in lower:
-        collector.add("retry", source=source, message=text[:1000])
+        collector.add("retry", source=source, message=text[:1000], inferred=True)
     if any(x in lower for x in ("memory read", "recall memory", "search memory")):
-        collector.add("memory_read", source=source, message=text[:1000])
+        collector.add("memory_read", source=source, message=text[:1000], inferred=True)
     if any(x in lower for x in ("memory write", "save memory", "remember")):
-        collector.add("memory_write", source=source, message=text[:1000])
+        collector.add("memory_write", source=source, message=text[:1000], inferred=True)
     if "subagent" in lower and any(x in lower for x in ("start", "spawn", "delegate")):
-        collector.add("subagent_start", source=source, message=text[:1000])
+        collector.add("subagent_start", source=source, message=text[:1000], inferred=True)
     if "subagent" in lower and any(x in lower for x in ("end", "finish", "complete")):
-        collector.add("subagent_end", source=source, message=text[:1000])
+        collector.add("subagent_end", source=source, message=text[:1000], inferred=True)
     if any(x in lower for x in ("file read", "read file", "cat ", "read_file")):
-        collector.add("file_read", source=source, message=text[:1000])
+        collector.add("file_read", source=source, message=text[:1000], inferred=True)
     if any(x in lower for x in ("file write", "write file", "write_file")):
-        collector.add("file_write", source=source, message=text[:1000])
+        collector.add("file_write", source=source, message=text[:1000], inferred=True)
     for pattern in TOOL_PATTERNS:
         match = pattern.search(text)
         if match:
-            collector.add("tool_call", source=source, name=match.group(1)[:200], raw=text[:1000])
+            collector.add("tool_call", source=source, name=match.group(1)[:200], raw=text[:1000], inferred=True)
             break
 
 

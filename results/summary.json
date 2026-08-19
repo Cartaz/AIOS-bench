@@ -1,0 +1,61 @@
+{
+  "runs": [
+    {
+      "run_id": "2026-08-19_224400_frontier-v3",
+      "harness": "codex",
+      "model": "Qwopus",
+      "suite": "frontier_v3",
+      "suite_revision": "86e30d032aa00bb6e193ed8b63a2e831f8e9ab6006abdfd110fda45c0cf51c90",
+      "git_commit": "e125a1fdd46591ebb6e1357801f22bf91812c747",
+      "tasks": 28,
+      "passed": 0,
+      "success_rate": 0.0,
+      "mean_score": 15.214285714285717,
+      "runtime_seconds": 1.8376733679992867,
+      "telemetry_rate": 100.0
+    },
+    {
+      "run_id": "2026-08-19_123411_frontier-v2",
+      "harness": "piagent",
+      "model": "Qwen",
+      "suite": "frontier_v2",
+      "suite_revision": "ac0e892b67b03af771d8d6cc99b9b3520e4cdb466e2869f07996001045852ef9",
+      "git_commit": "6046d9a7603eaca6dd4629662fbeee727e876528",
+      "tasks": 28,
+      "passed": 12,
+      "success_rate": 42.857142857142854,
+      "mean_score": 64.1323982272314,
+      "runtime_seconds": 12633.724150508075,
+      "telemetry_rate": 100.0
+    },
+    {
+      "run_id": "legacy",
+      "harness": "piagent",
+      "model": "aios-llamacpp/Qwen",
+      "suite": "legacy",
+      "suite_revision": "legacy",
+      "git_commit": "unknown",
+      "tasks": 26,
+      "passed": 23,
+      "success_rate": 88.46153846153845,
+      "mean_score": 87.21339162132833,
+      "runtime_seconds": 7543.419940909036,
+      "telemetry_rate": 100.0
+    },
+    {
+      "run_id": "dryrun-frontier-v3-piagent",
+      "harness": "piagent",
+      "model": "dry-run",
+      "suite": "frontier_v3",
+      "suite_revision": "86e30d032aa00bb6e193ed8b63a2e831f8e9ab6006abdfd110fda45c0cf51c90",
+      "git_commit": "e125a1fdd46591ebb6e1357801f22bf91812c747",
+      "tasks": 8,
+      "passed": 0,
+      "success_rate": 0.0,
+      "mean_score": 15.000000000000002,
+      "runtime_seconds": 4.499419727988425,
+      "telemetry_rate": 100.0
+    }
+  ],
+  "result_count": 90
+}

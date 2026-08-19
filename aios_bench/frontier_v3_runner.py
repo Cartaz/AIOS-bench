@@ -1,5 +1,6 @@
 import os,shutil,subprocess,hashlib,json
 from datetime import datetime,timezone
+from .fixtures import materialize_long_horizon_corpus
 from .runner import BenchmarkRunner
 
 class FrontierV3Runner(BenchmarkRunner):
@@ -8,8 +9,34 @@ class FrontierV3Runner(BenchmarkRunner):
         super().__init__(repo_root,agent,results_dir,task_timeout,total_timeout,resume=resume,model=model,keep_raw=keep_raw,run_id=run_id)
     def _revision(self):
         h=hashlib.sha256()
-        for p in sorted((self.repo_root/'benchmarks/tasks/frontier_v3').glob('*.json')):h.update(p.read_bytes())
+        # A result is comparable only when the task definition *and* the
+        # deterministic oracle/fixture are identical.  Hashing just the JSON
+        # catalog allowed stale results to be silently resumed after a fixture
+        # or reference-check change.
+        roots=[
+            self.repo_root/'benchmarks/tasks/frontier_v3',
+            self.repo_root/'benchmarks/fixtures',
+        ]
+        for root in roots:
+            for p in sorted(
+                path for path in root.rglob('*')
+                if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc'
+            ):
+                h.update(p.relative_to(self.repo_root).as_posix().encode())
+                h.update(p.read_bytes())
+        for p in sorted((self.repo_root/'aios_bench').glob('reference_checks*.py')):
+            h.update(p.name.encode())
+            h.update(p.read_bytes())
+        for p in [
+            self.repo_root/'aios_bench/evaluators.py',
+            self.repo_root/'aios_bench/frontier_v3_runner.py',
+            self.repo_root/'aios_bench/fixtures.py',
+        ]:
+            h.update(p.name.encode())
+            h.update(p.read_bytes())
         return h.hexdigest()
+    def _current_suite_revision(self):
+        return self._revision()
     def _write_metadata(self,finished_at=None):
         existing={}
         if getattr(self,'metadata_path',None) and self.metadata_path.exists():
@@ -32,6 +59,8 @@ class FrontierV3Runner(BenchmarkRunner):
         p=self.run_dir/'persistent_state'/category;p.mkdir(parents=True,exist_ok=True);return p
     def _workspace(self,task):
         path=super()._workspace(task)
+        if task.id=='long_horizon_001':
+            materialize_long_horizon_corpus(path)
         if task.category in {'memory','learning'} and task.mode=='warm':
             state=self._state(task.category);name='.agent_memory' if task.category=='memory' else 'skills';src=state/name
             if src.is_dir():

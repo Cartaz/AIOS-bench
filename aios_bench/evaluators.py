@@ -35,7 +35,12 @@ def _run_check_command(workspace: Path, command: str, timeout: float=30.0):
     p=subprocess.run(command,cwd=workspace,shell=True,text=True,capture_output=True,timeout=timeout,check=False)
     return p.returncode==0,(p.stdout+"\n"+p.stderr).strip()[-4000:]
 
-def evaluate_artifacts(workspace: Path, checks: list[dict[str,Any]], run_dir: Path|None=None) -> dict[str,Any]:
+def evaluate_artifacts(
+    workspace: Path,
+    checks: list[dict[str,Any]],
+    run_dir: Path|None=None,
+    events: list[dict[str, Any]] | None=None,
+) -> dict[str,Any]:
     results=[]
     for check in checks:
         kind=check["type"]; path=check.get("path",""); detail=""
@@ -52,7 +57,12 @@ def evaluate_artifacts(workspace: Path, checks: list[dict[str,Any]], run_dir: Pa
             elif kind=="sha256": passed=file_sha256(workspace,path)==check["sha256"]
             elif kind=="unchanged": passed=file_sha256(workspace,path)==_fixture_sha256(path)
             elif kind=="command": passed,detail=_run_check_command(workspace,check["command"],float(check.get("timeout",30)))
-            elif kind=="reference": passed,detail=check_task(check["task_id"],workspace,Path(os.environ["AIOS_BENCH_FIXTURE_ROOT"]),run_dir)
+            elif kind=="reference":
+                passed,detail=check_task(
+                    check["task_id"], workspace,
+                    Path(os.environ["AIOS_BENCH_FIXTURE_ROOT"]), run_dir,
+                    events=events or [],
+                )
             elif kind=="max_files":
                 p=_safe_path(workspace,path or "."); n=sum(1 for x in p.rglob("*") if x.is_file()) if p.exists() else 0; passed=n<=int(check["max"]); detail=f"file_count={n}"
             else: raise EvaluationError(f"unknown check type: {kind}")

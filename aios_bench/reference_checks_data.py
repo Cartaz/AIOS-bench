@@ -1,12 +1,13 @@
-from .reference_checks_core import read,load,run,same,ok
+from .reference_checks_core import read,load,run,same,eval_path,ok
 from pathlib import Path
 import re,json
 
 def check(t,w,fx):
     if t=="autonomy_001":
-        a=run(w,["python","tools/expense_report.py","--input","data/expenses.csv","--output","/tmp/a1.md"]); b=run(w,["python","tools/expense_report.py","--input","data/expenses_alt.csv","--output","/tmp/a1a.md"])
+        first,alternate=eval_path(w,"a1.md"),eval_path(w,"a1a.md")
+        a=run(w,["python","tools/expense_report.py","--input","data/expenses.csv","--output",str(first)]); b=run(w,["python","tools/expense_report.py","--input","data/expenses_alt.csv","--output",str(alternate)])
         if a.returncode or b.returncode:return ok(False,"expense tool failed")
-        x,y=Path("/tmp/a1.md").read_text(errors="replace"),Path("/tmp/a1a.md").read_text(errors="replace")
+        x,y=first.read_text(errors="replace"),alternate.read_text(errors="replace")
         return ok("91.07" in x and "742.50" in y and re.search(r"(skipped|malformed).{0,30}1",x,re.I|re.S) and "91.07" not in read(w,"tools/expense_report.py"),"expense tool executes on both datasets")
     if t=="autonomy_002":
         d=load(w,"reports/action_tracker.json")
@@ -47,15 +48,16 @@ def check(t,w,fx):
     if t=="learning_001":
         x=read(w,"skills/reporting_workflow.md")
         if "580" in x or "91.07" in x:return ok(False,"workflow hard-codes fixture totals")
-        a=run(w,["python","skills/reporting_workflow.py","--input","data/sales.csv","--output","/tmp/l1"]);b=run(w,["python","skills/reporting_workflow.py","--input","data/sales_alt.csv","--output","/tmp/l1a"])
-        good=a.returncode==b.returncode==0 and "580" in Path("/tmp/l1").read_text(errors="replace") and "742" in Path("/tmp/l1a").read_text(errors="replace") and re.search(r"generalization\s*:",x,re.I)
+        first,alternate=eval_path(w,"l1"),eval_path(w,"l1a")
+        a=run(w,["python","skills/reporting_workflow.py","--input","data/sales.csv","--output",str(first)]);b=run(w,["python","skills/reporting_workflow.py","--input","data/sales_alt.csv","--output",str(alternate)])
+        good=a.returncode==b.returncode==0 and "580" in first.read_text(errors="replace") and "742" in alternate.read_text(errors="replace") and re.search(r"generalization\s*:",x,re.I)
         return ok(bool(good),"learned workflow transfers")
     if t=="learning_002":
-        x=read(w,"reports/learning_transfer.md");p=run(w,["python","skills/reporting_workflow.py","--input","data/sales_schema_shift.csv","--output","/tmp/l2"])
+        x=read(w,"reports/learning_transfer.md");p=run(w,["python","skills/reporting_workflow.py","--input","data/sales_schema_shift.csv","--output",str(eval_path(w,"l2"))])
         good=p.returncode==0 and all(re.search(z,x,re.I) for z in [r"transferred\s+steps\s*:",r"adapted\s+steps\s*:",r"adaptation\s+reason\s*:",r"txn_date|gross_usd"])
         return ok(good,"learning transfer verified")
     if t=="learning_003":
-        x,r=read(w,"skills/reporting_workflow.md"),read(w,"reports/learning_correction.md");p=run(w,["python","skills/reporting_workflow.py","--input","data/sales.csv","--output","/tmp/l3"]);out=Path("/tmp/l3").read_text(errors="replace") if Path("/tmp/l3").exists() else ""
+        x,r=read(w,"skills/reporting_workflow.md"),read(w,"reports/learning_correction.md");output=eval_path(w,"l3");p=run(w,["python","skills/reporting_workflow.py","--input","data/sales.csv","--output",str(output)]);out=output.read_text(errors="replace") if output.exists() else ""
         good="sum of the `units`" not in x and re.search(r"sum.*revenue",x,re.I) and re.search(r"independent\s+validation\s*:\s*\S+",r,re.I) and p.returncode==0 and "580" in out
         return ok(bool(good),"planted learning error corrected")
     return None

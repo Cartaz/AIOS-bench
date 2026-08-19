@@ -1,0 +1,1 @@
+{"timestamp": 1787172068.4447079, "run_id": "2026-08-19_224108_frontier-v3", "event": "task_started", "task_id": "autonomy_001", "command": ["pi", "--mode", "rpc", "--no-session", "--model", "Qwen"], "model": "Qwen", "tier": 3, "task_revision": 3}

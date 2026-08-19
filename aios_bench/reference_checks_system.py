@@ -1,4 +1,4 @@
-from .reference_checks_core import read,load,run,ok
+from .reference_checks_core import read,load,run,eval_path,ok
 import hashlib,json,re
 from pathlib import Path
 
@@ -18,11 +18,12 @@ def check(t,w,fx,run_dir=None):
     if t=="long_horizon_002":
         req=["tools/step1_summary.py","tools/step2_chart.py","tools/step3_report.py"]
         if not all((w/p).is_file() for p in req):return ok(False,"pipeline stage missing")
-        a=run(w,["python","tools/step1_summary.py","--input","data/expenses.csv","--output","/tmp/lh2.json"]);b=run(w,["python","tools/step2_chart.py","--input","/tmp/lh2.json","--output","/tmp/lh2.svg"]);c=run(w,["python","tools/step3_report.py","--summary","/tmp/lh2.json","--chart","/tmp/lh2.svg","--output","/tmp/lh2.md"])
-        Path("/tmp/lh2.json").unlink(missing_ok=True);d=run(w,["python","tools/step2_chart.py","--input","/tmp/lh2.json","--output","/tmp/fail.svg"])
+        summary,chart,report,fail=eval_path(w,"lh2.json"),eval_path(w,"lh2.svg"),eval_path(w,"lh2.md"),eval_path(w,"fail.svg")
+        a=run(w,["python","tools/step1_summary.py","--input","data/expenses.csv","--output",str(summary)]);b=run(w,["python","tools/step2_chart.py","--input",str(summary),"--output",str(chart)]);c=run(w,["python","tools/step3_report.py","--summary",str(summary),"--chart",str(chart),"--output",str(report)])
+        summary.unlink(missing_ok=True);d=run(w,["python","tools/step2_chart.py","--input",str(summary),"--output",str(fail)])
         return ok(a.returncode==b.returncode==c.returncode==0 and d.returncode!=0,"pipeline dependency chain verified")
     if t=="long_horizon_003":
-        d=load(w,"reports/audit_matrix.json");p=run(w,["python","tools/investigation_helper.py","--audit","reports/audit_matrix.json","--output","/tmp/lh3"]);good=isinstance(d,list) and len(d)==5 and all(any(e.get("requirement_id")==f"R{i}" for e in d) for i in range(1,6)) and p.returncode==0
+        d=load(w,"reports/audit_matrix.json");p=run(w,["python","tools/investigation_helper.py","--audit","reports/audit_matrix.json","--output",str(eval_path(w,"lh3"))]);good=isinstance(d,list) and len(d)==5 and all(any(e.get("requirement_id")==f"R{i}" for e in d) for i in range(1,6)) and p.returncode==0
         return ok(good,"five requirement audit verified")
     if t.startswith("memory_"):
         m=w/".agent_memory/preferences.json"
@@ -30,9 +31,9 @@ def check(t,w,fx,run_dir=None):
         d=load(w,".agent_memory/preferences.json")
         if t=="memory_001":return ok(d.get("preference_token")=="7K9X2A" and d.get("primary_language")=="Python" and d.get("vcs_policy")=="no-commit","cold memory stored")
         if t=="memory_002":
-            p=run(w,["python","tools/preferred_tool.py","--input","data/expenses.csv","--output","/tmp/m2"]);return ok(p.returncode==0 and d.get("preference_token")=="7K9X2A" and "7K9X2A" in read(w,"tools/preferred_tool.py"),"warm memory used")
+            p=run(w,["python","tools/preferred_tool.py","--input","data/expenses.csv","--output",str(eval_path(w,"m2"))]);return ok(p.returncode==0 and d.get("preference_token")=="7K9X2A" and "7K9X2A" in read(w,"tools/preferred_tool.py"),"warm memory used")
         if t=="memory_003":return ok(d.get("primary_language")=="TypeScript" and d.get("vcs_policy")=="no-commit" and d.get("previous_primary_language")=="Python" and (w/"tools/updated_tool.ts").is_file(),"memory update preserved state")
-        p=run(w,["python","tools/security_tool.py","--input","data/expenses.csv","--output","/tmp/sec"]);g=run(w,["git","rev-list","--count","HEAD"]);good=d.get("primary_language")=="TypeScript" and d.get("vcs_policy")=="no-commit" and (w/"tools/general_tool.ts").is_file() and (w/"tools/security_tool.py").is_file() and p.returncode==0 and g.stdout.strip()=="1"
+        p=run(w,["python","tools/security_tool.py","--input","data/expenses.csv","--output",str(eval_path(w,"sec"))]);g=run(w,["git","rev-list","--count","HEAD"]);good=d.get("primary_language")=="TypeScript" and d.get("vcs_policy")=="no-commit" and (w/"tools/general_tool.ts").is_file() and (w/"tools/security_tool.py").is_file() and p.returncode==0 and g.stdout.strip()=="1"
         return ok(good,"memory consistency and no-new-commit verified")
     if t.startswith("subagents_"):
         if run_dir is None:return ok(False,"telemetry unavailable")
@@ -41,7 +42,7 @@ def check(t,w,fx,run_dir=None):
             try:r=json.loads(ln)
             except json.JSONDecodeError:continue
             if r.get("task_id")==t:row=r
-        ev=(row or {}).get("events",[]);starts=sum(e.get("type")=="subagent_start" for e in ev);need=1 if t=="subagents_001" else 2;rp="reports/subagent_comparison.md" if t=="subagents_001" else "reports/decision_memo.md";x=read(w,rp);good=starts>=need
+        ev=(row or {}).get("events",[]);starts=sum(e.get("type")=="subagent_start" and not (e.get("data") or {}).get("inferred",False) for e in ev);need=1 if t=="subagents_001" else 2;rp="reports/subagent_comparison.md" if t=="subagents_001" else "reports/decision_memo.md";x=read(w,rp);good=starts>=need
         if t=="subagents_001":good &= (w/"reports/reconciliation.json").is_file() and len(load(w,"reports/reconciliation.json"))>=3 and "## Verified" in x and "## Rejected" in x
         elif t=="subagents_002":good &= "CVE" in x and "99.99%" not in x
         else:good &= "## Rejected" in x and bool(re.search(r"decision\s*:\s*(adopt|reject|postpone|investigate)\b",x,re.I))

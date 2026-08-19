@@ -3,6 +3,10 @@ import hashlib, json, re, subprocess
 
 def read(w,p): return (w/p).read_text(encoding='utf-8',errors='replace')
 def load(w,p): return json.loads(read(w,p))
+def eval_path(w,name):
+    """Return a workspace-local oracle path, isolated across harness runs."""
+    root=w/'.aios-bench-eval'; root.mkdir(parents=True,exist_ok=True)
+    return root/name
 def run(w,args,timeout=30): return subprocess.run(args,cwd=w,text=True,capture_output=True,timeout=timeout,check=False)
 def same(w,f,fx):
  a,b=w/f,fx/f

@@ -70,3 +70,9 @@ The project must be configured so Agent Zero can operate on the isolated fixture
 ## Capability policy
 
 Missing telemetry is recorded as `unavailable`, not as zero. This matters because Hermes, Pi, OpenCode, Goose, Letta and Agent Zero expose different native observability surfaces. Correctness remains based on the common deterministic evaluator whenever possible.
+
+For the `subagents` category specifically, a successful result requires the
+harness integration to emit normalized `subagent_start` events. Plain-text
+claims in the final answer or logs are intentionally not accepted as delegation
+evidence. Treat a harness that cannot expose these events as unsupported for
+that category when making cross-harness comparisons.

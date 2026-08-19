@@ -28,6 +28,7 @@ class AgentConfig:
 
 AGENTS = {
     name: AgentConfig(name, {
+        "codex": "Codex",
         "hermes": "Hermes Agent", "piagent": "Pi Agent", "opencode": "OpenCode",
         "goose": "Goose", "letta": "Letta", "agentzero": "Agent Zero",
     }[name], adapter)
@@ -138,9 +139,17 @@ class BenchmarkRunner:
         for line in self.checkpoint.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 item = json.loads(line)
-                if item.get("status") == "completed" and revisions.get(item.get("task_id")) == item.get("task_revision", 1):
+                if (
+                    item.get("status") == "completed"
+                    and revisions.get(item.get("task_id")) == item.get("task_revision", 1)
+                    and item.get("suite_revision") == self._current_suite_revision()
+                ):
                     done.add(item["task_id"])
         return done
+
+    def _current_suite_revision(self) -> str:
+        """Fingerprint used to decide whether a checkpoint can be resumed."""
+        return _suite_revision(self.repo_root)
 
     def _log(self, event: dict) -> None:
         with self.events.open("a", encoding="utf-8") as f:
@@ -178,6 +187,13 @@ class BenchmarkRunner:
         env = os.environ.copy()
         env.update(invocation.environment)
         env.update({
+            "AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
+            "AIOS_BENCH_MODEL": self.model, "AIOS_BENCH_RUN_ID": self.run_id,
+            "AIOS_BENCH_FIXTURE_ROOT": str(self.repo_root / "benchmarks" / "fixtures" / "workspace"),
+        })
+        # Reference evaluators use the current process environment as well as
+        # the child-agent environment. Keep both views consistent.
+        os.environ.update({
             "AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
             "AIOS_BENCH_MODEL": self.model, "AIOS_BENCH_RUN_ID": self.run_id,
             "AIOS_BENCH_FIXTURE_ROOT": str(self.repo_root / "benchmarks" / "fixtures" / "workspace"),
@@ -235,7 +251,10 @@ class BenchmarkRunner:
         if not checks and spec.is_file():
             checks = json.loads(spec.read_text(encoding="utf-8"))["checks"]
         if checks:
-            evaluation = evaluate_artifacts(workspace, checks)
+            evaluation = evaluate_artifacts(
+                workspace, checks, run_dir=self.run_dir,
+                events=trajectory.events,
+            )
             trajectory.evaluation_score = float(evaluation["acceptance_score"])
             trajectory.success = trajectory.success and bool(evaluation["passed"])
             if not trajectory.success and status == "completed":

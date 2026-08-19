@@ -1,0 +1,1 @@
+{"timestamp": 1787161614.7285645, "run_id": "dryrun-frontier-v3-piagent", "event": "task_started", "task_id": "coding_001", "command": ["pi", "--mode", "rpc", "--no-session", "--model", "Qwen"], "model": "Qwen", "tier": 3, "task_revision": 3}

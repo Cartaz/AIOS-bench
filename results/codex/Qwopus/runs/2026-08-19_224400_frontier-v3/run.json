@@ -1,0 +1,13 @@
+{
+  "benchmark": "AIOS-bench",
+  "suite": "frontier_v3",
+  "suite_revision": "86e30d032aa00bb6e193ed8b63a2e831f8e9ab6006abdfd110fda45c0cf51c90",
+  "harness": "codex",
+  "model": "Qwopus",
+  "model_id": "Qwopus",
+  "run_id": "2026-08-19_224400_frontier-v3",
+  "started_at": "2026-08-19T20:43:02Z",
+  "git_commit": "e125a1fdd46591ebb6e1357801f22bf91812c747",
+  "task_count": 28,
+  "finished_at": "2026-08-19T20:43:04Z"
+}

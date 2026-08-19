@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from aios_bench.evaluators import evaluate_artifacts
+from aios_bench.reference_checks_subagents import check as check_subagents
 
 
 def test_weighted_acceptance_supports_partial_scores(tmp_path: Path):
@@ -25,3 +26,26 @@ def test_json_and_regex_checks(tmp_path: Path):
     ])
     assert result["passed"] is True
     assert result["acceptance_score"] == 1.0
+
+
+def test_subagent_oracle_requires_normalized_events_not_reported_prose(tmp_path: Path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "decision_memo.md").write_text(
+        "CVE-2026-0001\n## Rejected\nDecision: reject\n",
+        encoding="utf-8",
+    )
+
+    passed, _ = check_subagents("subagents_002", tmp_path, tmp_path, events=[])
+    assert passed is False
+
+    events = [
+        {"type": "subagent_start", "data": {"inferred": True}},
+        {"type": "subagent_start", "data": {"inferred": True}},
+    ]
+    passed, _ = check_subagents("subagents_002", tmp_path, tmp_path, events=events)
+    assert passed is False
+
+    events = [{"type": "subagent_start"}, {"type": "subagent_start"}]
+    passed, _ = check_subagents("subagents_002", tmp_path, tmp_path, events=events)
+    assert passed is True

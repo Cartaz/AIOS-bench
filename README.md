@@ -22,6 +22,11 @@ AIOS-bench uses **deterministic evaluators as the authoritative benchmark signal
 
 Frontier v3 replaces weak "file exists + keyword" acceptance with benchmark-owned reference oracles for the tasks where content matters. These checks can validate exact evidence provenance, alternate datasets, hidden regression tests, negative constraints, dependency chains, persistent memory state, and delegation telemetry without asking another model to grade the result.
 
+Run checkpoints are resumable only when the full benchmark semantics match: the
+catalog, deterministic fixture inputs, and reference-oracle implementation are
+fingerprinted together. A fixture or oracle update therefore starts affected
+work again rather than silently mixing incomparable scores.
+
 ## Results layout
 
 Benchmark results live under `results/` using one canonical layout:
@@ -50,3 +55,14 @@ The active catalog is `benchmarks/tasks/frontier_v3/*.json` and contains **28 ta
 - **Tier 5 — Frontier:** combines difficult capabilities with negative constraints, hidden checks, state persistence, or independent verification.
 
 The v3 fixtures deliberately include alternate datasets, malformed inputs, distractors, conflicting procedures, schema shifts, persistent-state chains, and hidden regression tests. The benchmark-owned reference checks live in `aios_bench/reference_checks_*.py` and never invoke an LLM.
+
+The long-horizon workspace is materialized per run with a deterministic corpus
+larger than 50 KiB, a late authoritative release gate, and a stateful validator
+that fails reproducibly on its third execution. Its oracle checks the grounded
+release-gate citation, recorded recovery, untouched validator, and checkpoints.
+
+Subagent tasks count only normalized `subagent_start` events from the harness;
+mentions of delegation in a report or stdout do not count as evidence of a
+delegated run. Harnesses without compatible structured delegation telemetry
+should report that limitation rather than compare those task scores as if they
+measured the same capability.
