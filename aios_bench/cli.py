@@ -63,24 +63,32 @@ def cmd_run(args: argparse.Namespace) -> int:
     out = Path(args.output or f"results/{args.run_id}.jsonl")
     out.parent.mkdir(parents=True, exist_ok=True)
     adapter = Path(args.adapter).resolve()
-    with out.open("w", encoding="utf-8") as fp:
-        for task in tasks:
-            with tempfile.TemporaryDirectory(prefix="aios-bench-") as td:
-                workspace = Path(td)
-                _copy_fixture(task.get("fixture"), workspace)
-                payload = {"protocol":"aios-bench/0.1","task":task,"workspace":str(workspace),"run_id":args.run_id}
-                proc = subprocess.run(_adapter_cmd(adapter, payload), capture_output=True, text=True, cwd=ROOT)
-                if proc.returncode != 0:
-                    traj = {"agent": args.agent, "task_id":task["id"], "success":False,"errors":1,"notes":proc.stderr[-4000:]}
-                else:
-                    try:
-                        traj = json.loads(proc.stdout.strip().splitlines()[-1])
-                    except Exception:
-                        traj = {"agent": args.agent,"task_id":task["id"],"success":False,"errors":1,"notes":"Adapter did not emit valid JSON trajectory."}
-                result = evaluate(task, traj, workspace)
-                fp.write(json.dumps({"trajectory":traj,"evaluation":result}, ensure_ascii=False) + "\n")
-                fp.flush()
-                print(f"{task['id']}: {'PASS' if result['passed'] else 'FAIL'} {result['quality_score']:.1f}")
+    with tempfile.TemporaryDirectory(prefix="aios-bench-state-") as state_root:
+        state_root_path = Path(state_root)
+        with out.open("w", encoding="utf-8") as fp:
+            for task in tasks:
+                with tempfile.TemporaryDirectory(prefix="aios-bench-") as td:
+                    workspace = Path(td)
+                    _copy_fixture(task.get("fixture"), workspace)
+                    family = task["id"].split("-", 1)[0]
+                    if task.get("mode") in {"warm", "longitudinal"}:
+                        agent_state = state_root_path / family
+                        agent_state.mkdir(parents=True, exist_ok=True)
+                    else:
+                        agent_state = Path(tempfile.mkdtemp(prefix="cold-state-", dir=state_root_path))
+                    payload = {"protocol":"aios-bench/0.1","task":task,"workspace":str(workspace),"state_dir":str(agent_state),"run_id":args.run_id}
+                    proc = subprocess.run(_adapter_cmd(adapter, payload), capture_output=True, text=True, cwd=ROOT)
+                    if proc.returncode != 0:
+                        traj = {"agent": args.agent, "task_id":task["id"], "success":False,"errors":1,"notes":proc.stderr[-4000:]}
+                    else:
+                        try:
+                            traj = json.loads(proc.stdout.strip().splitlines()[-1])
+                        except Exception:
+                            traj = {"agent": args.agent,"task_id":task["id"],"success":False,"errors":1,"notes":"Adapter did not emit valid JSON trajectory."}
+                    result = evaluate(task, traj, workspace)
+                    fp.write(json.dumps({"trajectory":traj,"evaluation":result}, ensure_ascii=False) + "\n")
+                    fp.flush()
+                    print(f"{task['id']}: {'PASS' if result['passed'] else 'FAIL'} {result['quality_score']:.1f}")
     print(f"Results: {out}")
     return 0
 
