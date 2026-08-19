@@ -10,8 +10,10 @@ class Task:
     category: str
     prompt: str
     mode: str = "cold"
+    tier: int = 3
     tags: tuple[str, ...] = ()
     expected_artifacts: tuple[str, ...] = ()
+    acceptance: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass
@@ -33,6 +35,7 @@ class Trajectory:
     skills_created: int = 0
     telemetry_available: bool = False
     events: list[dict[str, Any]] = field(default_factory=list)
+    evaluation_score: float | None = None
 
     def apply_events(self, events: list[dict[str, Any]]) -> None:
         self.events = events
@@ -76,5 +79,6 @@ class Trajectory:
             "memory_writes": self.memory_writes,
             "skills_created": self.skills_created,
             "telemetry_available": self.telemetry_available,
+            "evaluation_score": self.evaluation_score,
             "events": self.events,
         }
