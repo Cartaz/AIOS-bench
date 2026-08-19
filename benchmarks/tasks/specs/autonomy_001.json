@@ -1,1 +1,1 @@
-{"checks":[{"type":"exists","path":"reports/monthly-expenses.md"},{"type":"contains","path":"reports/monthly-expenses.md","text":"Total expenses"},{"type":"contains","path":"reports/monthly-expenses.md","text":"90. +"}]}
+{"checks":[{"type":"exists","path":"reports/monthly-expenses.md"},{"type":"contains","path":"reports/monthly-expenses.md","text":"Total expenses"},{"type":"contains","path":"reports/monthly-expenses.md","text":"91.07"}]}
