@@ -32,6 +32,8 @@ def _valid_result() -> dict:
 def test_judge_accepts_weighted_score():
     result = _validate(_valid_result())
     assert result["score"] == 83.5
+    assert result["reported_score"] == 83.5
+    assert result["score_discrepancy"] == 0
 
 
 def test_judge_extracts_fenced_json():
@@ -39,8 +41,17 @@ def test_judge_extracts_fenced_json():
     assert result["score"] == 50
 
 
-def test_judge_rejects_score_not_matching_criteria():
+def test_judge_canonicalizes_small_score_discrepancy():
     result = _valid_result()
-    result["score"] = 1
-    with pytest.raises(ValueError, match="disagrees"):
+    result["score"] = 85
+    validated = _validate(result)
+    assert validated["score"] == 83.5
+    assert validated["reported_score"] == 85
+    assert validated["score_discrepancy"] == 1.5
+
+
+def test_judge_rejects_score_out_of_range():
+    result = _valid_result()
+    result["score"] = 101
+    with pytest.raises(ValueError, match="between 0 and 100"):
         _validate(result)
