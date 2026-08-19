@@ -49,8 +49,11 @@ def evaluate_artifacts(workspace: Path, checks: list[dict[str, Any]]) -> dict[st
     }
 
 
-def evaluate_json(workspace: Path, spec_path: str) -> dict[str, Any]:
-    spec = json.loads((workspace / spec_path).read_text(encoding="utf-8"))
+def evaluate_json(workspace: Path, spec_path: str | Path) -> dict[str, Any]:
+    spec_file = Path(spec_path)
+    if not spec_file.is_absolute():
+        spec_file = workspace / spec_file
+    spec = json.loads(spec_file.read_text(encoding="utf-8"))
     return evaluate_artifacts(workspace, spec["checks"])
 
 
