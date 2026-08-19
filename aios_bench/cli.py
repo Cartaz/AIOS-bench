@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .dashboard import build_dashboard
 from .models import Trajectory
+from .rejudge import rejudge_run
 from .report import write_summary
 from .runner import AGENTS, BenchmarkRunner
 from .scoring import overall_score
@@ -46,7 +47,7 @@ def main() -> None:
     parser.add_argument("--keep-raw", action="store_true", help="Keep raw event/stdout/dependency artifacts after the run")
     parser.add_argument("--llm-judge", action="store_true", help="Run the same model as a blinded qualitative judge after each task")
     parser.add_argument("--judge-timeout", type=float, default=300, help="Per-task timeout for the blinded LLM judge")
-    parser.add_argument("command", nargs="?", choices=["run", "list", "score", "dashboard"], default="run")
+    parser.add_argument("command", nargs="?", choices=["run", "list", "score", "dashboard", "judge"], default="run")
     parser.add_argument("path", nargs="?", type=Path)
     args = parser.parse_args()
 
@@ -66,6 +67,14 @@ def main() -> None:
         summary = write_summary(RESULTS)
         print(f"Dashboard: {dashboard}")
         print(f"Summary:   {summary}")
+        return
+    if args.command == "judge":
+        if not args.path:
+            raise SystemExit("judge requires an existing benchmark run directory")
+        output = rejudge_run(repo_root=ROOT, run_dir=args.path, timeout=args.judge_timeout,
+                             model_override=None if args.model == "unknown" else args.model)
+        print(f"Judge calibration: {output}")
+        print(f"Summary: {output.with_name('judge_calibration_summary.json')}")
         return
     if not harnesses:
         raise SystemExit("Select a harness, e.g. aiosbench --hermes --model Qwen3.6-35B-Q4_K_XL, or use --all")
