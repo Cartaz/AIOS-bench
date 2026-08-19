@@ -12,6 +12,7 @@ from .adapters import ADAPTERS, Adapter, PiAgentAdapter
 from .evaluators import evaluate_artifacts
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
+from .retention import prune_run_artifacts
 from .scoring import overall_score
 from .telemetry import parse_output
 
@@ -35,7 +36,7 @@ AGENTS = {
 class BenchmarkRunner:
     def __init__(self, repo_root: Path, agent: AgentConfig, results_dir: Path,
                  task_timeout: float, total_timeout: float | None, resume: bool = True,
-                 model: str = "unknown") -> None:
+                 model: str = "unknown", keep_raw: bool = False) -> None:
         self.repo_root = repo_root
         self.agent = agent
         self.results_dir = results_dir
@@ -43,6 +44,7 @@ class BenchmarkRunner:
         self.total_timeout = total_timeout
         self.resume = resume
         self.model = model
+        self.keep_raw = keep_raw
         self.run_dir = results_dir / agent.name / model.replace("/", "_")
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint = self.run_dir / "results.jsonl"
@@ -164,6 +166,9 @@ class BenchmarkRunner:
                    "telemetry_available": trajectory.telemetry_available})
         return trajectory
 
+    def cleanup(self) -> dict[str, int | bool]:
+        return prune_run_artifacts(self.run_dir, keep_raw=self.keep_raw)
+
     def run(self, tasks: list[Task]) -> int:
         done = self.completed()
         started = time.monotonic()
@@ -177,6 +182,7 @@ class BenchmarkRunner:
             if self.total_timeout is not None:
                 timeout = min(timeout, self.total_timeout - (time.monotonic() - started))
                 if timeout <= 0:
+                    self.cleanup()
                     return 2
             print(f"[{index}/{len(remaining)}] {task.id} ...", flush=True)
             trajectory = self.run_task(task, timeout)
@@ -186,6 +192,9 @@ class BenchmarkRunner:
                 passed += 1
             print(f"    {'PASS' if trajectory.success else 'FAIL'}  {score:.1f}/100  {trajectory.duration_seconds:.1f}s", flush=True)
         avg = sum(scores) / len(scores) if scores else 0.0
+        cleanup = self.cleanup()
         print(f"\nResult: {passed}/{len(remaining)} passed | average score {avg:.1f}/100")
+        if not self.keep_raw:
+            print(f"Retention cleanup: removed {cleanup['files_removed']} files and {cleanup['dirs_removed']} dependency/cache directories")
         print(f"Results: {self.run_dir}")
         return 0 if passed == len(remaining) else 1
