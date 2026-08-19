@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -47,6 +48,12 @@ def _copy_fixture(name: str | None, dst: Path) -> None:
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
+def _adapter_cmd(adapter: Path, payload: dict) -> list[str]:
+    if adapter.suffix.lower() == ".py":
+        return [sys.executable, os.fspath(adapter), json.dumps(payload)]
+    return [os.fspath(adapter), json.dumps(payload)]
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     tasks = load_tasks()
     if args.task:
@@ -62,7 +69,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 workspace = Path(td)
                 _copy_fixture(task.get("fixture"), workspace)
                 payload = {"protocol":"aios-bench/0.1","task":task,"workspace":str(workspace),"run_id":args.run_id}
-                proc = subprocess.run([os.fspath(adapter), json.dumps(payload)], capture_output=True, text=True, cwd=ROOT)
+                proc = subprocess.run(_adapter_cmd(adapter, payload), capture_output=True, text=True, cwd=ROOT)
                 if proc.returncode != 0:
                     traj = {"agent": args.agent, "task_id":task["id"], "success":False,"errors":1,"notes":proc.stderr[-4000:]}
                 else:
