@@ -38,9 +38,16 @@ class Trajectory:
         self.events = events
         self.telemetry_available = bool(events)
         counts: dict[str, int] = {}
+        input_tokens = output_tokens = 0
         for event in events:
             kind = event.get("type", "unknown")
             counts[kind] = counts.get(kind, 0) + 1
+            data = event.get("data") or {}
+            usage = data.get("usage") or {}
+            input_tokens = max(input_tokens, int(usage.get("input", 0) or 0))
+            output_tokens = max(output_tokens, int(usage.get("output", 0) or 0))
+        self.input_tokens = max(self.input_tokens, input_tokens)
+        self.output_tokens = max(self.output_tokens, output_tokens)
         self.tool_calls = counts.get("tool_call", 0)
         self.errors = max(self.errors, counts.get("error", 0))
         self.retries = counts.get("retry", 0)

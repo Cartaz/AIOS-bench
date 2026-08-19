@@ -37,13 +37,14 @@ class HermesAdapter(Adapter):
 
 class PiAgentAdapter(Adapter):
     name = "piagent"
-    capabilities = frozenset({"json_events", "rpc", "sessions", "extensions"})
+    capabilities = frozenset({"json_events", "rpc", "sessions", "extensions", "tool_events", "token_stats"})
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        command = ["pi", "--mode", "json"]
+        # Kept as a conventional invocation for discovery/backwards compatibility.
+        # The runner uses run_rpc() so stdin remains open until agent_settled.
+        command = ["pi", "--mode", "rpc", "--no-session"]
         if model and model != "unknown":
             command += ["--model", model]
-        command += ["-p", prompt]
         return AgentInvocation(command, {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())})
 
 
@@ -84,8 +85,6 @@ class LettaAdapter(Adapter):
         if agent_id:
             command += ["--agent", agent_id]
         environment = {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())}
-        # Letta model selection is normally configured inside the agent/provider
-        # rather than as a stable top-level CLI flag. Do not fake a model flag.
         if model and model != "unknown":
             environment["AIOS_BENCH_REQUESTED_MODEL"] = model
         return AgentInvocation(command + [prompt], environment)

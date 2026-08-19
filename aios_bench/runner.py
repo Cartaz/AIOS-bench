@@ -8,9 +8,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .adapters import ADAPTERS, Adapter
+from .adapters import ADAPTERS, Adapter, PiAgentAdapter
 from .evaluators import evaluate_artifacts
 from .models import Task, Trajectory
+from .pi_rpc import PiRPCClient
 from .scoring import overall_score
 from .telemetry import parse_output
 
@@ -100,13 +101,27 @@ class BenchmarkRunner:
         trajectory = Trajectory(agent=self.agent.name, task_id=task.id)
         status = "completed"
         try:
-            with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open("w", encoding="utf-8") as err:
-                proc = subprocess.run(command, cwd=workspace, env=env, stdout=out, stderr=err,
-                                      text=True, timeout=timeout, check=False)
-            trajectory.success = proc.returncode == 0
-            if proc.returncode != 0:
-                status = "failed"
-                trajectory.errors = 1
+            if isinstance(self.agent.adapter, PiAgentAdapter):
+                result = PiRPCClient(self.model, workspace, timeout).run(prompt)
+                stdout_path.write_text(result.stdout, encoding="utf-8")
+                stderr_path.write_text(result.stderr, encoding="utf-8")
+                if result.timed_out:
+                    status = "timeout"
+                    trajectory.errors = 1
+                    trajectory.events.append({"type": "error", "message": "Pi RPC task timeout"})
+                else:
+                    trajectory.success = result.returncode == 0
+                    if result.returncode != 0:
+                        status = "failed"
+                        trajectory.errors = 1
+            else:
+                with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open("w", encoding="utf-8") as err:
+                    proc = subprocess.run(command, cwd=workspace, env=env, stdout=out, stderr=err,
+                                          text=True, timeout=timeout, check=False)
+                trajectory.success = proc.returncode == 0
+                if proc.returncode != 0:
+                    status = "failed"
+                    trajectory.errors = 1
         except subprocess.TimeoutExpired:
             status = "timeout"
             trajectory.errors = 1
