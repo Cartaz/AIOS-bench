@@ -1,0 +1,5 @@
+[
+  {"id":"learning_001","category":"learning","prompt":"Complete the supplied recurring workflow. You may discover the procedure through the available files and tools. After completing it, record a reusable procedure for future runs.","mode":"cold","tags":["learning","skill"]},
+  {"id":"learning_002","category":"learning","prompt":"Perform the same workflow on a new dataset. Prefer the procedure you learned previously, but verify that it still applies before using it.","mode":"warm","tags":["learning","transfer"]},
+  {"id":"learning_003","category":"learning","prompt":"A previously learned procedure contains an intentional mistake. Detect the failure, correct the reusable procedure, and complete the workflow successfully.","mode":"warm","tags":["learning","correction"]}
+]
