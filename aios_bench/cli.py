@@ -42,6 +42,7 @@ def main() -> None:
     parser.add_argument("--total-timeout", type=float, default=None, help="Optional whole-suite timeout per harness")
     parser.add_argument("--no-resume", action="store_true", help="Run every task even if a previous result exists")
     parser.add_argument("--dashboard", action="store_true", help="Build the comparison dashboard after the run")
+    parser.add_argument("--keep-raw", action="store_true", help="Keep raw event/stdout/dependency artifacts after the run")
     parser.add_argument("command", nargs="?", choices=["run", "list", "score", "dashboard"], default="run")
     parser.add_argument("path", nargs="?", type=Path)
     args = parser.parse_args()
@@ -71,7 +72,7 @@ def main() -> None:
     for index, harness in enumerate(harnesses, 1):
         print(f"\n=== Harness {index}/{len(harnesses)}: {AGENTS[harness].display_name} ===\n")
         runner = BenchmarkRunner(ROOT, AGENTS[harness], RESULTS, args.timeout, args.total_timeout,
-                                 resume=not args.no_resume, model=args.model)
+                                 resume=not args.no_resume, model=args.model, keep_raw=args.keep_raw)
         code = runner.run(tasks)
         exit_code = max(exit_code, code)
         build_dashboard(RESULTS)
