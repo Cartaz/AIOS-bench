@@ -21,6 +21,7 @@ def load_tasks(root: str | Path) -> list[Task]:
                     prompt=item["prompt"],
                     mode=item.get("mode", "cold"),
                     tier=int(item.get("tier", 3)),
+                    revision=int(item.get("revision", 1)),
                     tags=tuple(item.get("tags", [])),
                     expected_artifacts=tuple(item.get("expected_artifacts", [])),
                     acceptance=tuple(item.get("acceptance", [])),
