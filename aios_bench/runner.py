@@ -12,6 +12,7 @@ from .adapters import ADAPTERS, Adapter
 from .evaluators import evaluate_artifacts
 from .models import Task, Trajectory
 from .scoring import overall_score
+from .telemetry import parse_output
 
 
 @dataclass(frozen=True)
@@ -106,11 +107,9 @@ class BenchmarkRunner:
             if proc.returncode != 0:
                 status = "failed"
                 trajectory.errors = 1
-                trajectory.events.append({"type": "process_exit", "returncode": proc.returncode})
         except subprocess.TimeoutExpired:
             status = "timeout"
             trajectory.errors = 1
-            trajectory.events.append({"type": "timeout", "seconds": timeout})
         except FileNotFoundError as exc:
             status = "error"
             trajectory.errors = 1
@@ -120,6 +119,14 @@ class BenchmarkRunner:
             trajectory.errors = 1
             trajectory.events.append({"type": "runner_error", "error": repr(exc)})
         trajectory.duration_seconds = time.monotonic() - started
+
+        stdout = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
+        stderr = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
+        parsed_events = parse_output(stdout, stderr, source=self.agent.name)
+        trajectory.apply_events([e.to_dict() for e in parsed_events])
+        if trajectory.errors and status == "completed":
+            status = "failed"
+            trajectory.success = False
 
         spec = self.repo_root / "benchmarks" / "tasks" / "specs" / f"{task.id}.json"
         evaluation = None
@@ -138,7 +145,8 @@ class BenchmarkRunner:
                        "stderr": str(stderr_path)})
         self._write_result(result)
         self._log({"event": "task_finished", "task_id": task.id, "success": trajectory.success,
-                   "status": status, "duration": trajectory.duration_seconds, "score": result["score"]})
+                   "status": status, "duration": trajectory.duration_seconds, "score": result["score"],
+                   "telemetry_available": trajectory.telemetry_available})
         return trajectory
 
     def run(self, tasks: list[Task]) -> int:
