@@ -9,8 +9,6 @@ from .models import Task
 def load_tasks(root: str | Path) -> list[Task]:
     root = Path(root)
     tasks: list[Task] = []
-    # Task catalogs live directly under benchmarks/tasks. Nested JSON files in
-    # benchmarks/tasks/specs are acceptance-test specifications, not tasks.
     for path in sorted(root.glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, list):
@@ -22,8 +20,10 @@ def load_tasks(root: str | Path) -> list[Task]:
                     category=item["category"],
                     prompt=item["prompt"],
                     mode=item.get("mode", "cold"),
+                    tier=int(item.get("tier", 3)),
                     tags=tuple(item.get("tags", [])),
                     expected_artifacts=tuple(item.get("expected_artifacts", [])),
+                    acceptance=tuple(item.get("acceptance", [])),
                 )
             )
     return tasks
