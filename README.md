@@ -1,22 +1,10 @@
 # AIOS-bench
 
-AIOS-bench is a reproducible local benchmark suite for AI operating-system agents. It evaluates agent behavior through isolated workspaces, deterministic artifact checks, execution telemetry, and an optional blinded qualitative judge.
-
-## Running
-
-Select a configured harness and model, for example:
-
-```bash
-aiosbench --piagent --model Qwen --no-resume
-```
-
-Or run every configured harness sequentially with `--all`.
-
-The runner executes the calibrated frontier catalog in deterministic order, creates an isolated workspace for each task, records observable execution data, applies weighted deterministic acceptance checks, stores resumable results, and regenerates the comparison dashboard.
+Reproducible benchmark suite for local AI operating-system agents.
 
 ## Optional blinded LLM judge
 
-The benchmark can also ask the **same model** to independently inspect the finished workspace using a separate, strict system prompt:
+The benchmark can optionally run the same local model a second time as a blinded qualitative evaluator after each task:
 
 ```bash
 aiosbench --piagent --model Qwen --no-resume --llm-judge
@@ -25,6 +13,10 @@ aiosbench --piagent --model Qwen --no-resume --llm-judge
 The judge receives only the original task request and an isolated snapshot of the final workspace. It does **not** receive the deterministic score, the expected answer, the agent's execution transcript, or the model/harness identity. It has read-only tools and cannot modify the evaluated workspace.
 
 The judge returns a separate 0–100 qualitative score with seven criteria: correctness, completeness, problem solving, efficiency, robustness, independence, and creativity. Its score and evidence are stored under `llm_judge` in each task result and summarized in `results/summary.json` and the dashboard.
+
+The seven criterion values are authoritative. The harness recomputes the canonical weighted score from those criteria, while retaining the model's reported top-level score and its discrepancy from the canonical value for diagnostics. Small arithmetic or rounding differences therefore do not invalidate an otherwise usable judgment.
+
+If the first judge response is malformed or cannot be parsed, the harness makes one short format-only recovery attempt using the same model, with a maximum 60-second retry timeout. A failed recovery remains a judge error and does not affect the deterministic benchmark score.
 
 The judge is deliberately **diagnostic, not authoritative**: it never changes pass/fail and never changes the deterministic benchmark score. This prevents the benchmark from becoming circular while still exposing cases where an artifact passes mechanical checks but is substantively poor, or where an objective checker is too strict.
 
@@ -47,5 +39,3 @@ The active catalog is `benchmarks/tasks/frontier_v2.json` and contains **28 task
 - **Tier 3 — Advanced:** multi-step work with several independent failure points.
 - **Tier 4 — Expert:** requires synthesis, recovery, validation, or transfer across steps.
 - **Tier 5 — Frontier:** combines multiple difficult capabilities, negative constraints, ambiguity, or independent verification.
-
-There are no Tier 1/2 tasks in the active suite. The goal is discrimination among capable agent/model combinations, not measuring whether an agent can perform trivial tool calls.
