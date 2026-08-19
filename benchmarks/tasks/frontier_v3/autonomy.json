@@ -1,0 +1,32 @@
+[
+  {
+    "id": "autonomy_001",
+    "category": "autonomy",
+    "tier": 3,
+    "revision": 3,
+    "prompt": "Produce a monthly expense report from the workspace. Use the authoritative transaction CSV, create tools/expense_report.py with --input and --output, handle one malformed transaction without guessing, validate the result on the supplied alternate dataset, and save reports/monthly_expense_report.md. Do not modify source data.",
+    "mode": "cold",
+    "tags": ["autonomy", "deterministic_v3", "grounded"],
+    "acceptance": [{"type":"exists","path":"reports/monthly_expense_report.md","weight":1,"fatal":true},{"type":"exists","path":"tools/expense_report.py","weight":1,"fatal":true},{"type":"reference","task_id":"autonomy_001","weight":8,"fatal":true}]
+  },
+  {
+    "id": "autonomy_002",
+    "category": "autonomy",
+    "tier": 4,
+    "revision": 3,
+    "prompt": "Turn the meeting notes and procedures into a prioritized action tracker. Distinguish confirmed actions from suggestions, preserve owners/deadlines only when evidenced, deduplicate repeated actions, and save reports/action_tracker.json and reports/action_tracker.md. Include evidence_quote and source_doc for every action.",
+    "mode": "cold",
+    "tags": ["autonomy", "deterministic_v3", "grounded"],
+    "acceptance": [{"type":"exists","path":"reports/action_tracker.json","weight":1,"fatal":true},{"type":"exists","path":"reports/action_tracker.md","weight":1,"fatal":true},{"type":"reference","task_id":"autonomy_002","weight":8,"fatal":true}]
+  },
+  {
+    "id": "autonomy_003",
+    "category": "autonomy",
+    "tier": 5,
+    "revision": 3,
+    "prompt": "Improve both supplied broken tools until the hidden benchmark tests pass. Reproduce each failure, diagnose each root cause, make the smallest robust fixes, add regression coverage, run the targeted tests, and write reports/autonomy_changelog.md. Do not modify the supplied tests or unrelated source documents.",
+    "mode": "cold",
+    "tags": ["autonomy", "deterministic_v3", "grounded"],
+    "acceptance": [{"type":"exists","path":"reports/autonomy_changelog.md","weight":1,"fatal":true},{"type":"reference","task_id":"autonomy_003","weight":8,"fatal":true}]
+  }
+]
