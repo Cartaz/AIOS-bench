@@ -9,8 +9,12 @@ from .models import Task
 def load_tasks(root: str | Path) -> list[Task]:
     root = Path(root)
     tasks: list[Task] = []
-    for path in sorted(root.glob("**/*.json")):
+    # Task catalogs live directly under benchmarks/tasks. Nested JSON files in
+    # benchmarks/tasks/specs are acceptance-test specifications, not tasks.
+    for path in sorted(root.glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError(f"Task catalog must contain a JSON array: {path}")
         for item in data:
             tasks.append(
                 Task(
