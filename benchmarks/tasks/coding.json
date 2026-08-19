@@ -1,0 +1,5 @@
+[
+  {"id":"coding_001","category":"coding","prompt":"Create a small Python CLI that reads a CSV file and writes a concise HTML report. Include basic input validation and a useful --help message.","tags":["python","cli","generation"]},
+  {"id":"coding_002","category":"coding","prompt":"Run the tests for the supplied project, identify the failing behavior, fix the smallest appropriate change, and verify the tests again.","tags":["debugging","tests"]},
+  {"id":"coding_003","category":"coding","prompt":"Refactor the supplied tool for maintainability without changing its externally observable behavior. Add or update tests where needed.","tags":["refactor","regression"]}
+]
