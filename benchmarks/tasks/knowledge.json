@@ -1,0 +1,5 @@
+[
+  {"id":"knowledge_001","category":"knowledge","prompt":"Analyze the supplied business documents and identify the three most important unresolved actions. Cite the source document for each action.","tags":["retrieval","synthesis"]},
+  {"id":"knowledge_002","category":"knowledge","prompt":"Compare the current procedure with the previous procedure and summarize only substantive changes.","tags":["comparison","documents"]},
+  {"id":"knowledge_003","category":"knowledge","prompt":"Find evidence across the workspace for the requested topic and produce a concise evidence-backed report. Do not invent missing information.","tags":["research","grounding"]}
+]
