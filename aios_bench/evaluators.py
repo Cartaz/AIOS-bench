@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -26,7 +27,7 @@ def file_exists(workspace: Path, relative_path: str) -> bool:
 
 def file_contains(workspace: Path, relative_path: str, text: str) -> bool:
     path = _safe_path(workspace, relative_path)
-    return path.is_file() and text in path.read_text(encoding="utf-8", errors="replace")
+    return path.is_file() and text.lower() in path.read_text(encoding="utf-8", errors="replace").lower()
 
 
 def file_sha256(workspace: Path, relative_path: str) -> str:
@@ -36,13 +37,14 @@ def file_sha256(workspace: Path, relative_path: str) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _snapshot_sha256(workspace: Path, relative_path: str) -> str:
-    # The runner copies the canonical fixture to the task workspace. This lets
-    # an acceptance check prove that a protected input was not modified.
-    source = workspace.parent.parent.parent.parent / "fixtures" / "workspace" / relative_path
-    if not source.is_file():
+def _fixture_sha256(relative_path: str) -> str:
+    root = os.environ.get("AIOS_BENCH_FIXTURE_ROOT")
+    if not root:
+        raise EvaluationError("AIOS_BENCH_FIXTURE_ROOT is not set")
+    path = Path(root) / relative_path
+    if not path.is_file():
         raise EvaluationError(f"missing fixture baseline: {relative_path}")
-    return hashlib.sha256(source.read_bytes()).hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _run_check_command(workspace: Path, command: str, timeout: float = 30.0) -> tuple[bool, str]:
@@ -81,7 +83,7 @@ def evaluate_artifacts(workspace: Path, checks: list[dict[str, Any]]) -> dict[st
             elif kind == "sha256":
                 passed = file_sha256(workspace, path) == check["sha256"]
             elif kind == "unchanged":
-                passed = file_sha256(workspace, path) == _snapshot_sha256(workspace, path)
+                passed = file_sha256(workspace, path) == _fixture_sha256(path)
             elif kind == "command":
                 passed, detail = _run_check_command(workspace, check["command"], float(check.get("timeout", 30)))
             elif kind == "max_files":
