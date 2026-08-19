@@ -7,9 +7,6 @@ from pathlib import Path
 
 
 def _rows(results_root: Path) -> list[dict]:
-    # A run is resumable and --no-resume can intentionally append another
-    # attempt. The dashboard should represent the latest attempt per task,
-    # not count historical attempts as extra benchmark tasks.
     latest: dict[tuple[str, str, str, int], dict] = {}
     for path in results_root.glob("*/**/results.jsonl"):
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -70,10 +67,21 @@ def build_dashboard(results_root: Path) -> Path:
 const results={data};
 const root=document.getElementById('capabilities');
 const tiers=document.getElementById('tiers');
-for(const r of results){{const entries=Object.entries(r.categories||{{}});const card=document.createElement('div');card.className='card';card.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong>';
-for(const [name,value] of entries){{card.innerHTML+='<p><small>'+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';}}root.appendChild(card);
-const tierCard=document.createElement('div');tierCard.className='card';tierCard.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong>';
-for(const [name,value] of Object.entries(r.tiers||{{}}).sort()){{tierCard.innerHTML+='<p><small>Tier '+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%'></div></div>';}}tiers.appendChild(tierCard);}}
+for(const r of results){{
+  const entries=Object.entries(r.categories||{{}});
+  const card=document.createElement('div'); card.className='card';
+  card.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong>';
+  for(const [name,value] of entries){{
+    card.innerHTML+='<p><small>'+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';
+  }}
+  root.appendChild(card);
+  const tierCard=document.createElement('div'); tierCard.className='card';
+  tierCard.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong>';
+  for(const [name,value] of Object.entries(r.tiers||{{}}).sort()){{
+    tierCard.innerHTML+='<p><small>Tier '+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';
+  }}
+  tiers.appendChild(tierCard);
+}}
 </script></body></html>'''
     output = results_root / "dashboard.html"
     output.write_text(html, encoding="utf-8")
