@@ -3,6 +3,9 @@ from datetime import datetime,timezone
 from .runner import BenchmarkRunner
 
 class FrontierV3Runner(BenchmarkRunner):
+    def __init__(self,repo_root,agent,results_dir,task_timeout,total_timeout,resume=True,model='unknown',keep_raw=False,run_id=None):
+        if run_id is None: run_id=datetime.now().astimezone().strftime('%Y-%m-%d_%H%M%S')+'_frontier-v3'
+        super().__init__(repo_root,agent,results_dir,task_timeout,total_timeout,resume=resume,model=model,keep_raw=keep_raw,run_id=run_id)
     def _revision(self):
         h=hashlib.sha256()
         for p in sorted((self.repo_root/'benchmarks/tasks/frontier_v3').glob('*.json')):h.update(p.read_bytes())
