@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "generated_from": ["notes/meeting_notes.md", "procedures/current.md", "procedures/previous.md"],
+    "meeting_date": "2026-07-31",
+    "schema_version": "1.0",
+    "schema": {
+      "id": "integer - unique action ID",
+      "description": "string - what needs to be done",
+      "owner": "string or null - person assigned (only when explicitly stated)",
+      "status": "string - 'confirmed_action' or 'decision' or 'suggestion'",
+      "priority": "string - 'high', 'medium', or 'low'",
+      "deadline": "string or null - only when explicitly evidenced",
+      "source": "string - originating file/section",
+      "category": "string - inferred category",
+      "notes": "string - additional context"
+    },
+    "notes": "All owners and deadlines are evidence-based. No facts were invented. Items from the 'Decisions' section are classified as 'decision' status, not action items."
+  },
+  "actions": [
+    {
+      "id": 1,
+      "description": "Review software subscriptions before next month",
+      "owner": "Francesco",
+      "status": "confirmed_action",
+      "priority": "high",
+      "deadline": "2026-08-31",
+      "source": "notes/meeting_notes.md",
+      "category": "subscriptions",
+      "notes": "Relative deadline 'before next month' inferred from meeting date 2026-07-31."
+    },
+    {
+      "id": 2,
+      "description": "Prepare the July sales summary",
+      "owner": "Marta",
+      "status": "confirmed_action",
+      "priority": "high",
+      "deadline": null,
+      "source": "notes/meeting_notes.md",
+      "category": "sales",
+      "notes": "No explicit deadline given. Should follow current procedure (procedures/current.md): export CSV, validate, calculate totals, save to reports/monthly-sales.md, review before sharing."
+    },
+    {
+      "id": 3,
+      "description": "Update the current operating procedure after the meeting",
+      "owner": "Luca",
+      "status": "confirmed_action",
+      "priority": "medium",
+      "deadline": null,
+      "source": "notes/meeting_notes.md",
+      "category": "procedures",
+      "notes": "Relative deadline 'after the meeting' — should align with current procedure in procedures/current.md."
+    },
+    {
+      "id": 4,
+      "description": "Keep the cloud storage subscription for now",
+      "owner": null,
+      "status": "decision",
+      "priority": "low",
+      "deadline": null,
+      "source": "notes/meeting_notes.md",
+      "category": "subscriptions",
+      "notes": "Group decision, not an assigned action. Cross-references expenses.csv software subscription line items."
+    },
+    {
+      "id": 5,
+      "description": "Review recurring software costs monthly",
+      "owner": null,
+      "status": "decision",
+      "priority": "medium",
+      "deadline": null,
+      "source": "notes/meeting_notes.md",
+      "category": "subscriptions",
+      "notes": "Group decision. Supports action #1. No specific owner assigned."
+    }
+  ]
+}
