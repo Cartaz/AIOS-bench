@@ -1,0 +1,44 @@
+{
+  "run_id": "2026-08-19_123411_frontier-v2",
+  "model": "Qwen",
+  "task_count": 28,
+  "judge_ok": 5,
+  "judge_error": 23,
+  "objective_mean": 68.58,
+  "judge_mean": 53.2,
+  "objective_judge_pearson": 0.2281,
+  "objective_judge_spearman": 0.1,
+  "mean_absolute_gap": 39.65,
+  "largest_disagreements": [
+    {
+      "task_id": "tool_use_001",
+      "objective_score": 99.3103448275862,
+      "judge_score": 15.0,
+      "gap": -84.31
+    },
+    {
+      "task_id": "subagents_001",
+      "objective_score": 24.31034482758621,
+      "judge_score": 85.0,
+      "gap": 60.69
+    },
+    {
+      "task_id": "long_horizon_003",
+      "objective_score": 23.47222222222222,
+      "judge_score": 0.0,
+      "gap": -23.47
+    },
+    {
+      "task_id": "memory_003",
+      "objective_score": 97.5,
+      "judge_score": 82.0,
+      "gap": -15.5
+    },
+    {
+      "task_id": "learning_001",
+      "objective_score": 98.28947368421052,
+      "judge_score": 84.0,
+      "gap": -14.29
+    }
+  ]
+}
