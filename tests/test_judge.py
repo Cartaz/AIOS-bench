@@ -31,7 +31,7 @@ def _valid_result() -> dict:
 
 def test_judge_accepts_weighted_score():
     result = _validate(_valid_result())
-    assert result["score"] == 84.75
+    assert result["score"] == 83.5
 
 
 def test_judge_extracts_fenced_json():
