@@ -99,7 +99,8 @@ class BenchmarkRunner:
         env = os.environ.copy()
         env.update(invocation.environment)
         env.update({"AIOS_BENCH_TASK_ID": task.id, "AIOS_BENCH_AGENT": self.agent.name,
-                    "AIOS_BENCH_MODEL": self.model})
+                    "AIOS_BENCH_MODEL": self.model,
+                    "AIOS_BENCH_FIXTURE_ROOT": str(self.repo_root / "benchmarks" / "fixtures" / "workspace")})
         self._log({"event": "task_started", "task_id": task.id, "command": command,
                    "model": self.model, "tier": task.tier, "task_revision": task.revision})
         started = time.monotonic()
@@ -107,7 +108,7 @@ class BenchmarkRunner:
         status = "completed"
         try:
             if isinstance(self.agent.adapter, PiAgentAdapter):
-                result = PiRPCClient(self.model, workspace, timeout).run(prompt)
+                result = PiRPCClient(self.model, workspace, timeout, environment=env).run(prompt)
                 stdout_path.write_text(result.stdout, encoding="utf-8")
                 stderr_path.write_text(result.stderr, encoding="utf-8")
                 if result.timed_out:
