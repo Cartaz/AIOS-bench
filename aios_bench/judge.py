@@ -43,7 +43,10 @@ def _extract_json(text: str) -> dict[str, Any]:
         match = re.search(r"\{.*\}", candidate, flags=re.S)
         if not match:
             raise ValueError("judge did not return a JSON object")
-        value = json.loads(match.group(0))
+        try:
+            value = json.loads(match.group(0))
+        except json.JSONDecodeError as exc:
+            raise ValueError("judge did not return a valid JSON object") from exc
     if not isinstance(value, dict):
         raise ValueError("judge response is not a JSON object")
     return value
@@ -54,32 +57,48 @@ def _validate(result: dict[str, Any]) -> dict[str, Any]:
     missing = required - result.keys()
     if missing:
         raise ValueError(f"judge response missing fields: {sorted(missing)}")
-    score = float(result["score"])
-    if not 0 <= score <= 100:
+
+    reported_score = float(result["score"])
+    if not 0 <= reported_score <= 100:
         raise ValueError("judge score must be between 0 and 100")
+
     criteria = result["criteria"]
     if not isinstance(criteria, dict):
         raise ValueError("judge criteria must be an object")
-    required_criteria = {"correctness", "completeness", "problem_solving", "efficiency", "robustness", "independence", "creativity"}
+    required_criteria = {
+        "correctness", "completeness", "problem_solving", "efficiency",
+        "robustness", "independence", "creativity",
+    }
     if set(criteria) != required_criteria:
         raise ValueError("judge criteria keys do not match the required rubric")
+
     for key in required_criteria:
         value = float(criteria[key])
         if not 0 <= value <= 100:
             raise ValueError(f"judge criterion {key} must be between 0 and 100")
         criteria[key] = round(value, 2)
-    expected = (
-        criteria["correctness"] * 0.30 + criteria["completeness"] * 0.15 +
-        criteria["problem_solving"] * 0.15 + criteria["efficiency"] * 0.15 +
-        criteria["robustness"] * 0.10 + criteria["independence"] * 0.10 +
-        criteria["creativity"] * 0.05
+
+    score = round(
+        criteria["correctness"] * 0.30
+        + criteria["completeness"] * 0.15
+        + criteria["problem_solving"] * 0.15
+        + criteria["efficiency"] * 0.15
+        + criteria["robustness"] * 0.10
+        + criteria["independence"] * 0.10
+        + criteria["creativity"] * 0.05,
+        2,
     )
-    if abs(score - expected) > 1.0:
-        raise ValueError(f"judge score {score} disagrees with weighted criteria {expected:.2f}")
+
+    # The criteria are the authoritative judgment. The model's top-level score
+    # is retained for diagnostics, but small arithmetic/rounding inconsistencies
+    # must not turn an otherwise usable qualitative evaluation into a pipeline error.
+    result["score"] = score
+    result["reported_score"] = round(reported_score, 2)
+    result["score_discrepancy"] = round(reported_score - score, 2)
+
     for key in ("strengths", "weaknesses", "critical_failures", "evidence"):
         if not isinstance(result[key], list):
             raise ValueError(f"judge field {key} must be a list")
-    result["score"] = round(score, 2)
     return result
 
 
@@ -114,13 +133,35 @@ def run_judge(*, model: str, task_id: str, category: str, tier: int, task_prompt
         ]
         env = {"AIOS_BENCH_JUDGE": "1", "AIOS_BENCH_TASK_ID": task_id}
         started = time.monotonic()
+        raw_responses: list[str] = []
         try:
-            result = PiRPCClient(model, judge_workspace, timeout, environment=env, extra_args=extra_args).run(request)
+            client = PiRPCClient(model, judge_workspace, timeout, environment=env, extra_args=extra_args)
+            result = client.run(request)
             text = _assistant_text(result.stdout)
-            parsed = _validate(_extract_json(text))
+            raw_responses.append(text)
+
+            try:
+                parsed = _validate(_extract_json(text))
+            except ValueError as first_error:
+                # A malformed final response is recoverable. Give the same model
+                # one short, format-only retry rather than discarding the judgment.
+                retry_request = (
+                    "Your previous response could not be parsed as the required JSON object. "
+                    "Do not inspect the workspace again and do not add commentary. "
+                    "Return ONLY one valid JSON object matching the required schema, with no Markdown fences."
+                )
+                retry_result = client.run(retry_request)
+                retry_text = _assistant_text(retry_result.stdout)
+                raw_responses.append(retry_text)
+                try:
+                    parsed = _validate(_extract_json(retry_text))
+                    result = retry_result
+                except ValueError:
+                    raise first_error
+
             parsed.update({
                 "status": "ok" if not result.timed_out and result.returncode == 0 else "error",
-                "raw_response": text,
+                "raw_response": "\n\n--- judge retry ---\n\n".join(raw_responses),
                 "duration_seconds": round(time.monotonic() - started, 3),
             })
             if parsed["status"] != "ok":
@@ -130,6 +171,6 @@ def run_judge(*, model: str, task_id: str, category: str, tier: int, task_prompt
             return {
                 "status": "error",
                 "error": str(exc),
-                "raw_response": _assistant_text(result.stdout) if "result" in locals() else "",
+                "raw_response": "\n\n--- judge retry ---\n\n".join(raw_responses),
                 "duration_seconds": round(time.monotonic() - started, 3),
             }
