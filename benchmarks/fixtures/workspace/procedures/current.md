@@ -1,4 +1,4 @@
-# Current procedure
+# Current procedure — signed operational source of truth
 
 1. Export the monthly sales CSV.
 2. Validate the header and numeric fields.
