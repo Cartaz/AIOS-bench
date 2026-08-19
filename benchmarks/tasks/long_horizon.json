@@ -1,0 +1,5 @@
+[
+  {"id":"long_horizon_001","category":"long_horizon","prompt":"Complete this end-to-end workflow: inspect the workspace, identify the relevant data, build the required analysis, execute it, recover from any errors, generate the requested report, validate the output, and write a concise changelog of what you changed.","tags":["long_horizon","recovery"]},
+  {"id":"long_horizon_002","category":"long_horizon","prompt":"Starting from the supplied project, implement the requested feature, run the existing checks, diagnose and fix regressions, update documentation, and leave the workspace in a verified state.","tags":["long_horizon","coding"]},
+  {"id":"long_horizon_003","category":"long_horizon","prompt":"Investigate the supplied business problem, gather evidence from the workspace, create a small supporting tool if useful, produce the final deliverable, and verify that the deliverable satisfies every stated requirement.","tags":["long_horizon","knowledge","tools"]}
+]
