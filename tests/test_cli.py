@@ -13,6 +13,10 @@ def test_list_does_not_require_a_harness(monkeypatch, capsys):
     assert "tool_use_003" in output
 
 
+def test_codex_harness_is_not_registered():
+    assert "codex" not in cli.AGENTS
+
+
 def test_list_can_filter_one_task(monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["aiosbench", "--task", "coding_003", "list"])
     cli.main()
