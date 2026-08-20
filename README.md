@@ -16,11 +16,26 @@ python -m pip install -e '.[dev]'  # contributors and CI
 aiosbench --piagent --model Qwen --no-resume
 ```
 
-Or run every configured harness sequentially:
+Configured harnesses are **Pi Agent, OpenCode, Goose, Hermes Agent, Letta and
+Agent Zero**. Run every configured harness sequentially with:
 
 ```bash
 aiosbench --all --model Qwen
 ```
+
+For harness bring-up and failure analysis, runs can be restricted to one or
+more task IDs or categories. Repeated selectors are combined and prerequisite
+tasks are included automatically:
+
+```bash
+aiosbench --opencode --model aios-llamacpp/Qwen --task coding_001 --no-resume --keep-raw
+aiosbench --opencode --model aios-llamacpp/Qwen --category coding --no-resume
+aiosbench --piagent --model aios-llamacpp/Qwen --task memory_003 --no-resume
+```
+
+A task-filtered run intentionally remains an incomplete Frontier v3 run and is
+therefore diagnostic rather than leaderboard-eligible. A normal unfiltered run
+still executes the complete catalog.
 
 The runner executes the active frontier v3 catalog in deterministic order, creates an isolated workspace for each task, preserves explicit warm-state chains for memory and learning tasks, records observable execution data, applies deterministic reference checks, stores resumable results, and regenerates the comparison dashboard.
 
