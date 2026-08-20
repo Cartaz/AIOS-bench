@@ -8,9 +8,9 @@ from aios_bench.adapters import (
     Adapter,
     AgentInvocation,
     AgentZeroAdapter,
-    CodexAdapter,
     HermesAdapter,
     LettaAdapter,
+    OpenCodeAdapter,
     required_capabilities_for,
 )
 from aios_bench.manifest import build_run_manifest, probe_executable, sanitize_configuration
@@ -36,8 +36,8 @@ def test_category_and_catalog_tag_requirements_are_composed():
 
     assert required == frozenset({"browser", "citations"})
     assert HermesAdapter().assess_capabilities("browser").is_supported
-    assert not CodexAdapter().assess_capabilities("browser").is_supported
-    assert CodexAdapter().assess_capabilities("coding").is_supported
+    assert not OpenCodeAdapter().assess_capabilities("browser").is_supported
+    assert OpenCodeAdapter().assess_capabilities("coding").is_supported
 
 
 def test_task_explicit_requirements_are_included():
@@ -45,10 +45,24 @@ def test_task_explicit_requirements_are_included():
         category="coding", tags=(), required_capabilities=("terminal", "workspace_write")
     )
 
-    assessment = CodexAdapter().assess_task(task)
+    assessment = OpenCodeAdapter().assess_task(task)
 
     assert assessment.is_supported
     assert assessment.required == frozenset({"terminal", "workspace_write"})
+
+
+def test_opencode_invocation_is_headless_json_and_model_pinned(tmp_path: Path):
+    invocation = OpenCodeAdapter().build("private prompt", tmp_path, "aios-llamacpp/Qwen")
+
+    assert invocation.command[:2] == ["opencode", "run"]
+    assert invocation.command[2:4] == ["--dir", str(tmp_path.resolve())]
+    assert "--format" in invocation.command
+    assert "json" in invocation.command
+    assert "--auto" in invocation.command
+    assert invocation.command[-3:-1] == ["--model", "aios-llamacpp/Qwen"]
+    assert invocation.command[-1] == "private prompt"
+    assert invocation.requested_model == "aios-llamacpp/Qwen"
+    assert invocation.resolved_model == "aios-llamacpp/Qwen"
 
 
 def test_agentzero_manifest_never_serializes_api_key(monkeypatch, tmp_path: Path):
@@ -76,9 +90,9 @@ def test_agentzero_manifest_never_serializes_api_key(monkeypatch, tmp_path: Path
     assert manifest["configuration"]["api_key_configured"] is True
 
 
-def test_manifest_records_explicitly_pinned_model_and_safe_configuration(tmp_path: Path):
-    adapter = CodexAdapter()
-    invocation = adapter.build("private prompt", tmp_path, "openai/gpt-test")
+def test_manifest_records_opencode_pinned_model_and_safe_configuration(tmp_path: Path):
+    adapter = OpenCodeAdapter()
+    invocation = adapter.build("private prompt", tmp_path, "aios-llamacpp/Qwen")
     manifest = build_run_manifest(
         adapter,
         invocation,
@@ -86,10 +100,11 @@ def test_manifest_records_explicitly_pinned_model_and_safe_configuration(tmp_pat
         probe_version=False,
     )
 
-    assert manifest["model"]["requested"] == "openai/gpt-test"
-    assert manifest["model"]["resolved"] == "openai/gpt-test"
+    assert manifest["model"]["requested"] == "aios-llamacpp/Qwen"
+    assert manifest["model"]["resolved"] == "aios-llamacpp/Qwen"
     assert manifest["model"]["resolution"] == "adapter_pinned"
-    assert manifest["configuration"]["sandbox"] == "workspace-write"
+    assert manifest["configuration"]["format"] == "json"
+    assert manifest["configuration"]["auto"] is True
     assert manifest["configuration"]["access_token"] == "[redacted]"
 
 
