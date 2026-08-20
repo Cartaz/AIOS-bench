@@ -1,0 +1,84 @@
+[
+  {
+    "claim": "The authoritative workflow is the one described in procedures/current.md.",
+    "source_doc": "notes/meeting_notes.md",
+    "evidence_quote": "A meeting suggestion proposed skipping numeric-field validation for speed. The signed current procedure remains the operational source of truth.",
+    "contradicting_claims": [
+      {
+        "claim": "The workflow from procedures/previous.md is current.",
+        "source_doc": "procedures/previous.md",
+        "reason": "It is labeled 'Previous procedure', indicating it has been superseded."
+      },
+      {
+        "claim": "The workflow in procedures/next_draft.md should be followed.",
+        "source_doc": "procedures/next_draft.md",
+        "reason": "It is labeled 'Next draft procedure', indicating it is not yet approved."
+      }
+    ]
+  },
+  {
+    "claim": "The authoritative workflow requires validating header and numeric fields.",
+    "source_doc": "procedures/current.md",
+    "evidence_quote": "Step 2: Validate the header and numeric fields.",
+    "contradicting_claims": [
+      {
+        "claim": "The workflow does not require numeric-field validation.",
+        "source_doc": "notes/meeting_notes.md",
+        "reason": "A meeting suggestion proposed skipping numeric-field validation for speed, but this was rejected — current.md remains the source of truth."
+      },
+      {
+        "claim": "The workflow only requires calculating total revenue (no explicit validation step).",
+        "source_doc": "procedures/previous.md",
+        "reason": "Previous procedure step 2 is 'Calculate total revenue' with no validation step."
+      }
+    ]
+  },
+  {
+    "claim": "The workflow output format is a Markdown file (monthly-sales.md).",
+    "source_doc": "procedures/current.md",
+    "evidence_quote": "Step 4: Save the summary as reports/monthly-sales.md",
+    "contradicting_claims": [
+      {
+        "claim": "The workflow output format is a plain text file (monthly-sales.txt).",
+        "source_doc": "procedures/previous.md",
+        "reason": "Previous procedure step 3 says 'Save the summary as reports/monthly-sales.txt'."
+      }
+    ]
+  },
+  {
+    "claim": "The workflow requires a separate review step before sharing.",
+    "source_doc": "procedures/current.md",
+    "evidence_quote": "Step 5: Review the result before sharing it.",
+    "contradicting_claims": [
+      {
+        "claim": "No separate review step is required; the summary is sent directly.",
+        "source_doc": "procedures/previous.md",
+        "reason": "Previous procedure step 4 says 'Send the summary without a separate review step'."
+      }
+    ]
+  },
+  {
+    "claim": "The authoritative workflow calculates both total revenue and units.",
+    "source_doc": "procedures/current.md",
+    "evidence_quote": "Step 3: Calculate total revenue and units.",
+    "contradicting_claims": [
+      {
+        "claim": "The workflow only calculates total revenue (not units).",
+        "source_doc": "procedures/previous.md",
+        "reason": "Previous procedure step 2 says 'Calculate total revenue' and does not mention units."
+      }
+    ]
+  },
+  {
+    "claim": "The workflow does NOT yet require publishing through a project PR workflow.",
+    "source_doc": "notes/meeting_notes.md",
+    "evidence_quote": "The signed current procedure remains the operational source of truth. [The current procedure has no PR publishing step.]",
+    "contradicting_claims": [
+      {
+        "claim": "The workflow must publish the summary through the project PR workflow.",
+        "source_doc": "procedures/next_draft.md",
+        "reason": "Next draft step 5 says 'Publish the summary through the project PR workflow.' But this is an unapproved draft, not the operative procedure."
+      }
+    ]
+  }
+]

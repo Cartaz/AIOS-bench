@@ -1,0 +1,28 @@
+{
+  "unresolved_actions": [
+    {
+      "action": "Update the current operating procedure",
+      "owner": "Luca",
+      "deadline": "2026-07-31 (after the meeting)",
+      "priority": "high",
+      "source_doc": "notes/meeting_notes.md",
+      "evidence_quote": "Luca: update the current operating procedure after the meeting."
+    },
+    {
+      "action": "Verify the July expense totals",
+      "owner": "Sara",
+      "deadline": "2026-08-05",
+      "priority": "critical",
+      "source_doc": "notes/meeting_notes.md",
+      "evidence_quote": "Sara: verify the July expense totals before 2026-08-05."
+    },
+    {
+      "action": "Review software subscriptions",
+      "owner": "Francesco",
+      "deadline": "2026-08-31 (before next month)",
+      "priority": "medium",
+      "source_doc": "notes/meeting_notes.md",
+      "evidence_quote": "Francesco: review software subscriptions before next month."
+    }
+  ]
+}

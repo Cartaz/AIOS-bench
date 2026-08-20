@@ -1,0 +1,3 @@
+Dataset: data/expenses_empty.csv
+Rows: 0
+No data rows found.

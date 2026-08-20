@@ -1,0 +1,54 @@
+[
+  {
+    "requirement": "R1",
+    "description": "Identify the authoritative transaction source.",
+    "finding": "legacy_sales.csv is marked authoritative: # authoritative operational export; current despite its legacy name",
+    "evidence_quote": "legacy_sales.csv is marked authoritative: # authoritative operational export; current despite its legacy name",
+    "contradictions_resolved": [
+      "legacy_sales.csv claims authority despite 'legacy' in filename \u2192 Inline comment overrides naming convention; it is the authoritative source.",
+      "sales_schema_shift.csv has identical data to sales.csv but different column names \u2192 Same data, different schema \u2014 not a separate source. sales.csv remains the canonical schema.",
+      "sales_alt.csv and legacy_sales.csv have different data \u2192 legacy_sales.csv is authoritative per its inline comment."
+    ]
+  },
+  {
+    "requirement": "R2",
+    "description": "Calculate the required totals.",
+    "finding": "Units=41, Revenue=580.0, Expenses=91.07, Net=488.93",
+    "evidence_quote": "sales.csv: 6 rows, units=41, revenue=580.0; expenses.csv: 7 rows, valid=6, total=91.07, skipped=1",
+    "contradictions_resolved": [
+      "expenses.csv has 1 row(s) with missing amounts \u2192 Row 'Missing amount' has no amount \u2014 excluded from total per procedure requirement to validate numeric fields."
+    ]
+  },
+  {
+    "requirement": "R3",
+    "description": "Reconcile the procedure conflict.",
+    "finding": "The signed current.md procedure is authoritative. It requires: (1) export CSV, (2) validate header + numeric fields, (3) calculate revenue + units, (4) save as reports/monthly-sales.md, (5) review before sharing. Meeting suggestions and draft procedures do not override the signed current procedure.",
+    "evidence_quote": "meeting_notes.md: 'The signed current procedure remains the operational source of truth.'; current.md step 2: 'Validate the header and numeric fields.'",
+    "contradictions_resolved": [
+      "previous.md vs current.md: Previous procedure omits numeric-field validation, review step, and uses .txt instead of .md \u2192 Current procedure is signed operational source of truth \u2014 overrides previous.",
+      "meeting_notes.md vs current.md: Meeting suggestion proposed skipping numeric-field validation for speed \u2192 Signed current procedure remains source of truth. Meeting suggestion does not override signed procedure.",
+      "current.md vs next_draft.md: Next draft adds PR workflow publish step not in current procedure \u2192 Next draft is a proposal, not yet signed. Current procedure (step 4: save .md) remains authoritative."
+    ]
+  },
+  {
+    "requirement": "R4",
+    "description": "Produce the final audit artifact.",
+    "finding": "Artifact: reports/monthly-sales.md",
+    "evidence_quote": "current.md step 4: 'Save the summary as reports/monthly-sales.md'.",
+    "contradictions_resolved": [
+      "previous.md step 3 specified reports/monthly-sales.txt \u2192 Signed current.md step 4 specifies .md format. The .md extension is authoritative."
+    ]
+  },
+  {
+    "requirement": "R5",
+    "description": "Verify the supporting tool output.",
+    "finding": "broken_tool: monthly_total([10, 20, '30']) will raise TypeError on string '30'; off_by_one_tool: inclusive_days uses (b-a).days which returns 2 for Aug 1\u2013Aug 3, but test expects 3; validator: Validator fails deterministically on run #3 with 'validator state corruption'; report_tool: report_tool only counts rows; does not produce revenue/units summary as required by the procedure",
+    "evidence_quote": "test_broken_tool.py expects monthly_total([10,20,'30']) == 60.0; test_off_by_one.py expects inclusive_days('2026-08-01','2026-08-03') == 3; Validator fails deterministically on run #3 with 'validator state corruption'; report_tool only counts rows; does not produce revenue/units summary as required by the procedure",
+    "contradictions_resolved": [
+      "The test expects the function to handle string numeric input, but the implementation does not convert strings. This is a planted contradiction. \u2192 The tool is broken and needs a fix: str(value) -> float conversion before summing.",
+      "Off-by-one error: exclusive delta vs. inclusive count. The function computes exclusive difference; the test expects inclusive count. \u2192 Fix: return (b - a).days + 1 for inclusive day count.",
+      "The validator self-corrupts on the 3rd run, creating a state-dependent failure that is planted (not data-dependent). \u2192 Run the validator and capture the state file. The corruption on run 3 is intentional for investigation purposes.",
+      "Procedure step 3 requires calculating total revenue and units, but report_tool only outputs row count as JSON. \u2192 The tool is incomplete \u2014 it satisfies the CLI contract (test passes) but does not fulfill procedure requirement R2."
+    ]
+  }
+]

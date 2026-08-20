@@ -1,0 +1,18 @@
+{
+  "runs": 3,
+  "history": [
+    {
+      "run": 1,
+      "status": "passed"
+    },
+    {
+      "run": 2,
+      "status": "passed"
+    },
+    {
+      "run": 3,
+      "status": "failed",
+      "error": "validator state corruption"
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "files_compared": {
+    "previous": "procedures/previous.md",
+    "current": "procedures/current.md",
+    "next_draft": "procedures/next_draft.md"
+  },
+  "changes": [
+    {
+      "id": 1,
+      "type": "addition",
+      "title": "Header and field validation step",
+      "description": "New step 2 added: 'Validate the header and numeric fields.' Previous version had no validation gate.",
+      "affected_files": {
+        "added_in": ["procedures/current.md:2", "procedures/next_draft.md:2"],
+        "absent_in": ["procedures/previous.md"]
+      },
+      "operator_impact": "Reduces risk of processing malformed CSV data. Adds a manual or automated gate before computation, increasing operator workload slightly but improving data integrity."
+    },
+    {
+      "id": 2,
+      "type": "change",
+      "title": "Revenue calculation now includes units",
+      "description": "Step text changed from 'Calculate total revenue.' to 'Calculate total revenue and units.'",
+      "previous_ref": "procedures/previous.md:2",
+      "changed_in": ["procedures/current.md:3", "procedures/next_draft.md:3"],
+      "operator_impact": "Operator must now also compute a units metric. Slightly more work per run, but produces richer output."
+    },
+    {
+      "id": 3,
+      "type": "change",
+      "title": "Output file format changed from .txt to .md",
+      "description": "Step text changed from 'Save the summary as reports/monthly-sales.txt.' to 'Save the summary as reports/monthly-sales.md.'",
+      "previous_ref": "procedures/previous.md:3",
+      "changed_in": ["procedures/current.md:4", "procedures/next_draft.md:4"],
+      "operator_impact": "Output is now Markdown instead of plain text. Operators using downstream Markdown-aware tools will benefit; plain-text consumers will need adjustment."
+    },
+    {
+      "id": 4,
+      "type": "removal",
+      "title": "Removed 'send without review' instruction",
+      "description": "The previous step 'Send the summary without a separate review step.' was removed entirely. Replaced by review and publish steps in both successors.",
+      "removed_from": "procedures/previous.md:4",
+      "replaced_by": ["procedures/current.md:5", "procedures/next_draft.md:5"],
+      "operator_impact": "Introduces a quality gate. The operator can no longer bypass review; both successors require human verification before distribution."
+    },
+    {
+      "id": 5,
+      "type": "change",
+      "title": "Review step replaced with PR-based publish workflow",
+      "description": "Step 5 changed from 'Review the result before sharing it.' to 'Publish the summary through the project PR workflow.'",
+      "previous_ref": "procedures/current.md:5",
+      "changed_in": "procedures/next_draft.md:5",
+      "operator_impact": "Replaces an informal review-and-share step with a structured pull-request workflow. Introduces version control discipline and peer review, adding collaboration overhead but improving traceability."
+    }
+  ],
+  "unchanged_sections": [
+    {
+      "description": "Step 1 — 'Export the monthly sales CSV.' is identical across all three files.",
+      "refs": ["procedures/previous.md:1", "procedures/current.md:1", "procedures/next_draft.md:1"]
+    },
+    {
+      "description": "Steps 1-4 in current.md are identical to steps 1-4 in next_draft.md (validation, calculation, and save steps).",
+      "refs_current": ["procedures/current.md:1", "procedures/current.md:2", "procedures/current.md:3", "procedures/current.md:4"],
+      "refs_next": ["procedures/next_draft.md:1", "procedures/next_draft.md:2", "procedures/next_draft.md:3", "procedures/next_draft.md:4"]
+    }
+  ],
+  "summary": {
+    "previous_to_current": "Two major improvements (data validation and review gating) plus a format change (.txt to .md).",
+    "current_to_next_draft": "Single substantive change: replacing an informal review-and-share step with a formal PR-based publish workflow. No steps removed."
+  }
+}

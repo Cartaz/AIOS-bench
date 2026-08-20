@@ -1,0 +1,17 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0 -- /home/francesco/AI_OS/AIOS-bench/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/francesco/AI_OS/AIOS-bench
+configfile: pyproject.toml
+collecting ... collected 8 items
+
+tests/test_broken_tool.py::test_mixed_numeric_input PASSED               [ 12%]
+tests/test_cli_contract.py::test_cli_contract PASSED                     [ 25%]
+tests/test_hidden_report_cli.py::test_alternate_dataset PASSED           [ 37%]
+tests/test_hidden_report_cli.py::test_missing_input_rejected PASSED      [ 50%]
+tests/test_hidden_report_cli.py::test_malformed_fixture_is_handled PASSED [ 62%]
+tests/test_off_by_one.py::test_inclusive_end_date PASSED                 [ 75%]
+tests/test_robust.py::test_empty_dataset PASSED                          [ 87%]
+tests/test_robust.py::test_invalid_dataset PASSED                        [100%]
+
+============================== 8 passed in 0.23s ===============================

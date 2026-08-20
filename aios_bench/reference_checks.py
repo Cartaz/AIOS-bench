@@ -12,7 +12,7 @@ def check_task(task_id,workspace,fixture_root,run_dir=None,events=None):
     # a stale branch silently win when task IDs overlapped.
     if task_id.startswith('knowledge_'):
         return check_knowledge(task_id,workspace,fixture_root)
-    if task_id.startswith(('autonomy_', 'coding_', 'learning_')):
+    if task_id.startswith(('autonomy_', 'coding_', 'learning_')) or task_id == 'tool_use_003':
         return check_data(task_id,workspace,fixture_root)
     if task_id.startswith('long_horizon_'):
         return check_long(task_id,workspace,fixture_root)

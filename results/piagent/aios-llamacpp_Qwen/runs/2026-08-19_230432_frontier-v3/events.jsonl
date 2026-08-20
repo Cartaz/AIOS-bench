@@ -1,0 +1,1 @@
+{"timestamp": 1787173472.1404874, "run_id": "2026-08-19_230432_frontier-v3", "event": "task_started", "task_id": "autonomy_001", "command": ["pi", "--mode", "rpc", "--no-session", "--model", "aios-llamacpp/Qwen"], "model": "aios-llamacpp/Qwen", "tier": 3, "task_revision": 3}

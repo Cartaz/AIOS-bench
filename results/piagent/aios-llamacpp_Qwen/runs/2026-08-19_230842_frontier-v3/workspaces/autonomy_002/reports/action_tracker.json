@@ -1,0 +1,195 @@
+{
+  "action_tracker": {
+    "title": "Prioritized Action Tracker",
+    "generated_from": [
+      "notes/meeting_notes.md",
+      "notes/old_meeting_notes.md",
+      "notes/requirements.md",
+      "procedures/current.md",
+      "procedures/next_draft.md",
+      "procedures/previous.md"
+    ],
+    "confirms_source_of_truth": "procedures/current.md (signed operational source of truth)",
+    "actions": [
+      {
+        "id": 1,
+        "action": "Review software subscriptions before next month",
+        "status": "confirmed_action",
+        "owner": "Francesco",
+        "deadline": "end of August 2026",
+        "priority": "high",
+        "type": "confirmed",
+        "evidence_quote": "Francesco: review software subscriptions before next month.",
+        "source_doc": "notes/meeting_notes.md",
+        "notes": "Deadline inferred from meeting date (2026-07-31) and phrasing 'before next month'."
+      },
+      {
+        "id": 2,
+        "action": "Prepare the July sales summary",
+        "status": "confirmed_action",
+        "owner": "Marta",
+        "deadline": "TBD",
+        "priority": "high",
+        "type": "confirmed",
+        "evidence_quote": "Marta: prepare the July sales summary.",
+        "source_doc": "notes/meeting_notes.md",
+        "notes": "No explicit deadline stated in source."
+      },
+      {
+        "id": 3,
+        "action": "Update the current operating procedure after the meeting",
+        "status": "confirmed_action",
+        "owner": "Luca",
+        "deadline": "TBD",
+        "priority": "high",
+        "type": "confirmed",
+        "evidence_quote": "Luca: update the current operating procedure after the meeting.",
+        "source_doc": "notes/meeting_notes.md",
+        "notes": "No explicit deadline stated. Note: 'update the current operating procedure' conflicts with the signed procedure policy in the same document — see Action 8."
+      },
+      {
+        "id": 4,
+        "action": "Verify the July expense totals before 2026-08-05",
+        "status": "confirmed_action",
+        "owner": "Sara",
+        "deadline": "2026-08-05",
+        "priority": "high",
+        "type": "confirmed",
+        "evidence_quote": "Sara: verify the July expense totals before 2026-08-05.",
+        "source_doc": "notes/meeting_notes.md",
+        "notes": "Explicit deadline given."
+      },
+      {
+        "id": 5,
+        "action": "Keep the cloud storage subscription for now",
+        "status": "confirmed_action",
+        "owner": "TBD",
+        "deadline": "TBD",
+        "priority": "medium",
+        "type": "confirmed",
+        "evidence_quote": "Keep the cloud storage subscription for now.",
+        "source_doc": "notes/meeting_notes.md",
+        "notes": "This is a standing decision; no specific owner or deadline assigned."
+      },
+      {
+        "id": 6,
+        "action": "Review recurring software costs monthly",
+        "status": "confirmed_action",
+        "owner": "TBD",
+        "deadline": "recurring monthly",
+        "priority": "medium",
+        "type": "confirmed",
+        "evidence_quote": "Review recurring software costs monthly.",
+        "source_doc": "notes/meeting_notes.md",
+        "notes": "Recurring decision. Overlaps with Action 1 (Francesco's one-time review); both should be tracked."
+      },
+      {
+        "id": 7,
+        "action": "Follow the current signed procedure: Export CSV, validate header and numeric fields, calculate totals, save summary as reports/monthly-sales.md, review before sharing",
+        "status": "confirmed_action",
+        "owner": "TBD (all reporting staff)",
+        "deadline": "ongoing",
+        "priority": "critical",
+        "type": "confirmed",
+        "evidence_quote": "Current procedure — signed operational source of truth\n\n1. Export the monthly sales CSV.\n2. Validate the header and numeric fields.\n3. Calculate total revenue and units.\n4. Save the summary as `reports/monthly-sales.md`.\n5. Review the result before sharing it.",
+        "source_doc": "procedures/current.md",
+        "notes": "This is the binding operational procedure. The previous procedure (export, calculate revenue only, save as .txt, share without review) is superseded. The next_draft (adds PR workflow step) is not yet approved."
+      },
+      {
+        "id": 8,
+        "action": "Reject the suggestion to skip numeric-field validation for speed",
+        "status": "confirmed_action",
+        "owner": "TBD (process owner)",
+        "deadline": "TBD",
+        "priority": "medium",
+        "type": "confirmed",
+        "evidence_quote": "A meeting suggestion proposed skipping numeric-field validation for speed. The signed current procedure remains the operational source of truth.",
+        "source_doc": "notes/meeting_notes.md",
+        "notes": "This is a confirmed policy decision. The suggestion was discussed but the signed procedure takes precedence. Luca (Action 3) must not remove validation steps when updating procedures."
+      },
+      {
+        "id": 9,
+        "action": "Evaluate the next-draft procedure change (replace step 5 'Review' with 'Publish through project PR workflow')",
+        "status": "suggestion",
+        "owner": "TBD (process owner)",
+        "deadline": "TBD",
+        "priority": "low",
+        "type": "suggestion",
+        "evidence_quote": "Next draft procedure\n\n1. Export the monthly sales CSV.\n2. Validate the header and numeric fields.\n3. Calculate total revenue and units.\n4. Save the summary as `reports/monthly-sales.md`.\n5. Publish the summary through the project PR workflow.",
+        "source_doc": "procedures/next_draft.md",
+        "notes": "This draft is NOT yet signed. It replaces the review step with a PR workflow. Requires formal approval before adoption."
+      },
+      {
+        "id": 10,
+        "action": "Resolve procedural conflict: reconcile requirement R3 (reconcile the procedure conflict) per requirements document",
+        "status": "confirmed_action",
+        "owner": "TBD",
+        "deadline": "TBD",
+        "priority": "medium",
+        "type": "confirmed",
+        "evidence_quote": "R3: reconcile the procedure conflict.",
+        "source_doc": "notes/requirements.md",
+        "notes": "Conflict between current procedure (signed), previous procedure (superseded), and next_draft (unapproved). Requirement mandates resolution."
+      },
+      {
+        "id": 11,
+        "action": "Identify the authoritative transaction source (per R1)",
+        "status": "confirmed_action",
+        "owner": "TBD",
+        "deadline": "TBD",
+        "priority": "medium",
+        "type": "confirmed",
+        "evidence_quote": "R1: identify the authoritative transaction source.",
+        "source_doc": "notes/requirements.md",
+        "notes": "Open requirement; no owner or deadline assigned."
+      },
+      {
+        "id": 12,
+        "action": "Calculate the required totals (per R2)",
+        "status": "confirmed_action",
+        "owner": "TBD",
+        "deadline": "TBD",
+        "priority": "medium",
+        "type": "confirmed",
+        "evidence_quote": "R2: calculate the required totals.",
+        "source_doc": "notes/requirements.md",
+        "notes": "Open requirement; likely covered by Action 7 (step 3) in the signed procedure."
+      },
+      {
+        "id": 13,
+        "action": "Produce the final audit artifact (per R4)",
+        "status": "confirmed_action",
+        "owner": "TBD",
+        "deadline": "TBD",
+        "priority": "medium",
+        "type": "confirmed",
+        "evidence_quote": "R4: produce the final audit artifact.",
+        "source_doc": "notes/requirements.md",
+        "notes": "Open requirement; no owner or deadline assigned."
+      },
+      {
+        "id": 14,
+        "action": "Verify the supporting tool output (per R5)",
+        "status": "confirmed_action",
+        "owner": "TBD",
+        "deadline": "TBD",
+        "priority": "medium",
+        "type": "confirmed",
+        "evidence_quote": "R5: verify the supporting tool output.",
+        "source_doc": "notes/requirements.md",
+        "notes": "Open requirement; no owner or deadline assigned."
+      }
+    ],
+    "summary": {
+      "total_actions": 14,
+      "confirmed_actions": 13,
+      "suggestions": 1,
+      "actions_with_owner": 3,
+      "actions_with_deadline": 4,
+      "critical_priority": 1,
+      "high_priority": 4,
+      "medium_priority": 8,
+      "low_priority": 1
+    }
+  }
+}

@@ -58,11 +58,16 @@ def evaluate_artifacts(
             elif kind=="unchanged": passed=file_sha256(workspace,path)==_fixture_sha256(path)
             elif kind=="command": passed,detail=_run_check_command(workspace,check["command"],float(check.get("timeout",30)))
             elif kind=="reference":
-                passed,detail=check_task(
+                reference_result = check_task(
                     check["task_id"], workspace,
                     Path(os.environ["AIOS_BENCH_FIXTURE_ROOT"]), run_dir,
                     events=events or [],
                 )
+                if reference_result is None:
+                    raise EvaluationError(
+                        f"reference check returned no result for task: {check['task_id']}"
+                    )
+                passed, detail = reference_result
             elif kind=="max_files":
                 p=_safe_path(workspace,path or "."); n=sum(1 for x in p.rglob("*") if x.is_file()) if p.exists() else 0; passed=n<=int(check["max"]); detail=f"file_count={n}"
             else: raise EvaluationError(f"unknown check type: {kind}")

@@ -1,0 +1,22 @@
+{
+  "checkpoint": 1,
+  "timestamp": "2026-08-20T04:32:19.525547",
+  "phase": "corpus_inspection_complete",
+  "details": {
+    "total_packets": 80,
+    "signed_gate_found_in": "packet_047.md",
+    "gate_id": "LH-047",
+    "authority": "release council record, signed after reconciliation",
+    "rollback_owner": "Priya N.",
+    "latency_budget_ms": 240,
+    "provisional_values": "distractors - superseded by LH-047",
+    "requirements": [
+      "R1: identify authoritative transaction source",
+      "R2: calculate required totals",
+      "R3: reconcile procedure conflict",
+      "R4: produce final audit artifact",
+      "R5: verify supporting tool output"
+    ],
+    "signed_gate_distinguisher": "Status: reviewed vs draft; contains Signed release gate section; supersedes all provisional values"
+  }
+}

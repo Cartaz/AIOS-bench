@@ -1,0 +1,4 @@
+Robust Report
+Input: data/expenses_empty.csv
+Total rows: 0
+No data rows found.

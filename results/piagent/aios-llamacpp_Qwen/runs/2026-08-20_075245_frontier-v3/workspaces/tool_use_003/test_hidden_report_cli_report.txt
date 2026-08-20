@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0 -- /home/francesco/AI_OS/AIOS-bench/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/francesco/AI_OS/AIOS-bench
+configfile: pyproject.toml
+collecting ... collected 3 items
+
+tests/test_hidden_report_cli.py::test_alternate_dataset PASSED           [ 33%]
+tests/test_hidden_report_cli.py::test_missing_input_rejected PASSED      [ 66%]
+tests/test_hidden_report_cli.py::test_malformed_fixture_is_handled PASSED [100%]
+
+============================== 3 passed in 0.11s ===============================

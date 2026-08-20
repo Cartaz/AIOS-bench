@@ -1,6 +1,8 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from aios_bench.evaluators import evaluate_artifacts
+from aios_bench.reference_checks import check_task
 from aios_bench.reference_checks_subagents import check as check_subagents
 
 
@@ -26,6 +28,36 @@ def test_json_and_regex_checks(tmp_path: Path):
     ])
     assert result["passed"] is True
     assert result["acceptance_score"] == 1.0
+
+
+def test_tool_use_reference_is_routed_to_data_oracle(tmp_path: Path):
+    with patch("aios_bench.reference_checks.check_data", return_value=(True, "data oracle")) as data_check, \
+            patch("aios_bench.reference_checks.check_system") as system_check:
+        result = check_task("tool_use_003", tmp_path, tmp_path)
+
+    assert result == (True, "data oracle")
+    data_check.assert_called_once_with("tool_use_003", tmp_path, tmp_path)
+    system_check.assert_not_called()
+
+
+def test_other_tool_use_references_stay_on_system_oracle(tmp_path: Path):
+    with patch("aios_bench.reference_checks.check_data") as data_check, \
+            patch("aios_bench.reference_checks.check_system", return_value=(True, "system oracle")) as system_check:
+        result = check_task("tool_use_002", tmp_path, tmp_path)
+
+    assert result == (True, "system oracle")
+    data_check.assert_not_called()
+    system_check.assert_called_once_with("tool_use_002", tmp_path, tmp_path, None)
+
+
+def test_missing_reference_result_becomes_failed_check(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AIOS_BENCH_FIXTURE_ROOT", str(tmp_path))
+    with patch("aios_bench.evaluators.check_task", return_value=None):
+        result = evaluate_artifacts(tmp_path, [{"type": "reference", "task_id": "future_001"}])
+
+    assert result["passed"] is False
+    assert result["results"][0]["passed"] is False
+    assert "returned no result" in result["results"][0]["detail"]
 
 
 def test_subagent_oracle_requires_normalized_events_not_reported_prose(tmp_path: Path):
