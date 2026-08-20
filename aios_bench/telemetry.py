@@ -19,7 +19,7 @@ def _compact_payload(item: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "type", "event", "id", "toolName", "tool", "name", "toolCallId",
         "call_id", "status", "isError", "willRetry", "usage", "stopReason",
-        "responseId", "inferred", "error", "reason",
+        "responseId", "inferred", "error", "reason", "sessionID",
     }
     compact: dict[str, Any] = {}
     for key in allowed:
@@ -70,6 +70,22 @@ def _usage(item: dict[str, Any]) -> dict[str, int]:
         "output": int(usage.get("output", 0) or 0),
         "reasoning": int(usage.get("reasoning", 0) or 0),
         "total": int(usage.get("totalTokens", usage.get("total_tokens", 0)) or 0),
+    }
+
+
+def _opencode_usage(part: dict[str, Any]) -> dict[str, int]:
+    tokens = part.get("tokens") or {}
+    input_tokens = int(tokens.get("input", 0) or 0)
+    output_tokens = int(tokens.get("output", 0) or 0)
+    reasoning_tokens = int(tokens.get("reasoning", 0) or 0)
+    total = int(tokens.get("total", 0) or 0)
+    if not total:
+        total = input_tokens + output_tokens + reasoning_tokens
+    return {
+        "input": input_tokens,
+        "output": output_tokens,
+        "reasoning": reasoning_tokens,
+        "total": total,
     }
 
 
@@ -139,6 +155,108 @@ def parse_pi_rpc(text: str, *, source: str = "piagent") -> list[Event]:
     return collector.events
 
 
+def parse_opencode_jsonl(text: str, *, source: str = "opencode") -> list[Event]:
+    """Normalize ``opencode run --format json`` NDJSON into canonical events.
+
+    OpenCode emits completed tool parts rather than a separate start/end pair,
+    so one ``tool_use`` record becomes both a canonical call and result.  The
+    ``task`` tool is deliberately *not* converted into structured subagent
+    telemetry: current OpenCode headless streams do not expose child-session
+    events, so doing so would overstate harness observability.
+    """
+
+    collector = EventCollector()
+    session_started = False
+    session_ended = False
+
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            _events_from_line(line, source, collector)
+            continue
+        if not isinstance(item, dict):
+            collector.add("unknown", source=source)
+            continue
+
+        kind = str(item.get("type", "unknown"))
+        part = item.get("part") if isinstance(item.get("part"), dict) else {}
+        session_id = item.get("sessionID") or part.get("sessionID")
+
+        if kind == "step_start":
+            if not session_started:
+                collector.add("session_start", source=source, session_id=session_id)
+                session_started = True
+            else:
+                collector.add("unknown", source=source, opencode_type=kind, session_id=session_id)
+            continue
+
+        if kind == "text":
+            collector.add(
+                "assistant_message",
+                source=source,
+                content=str(part.get("text", ""))[:20000],
+                session_id=session_id,
+            )
+            continue
+
+        if kind == "tool_use":
+            tool = str(part.get("tool", "unknown"))[:200]
+            call_id = part.get("callID") or part.get("id")
+            state = part.get("state") if isinstance(part.get("state"), dict) else {}
+            status = str(state.get("status", "unknown"))
+            is_error = status == "error"
+            collector.add(
+                "tool_call", source=source, tool=tool, call_id=call_id,
+                status=status, session_id=session_id,
+            )
+            collector.add(
+                "tool_result", source=source, tool=tool, call_id=call_id,
+                is_error=is_error, status=status, session_id=session_id,
+            )
+            normalized = tool.lower().replace("-", "_")
+            if normalized in {"bash", "shell", "terminal"}:
+                collector.add("terminal", source=source, tool=tool, call_id=call_id)
+            if normalized in {"read", "read_file"}:
+                collector.add("file_read", source=source, tool=tool, call_id=call_id)
+            if normalized in {"write", "write_file", "edit", "apply_patch", "patch"}:
+                collector.add("file_write", source=source, tool=tool, call_id=call_id)
+            continue
+
+        if kind == "step_finish":
+            usage = _opencode_usage(part)
+            reason = part.get("reason")
+            if reason == "stop" and not session_ended:
+                collector.add(
+                    "session_end", source=source, session_id=session_id,
+                    usage=usage, stop_reason=reason,
+                )
+                session_ended = True
+            else:
+                collector.add(
+                    "unknown", source=source, opencode_type=kind,
+                    session_id=session_id, usage=usage, stop_reason=reason,
+                )
+            continue
+
+        if kind == "error":
+            collector.add(
+                "error", source=source, session_id=session_id,
+                error=str(item.get("error", "OpenCode error"))[:2000],
+            )
+            continue
+
+        if kind == "reasoning":
+            collector.add("unknown", source=source, opencode_type=kind, session_id=session_id)
+            continue
+
+        collector.add("unknown", source=source, opencode_type=kind, session_id=session_id)
+
+    return collector.events
+
+
 def parse_text(text: str, *, source: str) -> list[Event]:
     collector = EventCollector()
     for line in text.splitlines():
@@ -178,6 +296,8 @@ def parse_jsonl(text: str, *, source: str) -> list[Event]:
 def parse_output(stdout: str, stderr: str = "", *, source: str) -> list[Event]:
     if source == "piagent":
         events = parse_pi_rpc(stdout, source=source)
+    elif source == "opencode":
+        events = parse_opencode_jsonl(stdout, source=source)
     else:
         events = parse_jsonl(stdout, source=source)
     events.extend(parse_text(stderr, source=f"{source}:stderr"))
