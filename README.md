@@ -2,7 +2,15 @@
 
 Reproducible benchmark suite for local AI operating-system agents.
 
-## Running
+## Install and run
+
+The runtime package has no test-framework dependency. Install the development
+extra when working on the benchmark itself:
+
+```bash
+python -m pip install -e .
+python -m pip install -e '.[dev]'  # contributors and CI
+```
 
 ```bash
 aiosbench --piagent --model Qwen --no-resume
@@ -27,24 +35,44 @@ catalog, deterministic fixture inputs, and reference-oracle implementation are
 fingerprinted together. A fixture or oracle update therefore starts affected
 work again rather than silently mixing incomparable scores.
 
+Comparable task score is `80% deterministic acceptance + 20% successful
+execution`. A failed task is capped at 49/100, so partial artifacts cannot look
+like a passing result. Telemetry-derived efficiency and recovery metrics remain
+diagnostic fields rather than cross-harness score inputs. Tasks recorded as
+`unsupported` or dependency-`blocked` have no score.
+
 ## Results layout
 
-Benchmark results live under `results/` using one canonical layout:
+Raw benchmark runs are local data. They live under `results/.local/` using one
+canonical layout:
 
 ```text
 results/
-  <harness>/
-    <model>/
-      latest.txt or latest -> runs/<run-id>
-      runs/
-        <run-id>/
-          run.json
-          results.jsonl
-          logs/
-          workspaces/
+  README.md
+  summary.json
+  dashboard.html
+  .local/
+    <harness>/
+      <model>/
+        latest.txt and, where supported, latest -> runs/<run-id>
+        runs/
+          <run-id>/
+            run.json
+            results.jsonl
+            logs/
+            workspaces/
 ```
 
-Historical runs use the same structure. Older benchmark data has been normalized into this layout rather than being kept in separately named `first_*` and `second_*` directories.
+`.local/` is ignored by Git. The repository publishes only the regenerated
+aggregate `summary.json` and `dashboard.html`; a `run.json` remains beside its
+local run for audit and reproducibility. See [run lifecycle and
+comparability](docs/RUNS_AND_RESULTS.md) and the [artifact retention
+policy](docs/ARTIFACT_RETENTION.md).
+
+```bash
+aiosbench dashboard  # local diagnostic view under results/.local/
+aiosbench publish    # reviewed aggregate snapshot under results/
+```
 
 ## Frontier v3
 
@@ -64,5 +92,5 @@ release-gate citation, recorded recovery, untouched validator, and checkpoints.
 Subagent tasks count only normalized `subagent_start` events from the harness;
 mentions of delegation in a report or stdout do not count as evidence of a
 delegated run. Harnesses without compatible structured delegation telemetry
-should report that limitation rather than compare those task scores as if they
-measured the same capability.
+are recorded as `unsupported`, with no score, and excluded from comparable
+aggregates rather than treated as failures.

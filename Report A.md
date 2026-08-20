@@ -1,5 +1,8 @@
 # AIOS-bench — Hardening Report
 
+> Historical design audit for the retired frontier v2 catalog. The implemented
+> frontier v3 suite and `docs/RUNS_AND_RESULTS.md` are authoritative.
+
 **Logica delle modifiche test per test**
 
 > Report tecnico per maintainer. Cataloga, per ciascuno dei 28 task in `benchmarks/tasks/frontier_v2.json`, le vulnerabilità attuali, la logica dell'indurimento proposto e le nuove specifiche di acceptance con snippet JSON pronti da innestare nel catalogo.

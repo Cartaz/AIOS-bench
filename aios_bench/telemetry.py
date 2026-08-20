@@ -14,6 +14,27 @@ TOOL_PATTERNS = [
 ]
 
 
+def _compact_payload(item: dict[str, Any]) -> dict[str, Any]:
+    """Keep bounded structural telemetry without prompts or bulk tool output."""
+    allowed = {
+        "type", "event", "id", "toolName", "tool", "name", "toolCallId",
+        "call_id", "status", "isError", "willRetry", "usage", "stopReason",
+        "responseId", "inferred", "error", "reason",
+    }
+    compact: dict[str, Any] = {}
+    for key in allowed:
+        value = item.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            compact[key] = value[:2000]
+        elif isinstance(value, (bool, int, float)):
+            compact[key] = value
+        elif key == "usage" and isinstance(value, dict):
+            compact[key] = {str(k): v for k, v in value.items() if isinstance(v, (int, float))}
+    return compact
+
+
 def _events_from_line(line: str, source: str, collector: EventCollector) -> None:
     text = line.strip()
     if not text:
@@ -69,9 +90,9 @@ def parse_pi_rpc(text: str, *, source: str = "piagent") -> list[Event]:
             # RPC command acknowledgements are protocol metadata, not agent events.
             continue
         if kind == "agent_start":
-            collector.add("session_start", source=source, payload=item)
+            collector.add("session_start", source=source, payload=_compact_payload(item))
         elif kind == "agent_settled":
-            collector.add("session_end", source=source, payload=item)
+            collector.add("session_end", source=source, payload=_compact_payload(item))
         elif kind == "message_end":
             message = item.get("message") or {}
             role = message.get("role")
@@ -85,34 +106,36 @@ def parse_pi_rpc(text: str, *, source: str = "piagent") -> list[Event]:
             collector.add("assistant_message", source=source, content=message.get("content", []), usage=usage,
                            stop_reason=message.get("stopReason"), response_id=message.get("responseId"), turn=True)
             for result in item.get("toolResults", []) or []:
-                collector.add("tool_result", source=source, payload=result)
+                collector.add("tool_result", source=source,
+                              payload=_compact_payload(result) if isinstance(result, dict) else {})
         elif kind == "tool_execution_start":
             collector.add("tool_call", source=source, tool=item.get("toolName", item.get("name")),
-                           call_id=item.get("toolCallId", item.get("id")), payload=item)
+                           call_id=item.get("toolCallId", item.get("id")))
         elif kind == "tool_execution_end":
             collector.add("tool_result", source=source, tool=item.get("toolName", item.get("name")),
-                           call_id=item.get("toolCallId", item.get("id")), payload=item)
+                           call_id=item.get("toolCallId", item.get("id")), is_error=bool(item.get("isError")))
         elif kind == "tool_execution_update":
-            collector.add("tool_result", source=source, update=True, payload=item)
+            collector.add("tool_result", source=source, update=True,
+                          call_id=item.get("toolCallId", item.get("id")))
         elif kind == "bash_execution_update":
-            collector.add("terminal", source=source, payload=item)
+            collector.add("terminal", source=source, call_id=item.get("toolCallId", item.get("id")))
         elif kind in {"auto_retry_start", "summarization_retry_attempt_start"}:
-            collector.add("retry", source=source, payload=item)
+            collector.add("retry", source=source, payload=_compact_payload(item))
         elif kind == "extension_error":
-            collector.add("error", source=source, payload=item)
+            collector.add("error", source=source, payload=_compact_payload(item))
         elif kind == "agent_end":
             if item.get("willRetry"):
-                collector.add("retry", source=source, payload=item)
+                collector.add("retry", source=source, payload=_compact_payload(item))
         elif kind == "message_update":
-            update = item.get("assistantMessageEvent") or {}
-            if update.get("type") == "text_delta":
-                collector.add("assistant_message", source=source, delta=update.get("delta", ""), streaming=True)
+            # message_end carries the final content and usage. Persisting every
+            # streaming delta made canonical trajectories quadratic in size.
+            continue
         elif kind in {"queue_update", "compaction_start", "compaction_end", "turn_start", "message_start"}:
             # Preserve protocol lifecycle information without forcing it into a
             # benchmark capability category.
-            collector.add("unknown", source=source, rpc_type=kind, payload=item)
+            collector.add("unknown", source=source, rpc_type=kind)
         else:
-            collector.add("unknown", source=source, rpc_type=kind, payload=item)
+            collector.add("unknown", source=source, rpc_type=kind)
     return collector.events
 
 
@@ -148,7 +171,7 @@ def parse_jsonl(text: str, *, source: str) -> list[Event]:
             "file_write": "file_write",
         }
         event_type = mapping.get(kind, "unknown")
-        collector.add(event_type, source=source, payload=item)
+        collector.add(event_type, source=source, payload=_compact_payload(item))
     return collector.events
 
 

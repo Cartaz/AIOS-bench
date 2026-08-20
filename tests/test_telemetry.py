@@ -19,3 +19,14 @@ def test_output_parser_falls_back_to_stderr():
     events = parse_output("", "Traceback: failure\nRetrying\n", source="opencode")
     assert any(event.type == "error" for event in events)
     assert any(event.type == "retry" for event in events)
+
+
+def test_structured_payloads_drop_prompts_and_bulk_output():
+    events = parse_jsonl(
+        '{"type":"tool_call","name":"terminal","prompt":"secret","output":"bulk"}\n',
+        source="agent",
+    )
+    encoded = str(events[0].data)
+    assert "secret" not in encoded
+    assert "bulk" not in encoded
+    assert "terminal" in encoded

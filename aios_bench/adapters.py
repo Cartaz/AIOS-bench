@@ -2,14 +2,86 @@ from __future__ import annotations
 
 import os
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Iterable
+
+
+UNKNOWN_MODEL_VALUES = frozenset({"", "unknown"})
+
+# These are hard comparability requirements, not a taxonomy of everything a
+# task happens to exercise.  Only categories which cannot be evaluated fairly
+# without a harness-level facility belong here.  Other categories use the
+# benchmark-owned workspace and deterministic oracle shared by every adapter.
+REQUIRED_CAPABILITIES_BY_CATEGORY: dict[str, frozenset[str]] = {
+    "browser": frozenset({"browser"}),
+    "subagents": frozenset({"structured_subagent_events"}),
+}
+
+
+def _requested_model(model: str) -> str | None:
+    return model if model and model not in UNKNOWN_MODEL_VALUES else None
 
 
 @dataclass(frozen=True)
 class AgentInvocation:
     command: list[str]
     environment: dict[str, str]
+    requested_model: str | None = None
+    resolved_model: str | None = None
+    provider: str | None = None
+    endpoint: str | None = None
+    configuration: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CapabilityAssessment:
+    """Result of checking one task against an adapter's hard requirements."""
+
+    required: frozenset[str]
+    supported: frozenset[str]
+    missing: frozenset[str]
+
+    @property
+    def is_supported(self) -> bool:
+        return not self.missing
+
+    @property
+    def status(self) -> str:
+        return "supported" if self.is_supported else "unsupported"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "required": sorted(self.required),
+            "supported": sorted(self.supported),
+            "missing": sorted(self.missing),
+        }
+
+
+def required_capabilities_for(
+    category: str,
+    tags: Iterable[str] = (),
+    explicit: Iterable[str] = (),
+) -> frozenset[str]:
+    """Return hard harness requirements for a catalog task.
+
+    Catalogs may add ``requires:<capability>`` tags without requiring another
+    runner change.  Category requirements remain deliberately conservative so
+    ordinary benchmark skills are not confused with harness integration APIs.
+    """
+
+    required = set(REQUIRED_CAPABILITIES_BY_CATEGORY.get(category, ()))
+    if isinstance(explicit, str):
+        required.add(explicit)
+    else:
+        required.update(explicit)
+    if isinstance(tags, str):
+        tags = (tags,)
+    for tag in tags:
+        if tag.startswith("requires:") and tag.removeprefix("requires:"):
+            required.add(tag.removeprefix("requires:"))
+    return frozenset(required)
 
 
 class Adapter:
@@ -22,6 +94,32 @@ class Adapter:
     def parse_event(self, line: str) -> dict | None:
         return None
 
+    def assess_capabilities(
+        self,
+        category: str,
+        tags: Iterable[str] = (),
+        explicit: Iterable[str] = (),
+    ) -> CapabilityAssessment:
+        required = required_capabilities_for(category, tags, explicit)
+        return CapabilityAssessment(
+            required=required,
+            supported=self.capabilities,
+            missing=required.difference(self.capabilities),
+        )
+
+    def supports(self, required: Iterable[str]) -> bool:
+        requirements = {required} if isinstance(required, str) else frozenset(required)
+        return not requirements.difference(self.capabilities)
+
+    def assess_task(self, task: object) -> CapabilityAssessment:
+        """Assess a Task-like object without coupling adapters to catalog models."""
+
+        return self.assess_capabilities(
+            str(getattr(task, "category")),
+            getattr(task, "tags", ()),
+            getattr(task, "required_capabilities", ()),
+        )
+
 
 class HermesAdapter(Adapter):
     name = "hermes"
@@ -32,7 +130,14 @@ class HermesAdapter(Adapter):
         if model and model != "unknown":
             command += ["--model", model]
         command += ["-q", prompt]
-        return AgentInvocation(command, {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())})
+        requested = _requested_model(model)
+        return AgentInvocation(
+            command,
+            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
+            requested_model=requested,
+            resolved_model=requested,
+            configuration={"mode": "chat", "quiet": True},
+        )
 
 
 class PiAgentAdapter(Adapter):
@@ -45,7 +150,14 @@ class PiAgentAdapter(Adapter):
         command = ["pi", "--mode", "rpc", "--no-session"]
         if model and model != "unknown":
             command += ["--model", model]
-        return AgentInvocation(command, {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())})
+        requested = _requested_model(model)
+        return AgentInvocation(
+            command,
+            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
+            requested_model=requested,
+            resolved_model=requested,
+            configuration={"mode": "rpc", "session": "disabled"},
+        )
 
 
 class OpenCodeAdapter(Adapter):
@@ -57,7 +169,14 @@ class OpenCodeAdapter(Adapter):
         if model and model != "unknown":
             command += ["--model", model]
         command.append(prompt)
-        return AgentInvocation(command, {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())})
+        requested = _requested_model(model)
+        return AgentInvocation(
+            command,
+            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
+            requested_model=requested,
+            resolved_model=requested,
+            configuration={"format": "json", "auto": True},
+        )
 
 
 class GooseAdapter(Adapter):
@@ -72,7 +191,15 @@ class GooseAdapter(Adapter):
         if model and model != "unknown":
             command += ["--model", model]
         command += ["-t", prompt]
-        return AgentInvocation(command, {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())})
+        requested = _requested_model(model)
+        return AgentInvocation(
+            command,
+            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
+            requested_model=requested,
+            resolved_model=requested,
+            provider=provider,
+            configuration={"session": "disabled"},
+        )
 
 
 class LettaAdapter(Adapter):
@@ -87,7 +214,15 @@ class LettaAdapter(Adapter):
         environment = {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())}
         if model and model != "unknown":
             environment["AIOS_BENCH_REQUESTED_MODEL"] = model
-        return AgentInvocation(command + [prompt], environment)
+        requested = _requested_model(model)
+        return AgentInvocation(
+            command + [prompt],
+            environment,
+            requested_model=requested,
+            # Letta resolves the model from the configured agent, not this CLI.
+            resolved_model=None,
+            configuration={"headless": True, "agent_id_configured": bool(agent_id)},
+        )
 
 
 class AgentZeroAdapter(Adapter):
@@ -106,7 +241,16 @@ class AgentZeroAdapter(Adapter):
             environment["AIOS_BENCH_AGENTZERO_PROJECT"] = project
         if model and model != "unknown":
             environment["AIOS_BENCH_REQUESTED_MODEL"] = model
-        return AgentInvocation(command, environment)
+        requested = _requested_model(model)
+        return AgentInvocation(
+            command,
+            environment,
+            requested_model=requested,
+            # The HTTP service owns the actual model configuration.
+            resolved_model=None,
+            endpoint=environment["AIOS_BENCH_AGENTZERO_URL"],
+            configuration={"project": project, "api_key_configured": bool(environment["AIOS_BENCH_AGENTZERO_API_KEY"])},
+        )
 
 
 class CodexAdapter(Adapter):
@@ -121,7 +265,14 @@ class CodexAdapter(Adapter):
         if model and model != "unknown":
             command += ["--model", model]
         command.append(prompt)
-        return AgentInvocation(command, {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())})
+        requested = _requested_model(model)
+        return AgentInvocation(
+            command,
+            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
+            requested_model=requested,
+            resolved_model=requested,
+            configuration={"events": "json", "ephemeral": True, "sandbox": "workspace-write"},
+        )
 
 
 class GenericAdapter(Adapter):
@@ -135,7 +286,14 @@ class GenericAdapter(Adapter):
             command = [self.executable, prompt]
         else:
             command = shlex.split(template) + [prompt]
-        return AgentInvocation(command, {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())})
+        requested = _requested_model(model)
+        return AgentInvocation(
+            command,
+            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
+            requested_model=requested,
+            resolved_model=None,
+            configuration={"command_template_configured": bool(template)},
+        )
 
 
 ADAPTERS: dict[str, Adapter] = {

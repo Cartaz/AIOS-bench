@@ -1,9 +1,0 @@
-{
-  "preference_token": "7K9X2A",
-  "primary_language": "TypeScript",
-  "previous_languages": ["Python"],
-  "tooling_style": "simple",
-  "vcs_policy": "no-commit",
-  "last_language_update": "2026-08-20",
-  "language_update_reason": "New automation tools now use TypeScript"
-}

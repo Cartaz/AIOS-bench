@@ -13,7 +13,8 @@ class Task:
     tier: int = 3
     revision: int = 1
     tags: tuple[str, ...] = ()
-    expected_artifacts: tuple[str, ...] = ()
+    required_capabilities: tuple[str, ...] = ()
+    depends_on: tuple[str, ...] = ()
     acceptance: tuple[dict[str, Any], ...] = ()
 
 
@@ -53,7 +54,11 @@ class Trajectory:
         self.input_tokens = max(self.input_tokens, input_tokens)
         self.output_tokens = max(self.output_tokens, output_tokens)
         self.tool_calls = counts.get("tool_call", 0)
-        self.errors = max(self.errors, counts.get("error", 0))
+        reliable_errors = sum(
+            event.get("type") == "error" and not (event.get("data") or {}).get("inferred", False)
+            for event in events
+        )
+        self.errors = max(self.errors, reliable_errors)
         self.retries = counts.get("retry", 0)
         self.human_interventions = counts.get("human_intervention", 0)
         self.files_read = counts.get("file_read", 0)

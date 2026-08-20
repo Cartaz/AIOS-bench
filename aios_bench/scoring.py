@@ -6,7 +6,7 @@ from .models import Trajectory
 def score_trajectory(t: Trajectory) -> dict[str, float]:
     # Artifact acceptance is deliberately the dominant signal. A zero-exit
     # process is not a successful task if the requested deliverable is wrong.
-    acceptance = 1.0 if t.evaluation_score is None else t.evaluation_score
+    acceptance = 0.0 if t.evaluation_score is None else t.evaluation_score
     execution = 1.0 if t.success else 0.0
     recovery = 1.0 if t.errors == 0 else max(0.0, 1.0 - (t.errors - min(t.retries, t.errors)) / max(t.errors, 1))
     intervention = 1.0 / (1.0 + t.human_interventions)
@@ -22,10 +22,8 @@ def score_trajectory(t: Trajectory) -> dict[str, float]:
 
 def overall_score(t: Trajectory) -> float:
     s = score_trajectory(t)
-    return 100.0 * (
-        0.60 * s["acceptance"]
-        + 0.15 * s["execution"]
-        + 0.10 * s["error_recovery"]
-        + 0.10 * s["human_independence"]
-        + 0.05 * s["proportionality"]
-    )
+    # Only deterministic acceptance and successful execution are comparable
+    # across harnesses. Telemetry-derived efficiency metrics remain available
+    # for diagnostics, but missing telemetry cannot inflate the leaderboard.
+    raw = 100.0 * (0.80 * s["acceptance"] + 0.20 * s["execution"])
+    return raw if t.success else min(raw, 49.0)

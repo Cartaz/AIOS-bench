@@ -1,11 +1,26 @@
-# Benchmark results
+# Benchmark result snapshots
 
-All benchmark runs use the canonical layout:
+This directory is the publication boundary, not the raw run store. Git keeps:
 
 ```text
-results/<harness>/<model>/runs/<run-id>/
+results/
+  README.md
+  summary.json
+  dashboard.html
 ```
 
-Each run contains its metadata, deterministic task results, logs, and retained workspaces. `dashboard.html` and `summary.json` are generated at the `results/` root when a benchmark or dashboard command runs.
+The runner stores manifests, task-level results, logs, and retained workspaces
+under the Git-ignored path:
 
-Historical runs are kept under the same structure so they can be compared with future runs without special-case directory names.
+```text
+results/.local/<harness>/<model>/runs/<run-id>/
+```
+
+`summary.json` and `dashboard.html` are generated snapshots. A leaderboard row
+is comparable only when the run completed, belongs to the selected current
+suite revision, and is neither legacy nor a dry run. Historical views may show
+other runs, but must label them rather than mix their scores.
+
+Do not use a `run_id` filename to infer recency. Lifecycle timestamps and suite
+revision in `run.json` are authoritative. Full policy: [run lifecycle and
+result publication](../docs/RUNS_AND_RESULTS.md).

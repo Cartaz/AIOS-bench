@@ -1,5 +1,8 @@
 # AIOS-bench — Report di irrobustimento dei task
 
+> Historical audit of pre-v3 behavior. It is retained as design history and
+> must not be used as the current execution or scoring specification.
+
 **Repository analizzata:** `Cartaz/AIOS-bench`
 **Oggetto del report:** logica delle modifiche proposte ai 28 task del catalogo `frontier_v2.json`, task per task, per aumentarne la difficoltà genuina e la resistenza al "gaming".
 

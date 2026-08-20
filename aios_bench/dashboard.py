@@ -1,87 +1,133 @@
 from __future__ import annotations
 
-import json
-from collections import defaultdict
+import math
 from html import escape
 from pathlib import Path
+from typing import Any
+
+from .report import build_summary, load_results, summarize_rows
 
 
-def _rows(results_root: Path) -> list[dict]:
-    latest: dict[tuple[str, str, str, str, int], dict] = {}
-    seen_paths: set[Path] = set()
-    for path in results_root.glob("*/**/results.jsonl"):
-        resolved = path.resolve()
-        if resolved in seen_paths:
-            continue
-        seen_paths.add(resolved)
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                row = json.loads(line)
-                key = (row.get("harness", row.get("agent", "unknown")), row.get("model", "unknown"),
-                       row.get("run_id", "legacy"), row.get("task_id", "unknown"), int(row.get("task_revision", 1)))
-                latest[key] = row
-    return list(latest.values())
+def _rows(results_root: Path) -> list[dict[str, Any]]:
+    """Compatibility wrapper around the report module's canonical loader."""
+    return load_results(results_root)
 
 
-def _summaries(rows: list[dict]) -> list[dict]:
-    grouped: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
-    for row in rows:
-        grouped[(row.get("harness", row.get("agent", "unknown")),
-                 row.get("model", "unknown"), row.get("run_id", "legacy"))].append(row)
-    summaries = []
-    for (harness, model, run_id), items in sorted(grouped.items()):
-        scores = [float(x.get("score", 100.0 if x.get("success") else 0.0)) for x in items]
-        categories: dict[str, list[float]] = defaultdict(list)
-        tiers: dict[str, list[float]] = defaultdict(list)
-        for x in items:
-            categories[x.get("category", "unknown")].append(float(x.get("score", 0)))
-            tiers[str(x.get("tier", "unknown"))].append(float(x.get("score", 0)))
-        summaries.append({
-            "harness": harness, "model": model, "run_id": run_id,
-            "passed": sum(bool(x.get("success")) for x in items), "total": len(items),
-            "success": sum(bool(x.get("success")) for x in items) / len(items) * 100 if items else 0,
-            "score": sum(scores) / len(scores) if scores else 0,
-            "runtime": sum(float(x.get("duration_seconds", 0)) for x in items) / 60,
-            "categories": {k: sum(v) / len(v) for k, v in categories.items()},
-            "tiers": {k: sum(v) / len(v) for k, v in tiers.items()},
-            "suite": items[0].get("suite", "legacy"),
-            "suite_revision": items[0].get("suite_revision", "legacy"),
-            "git_commit": items[0].get("git_commit", "unknown"),
-        })
-    return summaries
+def _summaries(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compatibility wrapper using the same aggregation as summary.json."""
+    return summarize_rows(rows)
 
 
-def build_dashboard(results_root: Path) -> Path:
+def _display(value: Any, default: str = "unknown") -> str:
+    return escape(str(value) if value not in (None, "") else default)
+
+
+def _score(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    return f"{number:.1f}" if math.isfinite(number) else "n/a"
+
+
+def _breakdown_card(run: dict[str, Any], field: str, prefix: str = "") -> str:
+    title = f'{_display(run.get("harness"))} × {_display(run.get("model"))}'
+    identity = (
+        f'{_display(run.get("suite"))} · {_display(run.get("suite_revision"))[:12]} · '
+        f'{_display(run.get("run_id"))}'
+    )
+    parts = [f'<div class="card"><strong>{title}</strong><br><small>{identity}</small>']
+    values = run.get(field)
+    if isinstance(values, dict):
+        for name, raw_value in sorted(values.items(), key=lambda item: str(item[0])):
+            try:
+                numeric = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(numeric):
+                continue
+            width = max(0.0, min(100.0, numeric))
+            label = f"{prefix}{_display(name)}"
+            parts.append(
+                f'<p><small>{label}</small><br>{numeric:.1f}/100</p>'
+                f'<div class="bar"><div class="fill" style="width:{width:.1f}%"></div></div>'
+            )
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     results_root.mkdir(parents=True, exist_ok=True)
-    summaries = _summaries(_rows(results_root))
-    latest: dict[tuple[str, str], dict] = {}
-    for item in summaries:
-        key = (item["harness"], item["model"])
-        if key not in latest or item["run_id"] > latest[key]["run_id"]:
-            latest[key] = item
+    summary = build_summary(results_root)
+    summaries = summary["runs"]
+    latest = summary["leaderboard"]
+    selected = (
+        f'{_display(summary.get("selected_suite"))} · '
+        f'{_display(summary.get("selected_suite_revision"))}'
+        if summary.get("selected_suite") and summary.get("selected_suite_revision")
+        else "none"
+    )
+
     cards = "".join(
-        f'<tr><td>{escape(x["harness"])}</td><td>{escape(x["model"])}</td>'
-        f'<td><strong>{x["score"]:.1f}</strong></td><td>{x["passed"]}/{x["total"]}</td>'
-        f'<td>{x["success"]:.1f}%</td><td>{x["runtime"]:.1f} min</td></tr>'
-        for x in sorted(latest.values(), key=lambda x: (x["harness"], x["model"]))
+        '<tr>'
+        f'<td>{_display(item.get("harness"))}</td>'
+        f'<td>{_display(item.get("model"))}</td>'
+        f'<td>{_display(item.get("suite"))}</td>'
+        f'<td><code>{_display(item.get("suite_revision"))[:12]}</code></td>'
+        f'<td><code>{_display(item.get("execution_fingerprint"), "unreported")[:12]}</code></td>'
+        f'<td>{_display(item.get("run_id"))}</td>'
+        f'<td><strong>{_score(item.get("mean_score"))}</strong></td>'
+        f'<td>{int(item.get("passed", 0))}/{int(item.get("comparable_tasks", 0))}</td>'
+        f'<td>{int(item.get("unsupported", 0))}</td>'
+        f'<td>{int(item.get("blocked", 0))}</td>'
+        f'<td>{float(item.get("success_rate", 0)):.1f}%</td>'
+        f'<td>{float(item.get("runtime_seconds", 0)) / 60:.1f} min</td>'
+        '</tr>'
+        for item in latest
     )
     history = "".join(
-        f'<tr><td>{escape(x["run_id"])}</td><td>{escape(x["harness"])}</td><td>{escape(x["model"])}</td>'
-        f'<td>{x["score"]:.1f}</td><td>{x["passed"]}/{x["total"]}</td>'
-        f'<td>{escape(x["git_commit"][:12])}</td></tr>'
-        for x in sorted(summaries, key=lambda x: (x["harness"], x["model"], x["run_id"]), reverse=True)
+        '<tr>'
+        f'<td>{_display(item.get("run_id"))}</td>'
+        f'<td>{_display(item.get("harness"))}</td>'
+        f'<td>{_display(item.get("model"))}</td>'
+        f'<td>{_display(item.get("suite"))}</td>'
+        f'<td><code>{_display(item.get("suite_revision"))[:12]}</code></td>'
+        f'<td><code>{_display(item.get("execution_fingerprint"), "unreported")[:12]}</code></td>'
+        f'<td>{_display(item.get("status"))}</td>'
+        f'<td>{_score(item.get("mean_score"))}</td>'
+        f'<td>{int(item.get("passed", 0))}/{int(item.get("comparable_tasks", 0))}</td>'
+        f'<td>{int(item.get("unsupported", 0))}</td>'
+        f'<td>{int(item.get("blocked", 0))}</td>'
+        f'<td>{_display(item.get("eligibility_reason"))}</td>'
+        f'<td><code>{_display(item.get("git_commit"))[:12]}{("*" if item.get("git_dirty") else "")}</code></td>'
+        '</tr>'
+        for item in sorted(
+            summaries,
+            key=lambda item: (
+                str(item.get("finished_at") or ""),
+                str(item.get("started_at") or ""),
+                str(item.get("run_id") or ""),
+            ),
+            reverse=True,
+        )
     )
-    data = json.dumps(list(latest.values()), ensure_ascii=False)
+    capabilities = "".join(_breakdown_card(item, "categories") for item in latest)
+    tiers = "".join(_breakdown_card(item, "tiers", "Tier ") for item in latest)
+
     html = f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIOS-bench Dashboard</title>
-<style>:root{{color-scheme:dark}}body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}}h1{{margin-bottom:4px}}.meta{{color:#999;margin-bottom:24px}}table{{border-collapse:collapse;width:100%;max-width:1200px}}th,td{{padding:12px;border-bottom:1px solid #333;text-align:left}}th{{color:#aaa}}.panel{{margin-top:28px;max-width:1200px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}}.card{{border:1px solid #333;border-radius:12px;padding:16px}}.bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}}.fill{{height:100%;background:#aaa}}small{{color:#999}}</style></head><body><h1>AIOS-bench</h1>
-<div class="meta">Harness × model comparison — deterministic benchmark scores only.</div>
-<div class="panel"><h2>Latest leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Score</th><th>Passed</th><th>Success</th><th>Runtime</th></tr></thead><tbody>{cards or '<tr><td colspan="6">No benchmark results yet.</td></tr>'}</tbody></table></div>
-<div class="panel"><h2>Run history</h2><table><thead><tr><th>Run</th><th>Harness</th><th>Model</th><th>Score</th><th>Passed</th><th>Git commit</th></tr></thead><tbody>{history or '<tr><td colspan="6">No benchmark runs yet.</td></tr>'}</tbody></table></div>
-<div class="panel"><h2>Difficulty tiers</h2><p><small>T3 = advanced, T4 = expert, T5 = frontier.</small></p><div id="tiers" class="grid"></div></div>
-<div class="panel"><h2>Capability breakdown</h2><div id="capabilities" class="grid"></div></div>
-<script>const results={data};const root=document.getElementById('capabilities');const tiers=document.getElementById('tiers');for(const r of results){{const entries=Object.entries(r.categories||{{}});const card=document.createElement('div');card.className='card';card.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong><br><small>'+r.run_id+'</small>';for(const [name,value] of entries){{card.innerHTML+='<p><small>'+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';}}root.appendChild(card);const tierCard=document.createElement('div');tierCard.className='card';tierCard.innerHTML='<strong>'+r.harness+' × '+r.model+'</strong><br><small>'+r.run_id+'</small>';for(const [name,value] of Object.entries(r.tiers||{{}}).sort()){{tierCard.innerHTML+='<p><small>Tier '+name+'</small><br>'+value.toFixed(1)+'/100</p><div class="bar"><div class="fill" style="width:'+Math.max(0,Math.min(100,value))+'%"></div></div>';}}tiers.appendChild(tierCard);}}</script></body></html>'''
-    output = results_root / "dashboard.html"
-    output.write_text(html, encoding="utf-8")
+<style>:root{{color-scheme:dark}}body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}}h1{{margin-bottom:4px}}.meta{{color:#999;margin-bottom:24px}}table{{border-collapse:collapse;width:100%;max-width:1400px}}th,td{{padding:12px;border-bottom:1px solid #333;text-align:left}}th{{color:#aaa}}code{{font-size:.9em}}.panel{{margin-top:28px;max-width:1400px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}}.card{{border:1px solid #333;border-radius:12px;padding:16px}}.bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}}.fill{{height:100%;background:#aaa}}small{{color:#999}}</style></head><body><h1>AIOS-bench</h1>
+<div class="meta">Harness × model comparison — newest observed suite revision: {selected}. Complete, non-legacy benchmark runs only.</div>
+<div class="panel"><h2>Latest leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Suite</th><th>Revision</th><th>Profile</th><th>Run</th><th>Score</th><th>Passed</th><th>Unsupported</th><th>Blocked</th><th>Success</th><th>Runtime</th></tr></thead><tbody>{cards or '<tr><td colspan="12">No eligible benchmark results yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Run history</h2><table><thead><tr><th>Run</th><th>Harness</th><th>Model</th><th>Suite</th><th>Revision</th><th>Profile</th><th>Status</th><th>Score</th><th>Passed</th><th>Unsupported</th><th>Blocked</th><th>Eligibility</th><th>Git commit</th></tr></thead><tbody>{history or '<tr><td colspan="13">No benchmark runs yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Difficulty tiers</h2><p><small>T3 = advanced, T4 = expert, T5 = frontier.</small></p><div id="tiers" class="grid">{tiers}</div></div>
+<div class="panel"><h2>Capability breakdown</h2><div id="capabilities" class="grid">{capabilities}</div></div>
+</body></html>'''
+    destination = output_dir or results_root
+    destination.mkdir(parents=True, exist_ok=True)
+    output = destination / "dashboard.html"
+    temporary = output.with_name(f".{output.name}.tmp")
+    temporary.write_text(html, encoding="utf-8")
+    temporary.replace(output)
     return output

@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from aios_bench.frontier_v3_runner import FrontierV3Runner
+from aios_bench.frontier_v3_runner import FrontierV3Runner, SEMANTIC_FILES
 from aios_bench.reference_checks_long import check as check_long
 from aios_bench.runner import AGENTS
 from aios_bench.tasks import load_tasks
@@ -96,3 +96,7 @@ def test_frontier_v3_resume_rejects_results_from_another_suite_revision(tmp_path
         "suite_revision": runner._revision(),
     }) + "\n", encoding="utf-8")
     assert task.id in runner.completed(tasks)
+
+
+def test_suite_revision_covers_execution_and_scoring_semantics():
+    assert {"runner.py", "adapters.py", "sandbox.py", "scoring.py", "telemetry.py"} <= set(SEMANTIC_FILES)

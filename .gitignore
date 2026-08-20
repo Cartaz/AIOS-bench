@@ -16,3 +16,14 @@ htmlcov/
 
 # Local benchmark artifacts
 *.log
+
+# Per-run benchmark data is local by default. Only the aggregate
+# results/{summary.json,dashboard.html} snapshots are published.
+results/.local/
+
+# Legacy pre-.local layout: prevent old raw runs from being added again while
+# a checkout is being migrated. Already tracked historical files are
+# intentionally unaffected by ignore rules.
+results/**/latest
+results/**/latest.txt
+results/**/runs/*/*

@@ -23,14 +23,18 @@ class PiRPCClient:
 
     def __init__(self, model: str, workspace: Path, timeout: float,
                  environment: dict[str, str] | None = None,
-                 extra_args: list[str] | None = None) -> None:
+                 extra_args: list[str] | None = None,
+                 command: list[str] | None = None) -> None:
         self.model = model
         self.workspace = workspace
         self.timeout = timeout
         self.environment = environment or {}
         self.extra_args = list(extra_args or [])
+        self.command = list(command) if command is not None else None
 
     def _command(self) -> list[str]:
+        if self.command is not None:
+            return list(self.command)
         command = ["pi", "--mode", "rpc", "--no-session"]
         if self.model and self.model != "unknown":
             command += ["--model", self.model]
@@ -50,6 +54,8 @@ class PiRPCClient:
         lines: list[str] = []
         stderr_text = ""
         timed_out = False
+        protocol_succeeded = False
+        protocol_failed = False
         selector = selectors.DefaultSelector()
         try:
             assert proc.stdin is not None and proc.stdout is not None
@@ -74,7 +80,16 @@ class PiRPCClient:
                         event: dict[str, Any] = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    if (event.get("type") == "response"
+                            and event.get("command") == "prompt"
+                            and event.get("success") is False):
+                        protocol_failed = True
+                        break
                     if event.get("type") == "agent_settled":
+                        protocol_succeeded = True
+                        break
+                    if event.get("type") == "auto_retry_end" and event.get("success") is False:
+                        protocol_failed = True
                         break
                 elif proc.poll() is not None:
                     break
@@ -90,4 +105,10 @@ class PiRPCClient:
                 proc.kill(); proc.wait(timeout=2)
             if proc.stderr:
                 stderr_text = proc.stderr.read()
-        return PiRPCResult(proc.returncode if proc.returncode is not None else 1, "".join(lines), stderr_text, timed_out)
+        if timed_out or protocol_failed:
+            returncode = 1
+        elif protocol_succeeded:
+            returncode = 0
+        else:
+            returncode = proc.returncode if proc.returncode is not None else 1
+        return PiRPCResult(returncode, "".join(lines), stderr_text, timed_out)

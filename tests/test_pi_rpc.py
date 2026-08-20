@@ -35,3 +35,10 @@ def test_pi_rpc_normalizes_lifecycle_tools_and_usage():
 def test_pi_rpc_ignores_command_ack():
     events = parse_pi_rpc('{"id":"x","type":"response","command":"prompt","success":true}\n')
     assert events == []
+
+
+def test_pi_rpc_does_not_persist_streaming_deltas():
+    events = parse_pi_rpc(
+        '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"secret delta"}}\n'
+    )
+    assert events == []

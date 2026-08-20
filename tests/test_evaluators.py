@@ -60,6 +60,14 @@ def test_missing_reference_result_becomes_failed_check(tmp_path: Path, monkeypat
     assert "returned no result" in result["results"][0]["detail"]
 
 
+def test_reference_oracle_exception_fails_check_without_aborting_suite(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AIOS_BENCH_FIXTURE_ROOT", str(tmp_path))
+    with patch("aios_bench.evaluators.check_task", side_effect=RuntimeError("bad artifact")):
+        result = evaluate_artifacts(tmp_path, [{"type": "reference", "task_id": "broken"}])
+    assert result["passed"] is False
+    assert "RuntimeError: bad artifact" in result["results"][0]["detail"]
+
+
 def test_subagent_oracle_requires_normalized_events_not_reported_prose(tmp_path: Path):
     reports = tmp_path / "reports"
     reports.mkdir()
@@ -81,3 +89,14 @@ def test_subagent_oracle_requires_normalized_events_not_reported_prose(tmp_path:
     events = [{"type": "subagent_start"}, {"type": "subagent_start"}]
     passed, _ = check_subagents("subagents_002", tmp_path, tmp_path, events=events)
     assert passed is True
+
+
+def test_command_checks_do_not_invoke_a_shell(tmp_path: Path):
+    marker = tmp_path / "shell-injection"
+    result = evaluate_artifacts(tmp_path, [{
+        "type": "command",
+        "command": f'python -c "raise SystemExit(0)"; touch {marker}',
+    }])
+
+    assert result["results"][0]["passed"] is True
+    assert not marker.exists()

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import shlex
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,14 +26,14 @@ def file_sha256(workspace: Path, relative_path: str) -> str:
     p=_safe_path(workspace,relative_path)
     if not p.is_file(): raise EvaluationError(f"missing artifact: {relative_path}")
     return hashlib.sha256(p.read_bytes()).hexdigest()
-def _fixture_sha256(relative_path: str) -> str:
-    root=os.environ.get("AIOS_BENCH_FIXTURE_ROOT")
-    if not root: raise EvaluationError("AIOS_BENCH_FIXTURE_ROOT is not set")
-    p=Path(root)/relative_path
+def _fixture_sha256(fixture_root: Path, relative_path: str) -> str:
+    p=_safe_path(fixture_root,relative_path)
     if not p.is_file(): raise EvaluationError(f"missing fixture baseline: {relative_path}")
     return hashlib.sha256(p.read_bytes()).hexdigest()
-def _run_check_command(workspace: Path, command: str, timeout: float=30.0):
-    p=subprocess.run(command,cwd=workspace,shell=True,text=True,capture_output=True,timeout=timeout,check=False)
+def _run_check_command(workspace: Path, command: str|list[str], timeout: float=30.0):
+    args=shlex.split(command) if isinstance(command,str) else [str(item) for item in command]
+    if not args: raise EvaluationError("check command must not be empty")
+    p=subprocess.run(args,cwd=workspace,text=True,capture_output=True,timeout=timeout,check=False)
     return p.returncode==0,(p.stdout+"\n"+p.stderr).strip()[-4000:]
 
 def evaluate_artifacts(
@@ -40,6 +41,7 @@ def evaluate_artifacts(
     checks: list[dict[str,Any]],
     run_dir: Path|None=None,
     events: list[dict[str, Any]] | None=None,
+    fixture_root: Path|None=None,
 ) -> dict[str,Any]:
     results=[]
     for check in checks:
@@ -55,12 +57,17 @@ def evaluate_artifacts(
             elif kind=="json_valid":
                 p=_safe_path(workspace,path); json.loads(p.read_text(encoding="utf-8")) if p.is_file() else (_ for _ in ()).throw(ValueError("missing file")); passed=True
             elif kind=="sha256": passed=file_sha256(workspace,path)==check["sha256"]
-            elif kind=="unchanged": passed=file_sha256(workspace,path)==_fixture_sha256(path)
+            elif kind=="unchanged":
+                if fixture_root is None:
+                    root=os.environ.get("AIOS_BENCH_FIXTURE_ROOT")
+                    if not root: raise EvaluationError("fixture_root is required for unchanged checks")
+                    fixture_root=Path(root)
+                passed=file_sha256(workspace,path)==_fixture_sha256(fixture_root,path)
             elif kind=="command": passed,detail=_run_check_command(workspace,check["command"],float(check.get("timeout",30)))
             elif kind=="reference":
                 reference_result = check_task(
                     check["task_id"], workspace,
-                    Path(os.environ["AIOS_BENCH_FIXTURE_ROOT"]), run_dir,
+                    fixture_root or Path(os.environ["AIOS_BENCH_FIXTURE_ROOT"]), run_dir,
                     events=events or [],
                 )
                 if reference_result is None:
@@ -71,11 +78,14 @@ def evaluate_artifacts(
             elif kind=="max_files":
                 p=_safe_path(workspace,path or "."); n=sum(1 for x in p.rglob("*") if x.is_file()) if p.exists() else 0; passed=n<=int(check["max"]); detail=f"file_count={n}"
             else: raise EvaluationError(f"unknown check type: {kind}")
-        except (OSError,ValueError,json.JSONDecodeError,subprocess.SubprocessError) as exc: passed=False; detail=str(exc)
+        except Exception as exc:
+            # Agent-authored artifacts are untrusted input to the oracle. A
+            # malformed artifact fails its check; it must not abort the suite.
+            passed=False; detail=f"{type(exc).__name__}: {exc}"
         results.append({"check":check,"passed":passed,"weight":float(check.get("weight",1.0)),"detail":detail})
     total=sum(r["weight"] for r in results) or 1.0; earned=sum(r["weight"] for r in results if r["passed"]); fatal=any(not r["passed"] and r["check"].get("fatal",False) for r in results); score=earned/total
     return {"passed":not fatal and score>=0.80,"acceptance_score":score,"checks_passed":sum(r["passed"] for r in results),"checks_total":len(results),"results":results}
 
-def evaluate_json(workspace: Path, spec_path: str|Path, run_dir: Path|None=None) -> dict[str,Any]:
-    p=Path(spec_path); p=p if p.is_absolute() else workspace/p; return evaluate_artifacts(workspace,json.loads(p.read_text(encoding="utf-8"))["checks"],run_dir=run_dir)
+def evaluate_json(workspace: Path, spec_path: str|Path, run_dir: Path|None=None, fixture_root: Path|None=None) -> dict[str,Any]:
+    p=Path(spec_path); p=p if p.is_absolute() else workspace/p; return evaluate_artifacts(workspace,json.loads(p.read_text(encoding="utf-8"))["checks"],run_dir=run_dir,fixture_root=fixture_root)
 def registry() -> dict[str,Callable[...,dict[str,Any]]]: return {"artifacts":evaluate_artifacts,"json":evaluate_json}

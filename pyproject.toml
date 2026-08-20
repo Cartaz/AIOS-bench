@@ -8,6 +8,10 @@ version = "0.1.0"
 description = "Reproducible benchmark suite for local AI operating-system agents"
 requires-python = ">=3.10"
 dependencies = [
+]
+
+[project.optional-dependencies]
+dev = [
     "pytest>=9.0",
 ]
 

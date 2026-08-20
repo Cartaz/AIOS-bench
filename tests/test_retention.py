@@ -21,6 +21,10 @@ def test_retention_keeps_failures_and_removes_redundant_success_logs(tmp_path: P
     (workspace / "node_modules").mkdir()
     (workspace / "node_modules" / "package.js").write_text("noise", encoding="utf-8")
     (workspace / "result.md").write_text("keep", encoding="utf-8")
+    (workspace / ".git").mkdir()
+    (workspace / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (workspace / ".aios-bench-eval").mkdir()
+    (workspace / ".aios-bench-eval" / "oracle.tmp").write_text("internal", encoding="utf-8")
 
     result = prune_run_artifacts(run)
 
@@ -30,6 +34,8 @@ def test_retention_keeps_failures_and_removes_redundant_success_logs(tmp_path: P
     assert (logs / "browser_001.stdout.log").exists()
     assert not (logs / "coding_001.stderr.log").exists()
     assert not (workspace / "node_modules").exists()
+    assert not (workspace / ".git").exists()
+    assert not (workspace / ".aios-bench-eval").exists()
     assert (workspace / "result.md").exists()
     assert (run / "retention.json").exists()
 

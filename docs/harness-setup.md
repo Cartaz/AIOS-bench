@@ -14,13 +14,20 @@ Hermes supports custom OpenAI-compatible endpoints including llama.cpp servers, 
 
 ## Pi Agent
 
-Install the Pi coding agent. AIOS-bench uses JSON event mode for machine-readable execution telemetry.
+Install the Pi coding agent. AIOS-bench currently uses Pi's stdio JSONL RPC
+mode, not human-readable output or one-shot JSON mode:
 
 ```bash
 aiosbench --piagent --model <provider/model>
 ```
 
-For richer integration later, the adapter can switch from JSONL subprocess mode to Pi RPC without changing the benchmark task/evaluator layer.
+For each task the runner starts `pi --mode rpc --no-session` in the isolated
+workspace, sends one `prompt` request on stdin, consumes structured events until
+`agent_settled`, and then closes the process. Tool, usage, error, and lifecycle
+events are normalized into the common trajectory schema. A per-task timeout
+terminates an RPC process that does not settle. `--no-session` supplies cold
+task isolation; the benchmark itself explicitly materializes warm state for
+memory and learning chains.
 
 ## OpenCode
 
@@ -37,7 +44,7 @@ OpenCode's `serve` API is reserved for a future persistent-server adapter.
 Install Goose and configure its provider. AIOS-bench uses non-session `goose run` by default so each cold benchmark task starts cleanly.
 
 ```bash
-set AIOS_BENCH_GOOSE_PROVIDER=openai
+export AIOS_BENCH_GOOSE_PROVIDER=openai
 aiosbench --goose --model <model>
 ```
 
@@ -48,7 +55,7 @@ For local providers, configure Goose's normal provider settings first. Recipes/e
 Install Letta Code and configure an agent. Letta's headless `-p` path is used by the adapter. For longitudinal benchmarks, set a stable agent ID:
 
 ```bash
-set AIOS_BENCH_LETTA_AGENT=<agent-id>
+export AIOS_BENCH_LETTA_AGENT=<agent-id>
 aiosbench --letta --model <model>
 ```
 
@@ -59,9 +66,9 @@ Model selection is deliberately not converted into an invented CLI flag; Letta c
 Agent Zero is integrated through its documented external HTTP API, not by scraping its Web UI. Start a local Agent Zero instance and create a dedicated benchmark project/workspace that maps to the benchmark fixture.
 
 ```bash
-set AIOS_BENCH_AGENTZERO_URL=http://127.0.0.1:80
-set AIOS_BENCH_AGENTZERO_API_KEY=<api-key>
-set AIOS_BENCH_AGENTZERO_PROJECT=aios-bench
+export AIOS_BENCH_AGENTZERO_URL=http://127.0.0.1:80
+export AIOS_BENCH_AGENTZERO_API_KEY=<api-key>
+export AIOS_BENCH_AGENTZERO_PROJECT=aios-bench
 aiosbench --agentzero --model <model>
 ```
 
@@ -69,10 +76,35 @@ The project must be configured so Agent Zero can operate on the isolated fixture
 
 ## Capability policy
 
-Missing telemetry is recorded as `unavailable`, not as zero. This matters because Hermes, Pi, OpenCode, Goose, Letta and Agent Zero expose different native observability surfaces. Correctness remains based on the common deterministic evaluator whenever possible.
+Missing telemetry is recorded as unavailable, not as zero. This matters because
+Hermes, Pi, OpenCode, Goose, Letta and Agent Zero expose different native
+observability surfaces. Correctness remains based on the common deterministic
+evaluator whenever possible.
 
 For the `subagents` category specifically, a successful result requires the
 harness integration to emit normalized `subagent_start` events. Plain-text
 claims in the final answer or logs are intentionally not accepted as delegation
 evidence. Treat a harness that cannot expose these events as unsupported for
-that category when making cross-harness comparisons.
+that category when making cross-harness comparisons. The result uses
+`status: "unsupported"`, `score: null`, and `comparable: false`; it is not a
+failed task and does not enter comparable score aggregates.
+
+The exact executable/version, requested and best-effort resolved model,
+provider, redacted endpoint, declared capabilities, Python version, and
+platform are captured in the run manifest. Review that manifest before treating
+two runs as equivalent. See [Run lifecycle, manifests, and result
+publication](RUNS_AND_RESULTS.md).
+
+## Workspace write isolation
+
+Codex retains its native `workspace-write` sandbox. On Linux, other local CLI
+harnesses are wrapped with bubblewrap: the host root is read-only and only the
+task workspace and a temporary `/tmp` are writable; network access remains
+available for research tasks. The chosen strategy and whether writes were
+confined are recorded in `run.json.manifest.configuration`.
+
+Set `AIOS_BENCH_SANDBOX=required` to fail closed when bubblewrap is unavailable,
+or `AIOS_BENCH_SANDBOX=off` only for a deliberately unconfined diagnostic run.
+The default `auto` mode records an explicit `cwd_only_unconfined` fallback on
+platforms without bubblewrap. Agent Zero additionally depends on its configured
+remote project boundary; never point that project at a personal workspace.

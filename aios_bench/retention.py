@@ -13,6 +13,10 @@ REPRODUCIBLE_DIRS = {
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    # memory_004 creates a benchmark-owned repository solely to verify the
+    # no-new-commit constraint. It must never escape as a nested Git repository.
+    ".git",
+    ".aios-bench-eval",
 }
 
 
