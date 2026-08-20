@@ -16,19 +16,39 @@ class SandboxPlan:
         return [*self.command_prefix, *command]
 
 
+def _opencode_state_dirs() -> tuple[Path, ...]:
+    home = Path.home()
+    data_home = Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share"))
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+    cache_home = Path(os.environ.get("XDG_CACHE_HOME", home / ".cache"))
+    return (
+        data_home / "opencode",
+        config_home / "opencode",
+        cache_home / "opencode",
+    )
+
+
+def _ephemeral_state_dirs(adapter_name: str) -> tuple[Path, ...]:
+    if adapter_name == "piagent":
+        return (Path.home() / ".pi" / "agent",)
+    if adapter_name == "opencode":
+        return _opencode_state_dirs()
+    return ()
+
+
 def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = None) -> SandboxPlan:
     """Return a cross-harness write-confinement plan.
 
-    Codex supplies its own workspace-write sandbox. On Linux, other local
-    harnesses run under bubblewrap with a read-only root and only the task
-    workspace and /tmp writable. Network remains shared for research tasks.
+    On Linux, local harnesses run under bubblewrap with a read-only root and
+    only the task workspace and /tmp writable. Harness state directories that
+    need runtime lock/session writes are mounted as temporary overlays so the
+    host configuration remains visible while benchmark writes are discarded.
+    Network remains shared for research tasks.
     """
 
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
         raise ValueError("AIOS_BENCH_SANDBOX must be auto, required or off")
-    if adapter_name == "codex":
-        return SandboxPlan("adapter_workspace_write", write_confined=True)
     if selected == "off":
         return SandboxPlan("disabled", write_confined=False)
     executable = shutil.which("bwrap")
@@ -38,14 +58,9 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             executable, "--die-with-parent", "--new-session",
             "--ro-bind", "/", "/", "--tmpfs", "/tmp",
         )
-        # Pi takes short-lived lock files next to its settings and credential
-        # store, even for read-only operations.  A tmp overlay preserves the
-        # host files as a read-only lower layer while keeping all runtime
-        # writes private to the sandbox and discarding them on exit.
-        if adapter_name == "piagent":
-            pi_state = Path.home() / ".pi" / "agent"
-            if pi_state.is_dir():
-                state = str(pi_state.resolve())
+        for state_dir in _ephemeral_state_dirs(adapter_name):
+            if state_dir.is_dir():
+                state = str(state_dir.resolve())
                 prefix += ("--overlay-src", state, "--tmp-overlay", state)
         prefix += (
             "--bind", root, root,
