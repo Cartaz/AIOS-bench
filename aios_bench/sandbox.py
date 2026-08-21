@@ -17,7 +17,38 @@ class SandboxPlan:
         return [*self.command_prefix, *command]
 
 
-def _benchmark_owned_paths() -> tuple[list[Path], list[Path]]:
+def _result_history_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
+    """Return historical result paths that must not be visible to an agent."""
+    workspace = workspace.resolve()
+    workspaces_dir = workspace.parent
+    run_dir = workspaces_dir.parent
+    runs_dir = run_dir.parent
+    model_dir = runs_dir.parent
+    harness_dir = model_dir.parent
+    local_root = harness_dir.parent
+    if workspaces_dir.name != "workspaces" or runs_dir.name != "runs" or local_root.name != ".local":
+        return [], []
+
+    directories: list[Path] = []
+    files: list[Path] = []
+    directories.extend(path for path in local_root.iterdir() if path.is_dir() and path != harness_dir)
+    directories.extend(path for path in harness_dir.iterdir() if path.is_dir() and path != model_dir)
+    directories.extend(path for path in runs_dir.iterdir() if path.is_dir() and path != run_dir)
+    directories.extend(
+        path for path in workspaces_dir.iterdir()
+        if path.is_dir() and path.resolve() != workspace
+    )
+    logs = run_dir / "logs"
+    if logs.is_dir():
+        directories.append(logs)
+    for name in ("run.json", "results.jsonl", "events.jsonl"):
+        path = run_dir / name
+        if path.is_file():
+            files.append(path)
+    return directories, files
+
+
+def _benchmark_owned_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
     root = Path(__file__).resolve().parents[1]
     candidates = (
         root / ".git",
@@ -27,6 +58,9 @@ def _benchmark_owned_paths() -> tuple[list[Path], list[Path]]:
     )
     hidden_directories = [path for path in candidates if path.exists()]
     hidden_files = sorted((root / "aios_bench").glob("reference_checks*.py"))
+    result_directories, result_files = _result_history_paths(workspace)
+    hidden_directories.extend(result_directories)
+    hidden_files.extend(result_files)
     return hidden_directories, hidden_files
 
 
@@ -34,9 +68,8 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     """Return a cross-harness confinement plan.
 
     On Linux, local harnesses run below a read-only host root with only the task
-    workspace and /tmp writable. Benchmark-owned catalogs, tests, grader source,
-    grader bytecode and repository history are masked from the child so read-only
-    access cannot reveal deterministic oracle implementation details.
+    workspace and /tmp writable. Benchmark-owned grader material, repository
+    history and historical result workspaces are masked from the child.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
@@ -50,7 +83,7 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             executable, "--die-with-parent", "--new-session",
             "--ro-bind", "/", "/", "--tmpfs", "/tmp",
         )
-        hidden_directories, hidden_files = _benchmark_owned_paths()
+        hidden_directories, hidden_files = _benchmark_owned_paths(workspace)
         for path in hidden_directories:
             prefix += ("--tmpfs", str(path.resolve()))
         for path in hidden_files:
