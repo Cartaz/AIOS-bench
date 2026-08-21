@@ -229,7 +229,7 @@ def test_agentzero_adapter_declares_observable_capabilities_and_remote_model(
 def test_agentzero_manifest_keeps_service_endpoint_out_of_model_identity(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _, workspace = _agentzero_env(monkeypatch, tmp_path)
+    projects_root, workspace = _agentzero_env(monkeypatch, tmp_path)
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_PROVIDER", "openai")
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT", "http://10.0.0.2:8080/v1")
     monkeypatch.setenv("AIOS_BENCH_MODEL_DIGEST", "sha256:abc123")
@@ -244,7 +244,7 @@ def test_agentzero_manifest_keeps_service_endpoint_out_of_model_identity(
     assert manifest["model"]["endpoint"] == "http://10.0.0.2:8080/v1"
     assert manifest["model"]["strictly_comparable"] is True
     assert manifest["configuration"]["service_endpoint"] == "http://127.0.0.1:50001"
-    assert "projects_root" not in json.dumps(manifest["configuration"])
+    assert str(projects_root) not in json.dumps(manifest["configuration"])
 
 
 def test_agentzero_run_uses_ephemeral_project_log_sync_and_cleanup(
