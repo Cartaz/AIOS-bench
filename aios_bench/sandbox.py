@@ -72,6 +72,11 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     workspace and /tmp writable. Benchmark-owned grader material, generated
     parametric oracles, repository history and historical result workspaces are
     masked from the child.
+
+    Agent Zero's benchmark client additionally needs write access to a dedicated
+    shared projects root used only as a filesystem transport into the separately
+    isolated Agent Zero service. The model never receives host benchmark paths;
+    each task is copied into a fresh Agent Zero project under that root.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
@@ -96,6 +101,15 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             if pi_state.is_dir():
                 state = str(pi_state.resolve())
                 prefix += ("--overlay-src", state, "--tmp-overlay", state)
+        agentzero_bridge = False
+        if adapter_name == "agentzero":
+            configured = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", "").strip()
+            if configured:
+                projects_root = Path(configured).expanduser()
+                if projects_root.is_dir():
+                    bridge = str(projects_root.resolve())
+                    prefix += ("--bind", bridge, bridge)
+                    agentzero_bridge = True
         prefix += (
             "--bind", root, root,
             "--proc", "/proc", "--dev", "/dev",
@@ -105,6 +119,8 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             "bubblewrap_readonly_root_grader_hidden"
             if grader_hidden else "bubblewrap_readonly_root"
         )
+        if agentzero_bridge:
+            strategy += "_agentzero_project_bridge"
         return SandboxPlan(strategy, prefix, write_confined=True, grader_hidden=grader_hidden)
     if selected == "required":
         raise RuntimeError("workspace sandbox required but bubblewrap is unavailable")
