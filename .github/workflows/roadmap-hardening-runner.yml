@@ -1,0 +1,53 @@
+name: roadmap-hardening-runner
+
+on:
+  push:
+    branches: [roadmap-hardening-bootstrap]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: roadmap-hardening-phase1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Recover patch applicator payload
+        shell: bash
+        run: |
+          curl -fsSL 'https://raw.githubusercontent.com/Cartaz/AIOS-bench/roadmap-hardening-bootstrap/.github/workflows/roadmap-hardening-bootstrap.yml' -o /tmp/payload-source
+          awk '/^H4sI/{capture=1} /^PAYLOAD$/{capture=0} capture' /tmp/payload-source > /tmp/apply.py.gz.b64
+          test -s /tmp/apply.py.gz.b64
+          base64 -d /tmp/apply.py.gz.b64 | gzip -d > /tmp/apply.py
+          python -m py_compile /tmp/apply.py
+      - name: Apply hardening
+        run: python /tmp/apply.py
+      - name: Install test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Validate diff
+        run: git diff --check
+      - name: Commit logical phases
+        shell: bash
+        run: |
+          git config user.email 'bench@aios-bench.local'
+          git config user.name 'AIOS-bench automation'
+
+          git add -- aios_bench/adapters.py aios_bench/manifest.py tests/test_capabilities_manifest.py tests/test_cli.py
+          git commit -m 'refactor: harden harness and model comparability'
+
+          git add -- aios_bench/sandbox.py aios_bench/validation.py tests/test_sandbox.py
+          git commit -m 'feat: isolate deterministic graders and add preflight'
+
+          git add -- aios_bench/runner.py aios_bench/frontier_v3_runner.py aios_bench/cli.py aios_bench/report.py aios_bench/statistics.py tests/test_statistics.py tests/test_runner_lifecycle.py README.md
+          git commit -m 'feat: add repeat-aware benchmark statistics'
+
+          test -z "$(git status --porcelain)"
+          git push origin HEAD:roadmap-hardening-phase1
