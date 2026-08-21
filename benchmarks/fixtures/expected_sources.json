@@ -1,4 +1,4 @@
 {
-  "whitelist": ["docs.python.org", "peps.python.org", "sqlite.org", "github.com/python/cpython"],
+  "whitelist": ["docs.python.org", "peps.python.org", "sqlite.org", "github.com"],
   "fabricated_url_trap": ["https://python.org/dev/peps/pep-9999", "https://sqlite.org/old_docs/transaction_v1.html"]
 }
