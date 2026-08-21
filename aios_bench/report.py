@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from .raw import latest_attempts, load_attempts, source_index
 
+
+ANALYSIS_SCHEMA = "aios-bench/derived-analysis/v1"
 _IDENTITY_FIELDS = ("harness", "model", "run_id", "suite", "suite_revision")
 _METADATA_FIELDS = (
     *_IDENTITY_FIELDS,
@@ -26,23 +29,12 @@ def _text(value: Any, default: str) -> str:
     return str(value) if value not in (None, "") else default
 
 
-def _manifest(path: Path) -> dict[str, Any]:
-    metadata_path = path.parent / "run.json"
-    try:
-        value = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
 def _enrich(row: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     """Attach authoritative run metadata without exposing an internal wrapper."""
     enriched = dict(row)
     for field in _METADATA_FIELDS:
         if field in metadata:
             enriched[field] = metadata[field]
-    # A result row's status describes the task (including ``unsupported``),
-    # while run.json status describes the lifecycle.  Keep both namespaces.
     if "status" in metadata:
         enriched["run_status"] = metadata["status"]
     enriched.setdefault("harness", enriched.get("agent", "unknown"))
@@ -53,46 +45,9 @@ def _enrich(row: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     return enriched
 
 
-def _result_key(row: dict[str, Any]) -> tuple[str, str, str, str, str, str]:
-    return (
-        _text(row.get("harness", row.get("agent")), "unknown"),
-        _text(row.get("model"), "unknown"),
-        _text(row.get("suite"), "legacy"),
-        _text(row.get("suite_revision"), "legacy"),
-        _text(row.get("run_id"), "legacy"),
-        _text(row.get("task_id"), "unknown"),
-    )
-
-
 def load_results(root: Path) -> list[dict[str, Any]]:
-    """Load results, resolving aliases and keeping the last task attempt."""
-    latest: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
-    seen_paths: set[Path] = set()
-    for path in sorted(root.rglob("results.jsonl")):
-        try:
-            resolved = path.resolve()
-        except OSError:
-            resolved = path.absolute()
-        if resolved in seen_paths or not path.is_file():
-            continue
-        seen_paths.add(resolved)
-        metadata = _manifest(path)
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            continue
-        for line in lines:
-            if not line.strip():
-                continue
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(value, dict):
-                continue
-            row = _enrich(value, metadata)
-            latest[_result_key(row)] = row
-    return list(latest.values())
+    """Derived compatibility view: keep only the latest attempt per run/task."""
+    return latest_attempts(load_attempts(root))
 
 
 def _run_key(item: dict[str, Any]) -> tuple[str, str, str, str, str]:
@@ -256,12 +211,7 @@ def _timestamp(value: Any) -> datetime:
 
 
 def selected_suite_revision(runs: Iterable[dict[str, Any]]) -> tuple[str, str] | None:
-    """Choose the newest observed real suite identity from lifecycle metadata.
-
-    Selection intentionally considers incomplete runs: once a newer revision
-    starts, an older completed revision must not silently become the default
-    leaderboard again.  Dry runs do not advance the selected revision.
-    """
+    """Choose the newest observed real suite identity from lifecycle metadata."""
     candidates = [
         run for run in runs
         if run.get("eligibility_reason") not in {"legacy", "dry_run"}
@@ -320,15 +270,21 @@ def latest_eligible(runs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def build_summary(root: Path) -> dict[str, Any]:
-    rows = load_results(root)
+    attempts = load_attempts(root)
+    rows = latest_attempts(attempts)
     runs = summarize_rows(rows, _manifests(root))
     selected = selected_suite_revision(runs)
+    sources = source_index(root)
     return {
+        "analysis_schema": ANALYSIS_SCHEMA,
         "runs": runs,
         "leaderboard": latest_eligible(runs),
         "selected_suite": selected[0] if selected else None,
         "selected_suite_revision": selected[1] if selected else None,
+        "raw_attempt_count": len(attempts),
         "result_count": len(rows),
+        "raw_source_digest": sources["digest"],
+        "raw_source_file_count": sources["file_count"],
     }
 
 
