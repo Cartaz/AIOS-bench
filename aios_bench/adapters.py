@@ -123,20 +123,57 @@ class Adapter:
 
 class HermesAdapter(Adapter):
     name = "hermes"
-    capabilities = frozenset({"memory", "skills", "delegation", "terminal", "browser", "sessions"})
+    capabilities = frozenset({
+        "skills",
+        "delegation",
+        "terminal",
+        "browser",
+        "sessions",
+        "token_stats",
+    })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        command = ["hermes", "chat", "--quiet"]
+        # Hermes one-shot mode is purpose-built for scripts and emits only the
+        # final response on stdout. Pin an explicit built-in tool surface so a
+        # developer's `hermes tools` configuration cannot add native memory,
+        # session recall, plugins, or MCP tools to the benchmark run. Rules and
+        # ambient memory/AGENTS.md injection are disabled independently while
+        # provider configuration remains available for local/custom endpoints.
+        usage_path = workspace.resolve() / ".aios_bench_hermes_usage.json"
+        toolsets = (
+            "terminal,file,web,browser,skills,todo,code_execution,delegation"
+        )
+        command = [
+            "hermes",
+            "--ignore-rules",
+            "--toolsets", toolsets,
+            "--usage-file", str(usage_path),
+        ]
+        provider = os.environ.get("AIOS_BENCH_HERMES_PROVIDER")
+        if provider:
+            command += ["--provider", provider]
         if model and model != "unknown":
             command += ["--model", model]
-        command += ["-q", prompt]
+        command += ["--oneshot", prompt]
         requested = _requested_model(model)
         return AgentInvocation(
             command,
-            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
+            {
+                "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
+                "AIOS_BENCH_HERMES_USAGE_FILE": str(usage_path),
+            },
             requested_model=requested,
             resolved_model=requested,
-            configuration={"mode": "chat", "quiet": True},
+            provider=provider,
+            configuration={
+                "mode": "oneshot",
+                "ignore_rules": True,
+                "toolsets": toolsets.split(","),
+                "native_memory_tool": False,
+                "session_search_tool": False,
+                "usage_file": "ephemeral_workspace_sidecar",
+                "structured_subagent_events": False,
+            },
         )
 
 

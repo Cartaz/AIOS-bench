@@ -4,13 +4,39 @@ The benchmark intentionally does not hide harness-specific setup behind magic fl
 
 ## Hermes
 
-Install Hermes and configure the local OpenAI-compatible endpoint/model. AIOS-bench invokes `hermes chat --quiet -q` and can override the model per run.
+Install a current Hermes Agent and configure the provider/model. The benchmark
+uses Hermes' script-oriented one-shot mode rather than the interactive chat UI:
 
 ```bash
-aiosbench --hermes --model <provider/model>
+export AIOS_BENCH_HERMES_PROVIDER=openai   # optional when Hermes can resolve it
+aiosbench --hermes --model <model>
 ```
 
-Hermes supports custom OpenAI-compatible endpoints including llama.cpp servers, so a local model can be benchmarked without changing the benchmark adapter.
+The effective invocation pins the built-in toolsets `terminal,file,web,browser,
+skills,todo,code_execution,delegation`, disables rules/ambient memory injection
+with `--ignore-rules`, requests the model explicitly, and uses `--oneshot`.
+`memory` and `session_search` are deliberately absent, so Hermes cannot gain an
+extra persistent-state channel beyond the benchmark-owned workspace artifacts.
+Because the selected toolsets are explicit built-ins, personal plugin/MCP tools
+are not added to the task surface. Provider configuration remains available so
+named/custom local endpoints can still be resolved; set
+`AIOS_BENCH_HERMES_PROVIDER` when an explicit provider is needed.
+
+Hermes writes its structured one-shot accounting report through `--usage-file`.
+AIOS-bench reads input/output/reasoning tokens plus model/provider/session
+identity from that sidecar and removes it before deterministic artifact grading.
+The model's final stdout text is never parsed as tool telemetry. Server-verified
+llama.cpp counters remain the preferred efficiency source when configured.
+
+Hermes has native `delegate_task`, but current one-shot mode does not expose an
+unforgeable structured tool-event stream. Therefore the default Hermes profile
+**does not** declare `structured_subagent_events`: Frontier `subagents` tasks are
+reported as unsupported rather than accepting a prose claim or a writable
+session database as evidence. Hermes' explicit browser toolset does make browser
+tasks eligible when the local browser dependencies are installed. ACP exposes
+structured tool activity and may support a future dedicated benchmark profile,
+but its current fixed `hermes-acp` surface also includes native memory/session
+search and is therefore not used as the default cross-harness profile.
 
 ## Pi Agent
 

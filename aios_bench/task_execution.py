@@ -13,6 +13,7 @@ from .adapters import PiAgentAdapter
 from .evaluators import evaluate_artifacts
 from .failures import classify_failure
 from .goose_telemetry import parse_goose_stream_json
+from .hermes_telemetry import parse_hermes_usage_report
 from .letta_telemetry import parse_letta_stream_json
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
@@ -84,7 +85,13 @@ def _usage_source(trajectory: Trajectory, server_usage: dict[str, Any]) -> str:
     return "unavailable"
 
 
-def _parse_harness_output(stdout: str, stderr: str, source: str) -> list[dict[str, Any]]:
+def _parse_harness_output(
+    stdout: str,
+    stderr: str,
+    source: str,
+    *,
+    hermes_usage: str = "",
+) -> list[dict[str, Any]]:
     if source == "goose":
         events = parse_goose_stream_json(stdout, source=source)
         # Goose stream-json owns stdout. Stderr remains a best-effort diagnostic
@@ -94,6 +101,12 @@ def _parse_harness_output(stdout: str, stderr: str, source: str) -> list[dict[st
         events = parse_letta_stream_json(stdout, source=source)
         # Letta stream-json likewise owns stdout. Never apply prose heuristics to
         # it; only stderr is admitted as inferred diagnostics.
+        events.extend(parse_output("", stderr, source=source))
+    elif source == "hermes":
+        # Hermes one-shot stdout is the model's final answer, not telemetry.
+        # Only the structured --usage-file sidecar and stderr diagnostics are
+        # normalized; prose can never manufacture tool/subagent evidence.
+        events = parse_hermes_usage_report(hermes_usage, source=source)
         events.extend(parse_output("", stderr, source=source))
     else:
         events = parse_output(stdout, stderr, source=source)
@@ -250,8 +263,26 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
 
     stdout = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
     stderr = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
+    hermes_usage = ""
+    if runner.agent.name == "hermes":
+        usage_value = invocation.environment.get("AIOS_BENCH_HERMES_USAGE_FILE")
+        if usage_value:
+            usage_path = Path(usage_value)
+            try:
+                if usage_path.is_file():
+                    hermes_usage = usage_path.read_text(encoding="utf-8", errors="replace")
+            finally:
+                # The sidecar is benchmark telemetry, not a task artifact. It
+                # must be absent before deterministic grading and warm-state copy.
+                usage_path.unlink(missing_ok=True)
+
     runner_events = list(trajectory.events)
-    parsed_events = _parse_harness_output(stdout, stderr, runner.agent.name)
+    parsed_events = _parse_harness_output(
+        stdout,
+        stderr,
+        runner.agent.name,
+        hermes_usage=hermes_usage,
+    )
     trajectory.apply_events([*runner_events, *parsed_events])
     if trajectory.errors and status == "completed":
         status = "failed"
