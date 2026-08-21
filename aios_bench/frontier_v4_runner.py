@@ -67,6 +67,23 @@ class FrontierV4Runner(FrontierV3Runner):
             max_output_tokens=max_output_tokens,
             metrics_poll_interval=metrics_poll_interval,
         )
+        # The normal execution fingerprint intentionally includes pressure
+        # coordinates, so different cells cannot share it. Landscapes need a
+        # second identity that removes only those coordinates while preserving
+        # every other runner/adapter/server setting for within-harness grouping.
+        profile_manifest = json.loads(json.dumps(self.execution_manifest))
+        parametric = profile_manifest.get("parametric")
+        if isinstance(parametric, dict):
+            parametric.pop("pressure_coordinates", None)
+            parametric["pressure_coordinates_excluded_from_profile"] = True
+        self.landscape_execution_fingerprint = hashlib.sha256(
+            json.dumps(
+                profile_manifest,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
 
     def _suite_name(self):
         return "frontier_v4"
@@ -164,5 +181,6 @@ class FrontierV4Runner(FrontierV3Runner):
             "variant_seed": self._task_seed(task),
             "variant_parameters": parameters,
             "variant_digest": variant.get("variant_digest"),
+            "landscape_execution_fingerprint": self.landscape_execution_fingerprint,
         })
         return identity
