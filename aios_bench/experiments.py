@@ -27,8 +27,13 @@ def _write_json_atomic(path: Path, value: dict) -> None:
     temporary.replace(path)
 
 
-def make_experiment_id() -> str:
-    return datetime.now().astimezone().strftime("%Y-%m-%d_%H%M%S_%f_frontier-v3-exp")
+def make_experiment_id(suite: str = "frontier_v3") -> str:
+    safe_suite = str(suite).strip().lower().replace("_", "-")
+    if safe_suite not in {"frontier-v3", "frontier-v4"}:
+        raise ValueError(f"unsupported experiment suite: {suite}")
+    return datetime.now().astimezone().strftime(
+        f"%Y-%m-%d_%H%M%S_%f_{safe_suite}-exp"
+    )
 
 
 def derive_seed(base_seed: int, *parts: object) -> int:
