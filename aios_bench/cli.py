@@ -8,18 +8,21 @@ from .config import AGENTS
 from .dashboard import build_dashboard
 from .experiments import annotate_repeat, make_experiment_id
 from .frontier_v3_runner import FrontierV3Runner
+from .frontier_v4_runner import FrontierV4Runner
 from .models import Trajectory
+from .parametric import ExpensePressure
 from .report import write_summary
 from .scheduler import MatchedInterleavedScheduler
 from .scoring import overall_score
 from .statistics import augment_summary_file
 from .tasks import load_tasks
-from .validation import validate_negative_baseline
+from .validation import validate_negative_baseline, validate_parametric_baseline
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ROOT / "benchmarks" / "tasks"
 PUBLISHED = ROOT / "results"
 RESULTS = PUBLISHED / ".local"
+SUITES = ("frontier_v3", "frontier_v4")
 
 
 def _add_harness_flags(parser: argparse.ArgumentParser) -> None:
@@ -59,6 +62,44 @@ def _runner_kwargs(args: argparse.Namespace) -> dict:
     }
 
 
+def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
+    try:
+        pressure = ExpensePressure(
+            rows=args.v4_expense_rows,
+            malformed_rows=args.v4_expense_malformed,
+            distractor_files=args.v4_expense_distractors,
+            months=args.v4_expense_months,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 expense pressure: {exc}") from exc
+    return {"expense_report": pressure.to_dict()}
+
+
+def _build_runner(
+    args: argparse.Namespace,
+    harness: str,
+    *,
+    run_id: str | None,
+    orchestration_seed: int,
+):
+    common = dict(
+        repo_root=ROOT,
+        agent=AGENTS[harness],
+        results_dir=RESULTS,
+        task_timeout=args.timeout,
+        total_timeout=args.total_timeout,
+        run_id=run_id,
+        **_runner_kwargs(args),
+    )
+    if args.suite == "frontier_v4":
+        return FrontierV4Runner(
+            **common,
+            variant_base_seed=orchestration_seed,
+            parametric_parameters=_v4_parameters(args),
+        )
+    return FrontierV3Runner(**common)
+
+
 def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> int:
     exit_code = 0
     for repeat in range(1, args.repeats + 1):
@@ -67,17 +108,14 @@ def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> 
         if run_id and args.repeats > 1:
             run_id = f"{run_id}-r{repeat:02d}"
         print(
-            f"\n=== Repeat {repeat}/{args.repeats} | {AGENTS[harness].display_name} "
+            f"\n=== {args.suite} | Repeat {repeat}/{args.repeats} | {AGENTS[harness].display_name} "
             f"| orchestration_seed={orchestration_seed} ===\n"
         )
-        runner = FrontierV3Runner(
-            ROOT,
-            AGENTS[harness],
-            RESULTS,
-            args.timeout,
-            args.total_timeout,
+        runner = _build_runner(
+            args,
+            harness,
             run_id=run_id,
-            **_runner_kwargs(args),
+            orchestration_seed=orchestration_seed,
         )
         try:
             exit_code = max(exit_code, runner.run(tasks))
@@ -91,19 +129,16 @@ def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> 
 
 def _run_matched_interleaved(args: argparse.Namespace, harnesses: list[str], tasks: list) -> int:
     exit_code = 0
-    experiment_id = args.run_id or make_experiment_id()
+    experiment_id = args.run_id or make_experiment_id(args.suite)
     for repeat in range(1, args.repeats + 1):
         orchestration_seed = args.seed + repeat - 1
         run_id = experiment_id if args.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
         runners = {
-            harness: FrontierV3Runner(
-                ROOT,
-                AGENTS[harness],
-                RESULTS,
-                args.timeout,
-                args.total_timeout,
+            harness: _build_runner(
+                args,
+                harness,
                 run_id=run_id,
-                **_runner_kwargs(args),
+                orchestration_seed=orchestration_seed,
             )
             for harness in harnesses
         }
@@ -122,6 +157,12 @@ def _run_matched_interleaved(args: argparse.Namespace, harnesses: list[str], tas
 def main() -> None:
     parser = argparse.ArgumentParser(prog="aiosbench", description="AIOS-bench local agent benchmark")
     _add_harness_flags(parser)
+    parser.add_argument(
+        "--suite",
+        choices=SUITES,
+        default="frontier_v3",
+        help="Benchmark suite; Frontier v3 remains the static default",
+    )
     parser.add_argument("--model", default="unknown", help="Model identifier for longitudinal comparisons")
     parser.add_argument("--timeout", type=float, default=900, help="Per-task timeout in seconds")
     parser.add_argument("--total-timeout", type=float, default=None, help="Optional active execution budget per harness")
@@ -132,7 +173,31 @@ def main() -> None:
         "--seed",
         type=int,
         default=42,
-        help="Base orchestration seed for block ordering; does not set model sampling RNG",
+        help="Base orchestration seed; in Frontier v4 it also deterministically derives task variants",
+    )
+    parser.add_argument(
+        "--v4-expense-rows",
+        type=int,
+        default=48,
+        help="Frontier v4 expense-family row pressure coordinate",
+    )
+    parser.add_argument(
+        "--v4-expense-malformed",
+        type=int,
+        default=2,
+        help="Frontier v4 expense-family malformed-row pressure coordinate",
+    )
+    parser.add_argument(
+        "--v4-expense-distractors",
+        type=int,
+        default=3,
+        help="Frontier v4 expense-family distractor-file pressure coordinate",
+    )
+    parser.add_argument(
+        "--v4-expense-months",
+        type=int,
+        default=6,
+        help="Frontier v4 expense-family temporal-span pressure coordinate",
     )
     parser.add_argument(
         "--server-metrics-url",
@@ -169,7 +234,7 @@ def main() -> None:
     harnesses = _selected_harnesses(args)
 
     if args.command == "list":
-        for task in load_tasks(TASKS):
+        for task in load_tasks(TASKS, args.suite):
             print(f"{task.id}\t{task.category}\t{task.mode}\t{task.prompt}")
         return
     if args.command == "score":
@@ -190,8 +255,18 @@ def main() -> None:
         print(f"Published dashboard: {dashboard}")
         print(f"Published summary:   {summary}")
         return
+
+    tasks = load_tasks(TASKS, args.suite)
     if args.command == "validate":
-        result = validate_negative_baseline(ROOT, load_tasks(TASKS))
+        if args.suite == "frontier_v4":
+            result = validate_parametric_baseline(
+                ROOT,
+                tasks,
+                base_seed=args.seed,
+                parameters=_v4_parameters(args),
+            )
+        else:
+            result = validate_negative_baseline(ROOT, tasks)
         print(json.dumps(result, indent=2))
         if not result["ok"]:
             raise SystemExit(2)
@@ -206,7 +281,6 @@ def main() -> None:
     if args.metrics_poll_interval <= 0:
         raise SystemExit("--metrics-poll-interval must be > 0")
 
-    tasks = load_tasks(TASKS)
     if len(harnesses) == 1:
         exit_code = _run_single_harness(args, harnesses[0], tasks)
     else:
