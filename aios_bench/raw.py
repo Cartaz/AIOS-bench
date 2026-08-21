@@ -94,9 +94,10 @@ def _unique_result_files(root: Path) -> list[Path]:
 def load_attempts(root: Path) -> list[dict[str, Any]]:
     """Load every valid raw task observation without deduplicating attempts.
 
-    Existing/legacy rows are assigned a stable synthetic attempt identity from
-    their run/task identity and occurrence index. New schemas can persist the
-    same fields directly; persisted values are preserved when present.
+    Attempt identity is derived from the authoritative journal order, so legacy
+    rows and rows containing stale/spoofed identity fields are handled the same
+    way. The physical JSONL remains the raw source; these fields make each
+    observation addressable in derived analysis.
     """
     attempts: list[dict[str, Any]] = []
     for path in _unique_result_files(root):
@@ -119,15 +120,15 @@ def load_attempts(root: Path) -> list[dict[str, Any]]:
             task_id = str(row.get("task_id", "unknown"))
             counters[task_id] += 1
             index = counters[task_id]
-            row.setdefault("attempt_schema", ATTEMPT_SCHEMA)
-            row.setdefault("attempt_index", index)
-            row.setdefault("attempt_id", _attempt_id(row, int(row["attempt_index"])))
-            # Source location is diagnostic provenance, not benchmark identity.
+            row["attempt_schema"] = ATTEMPT_SCHEMA
+            row["attempt_index"] = index
+            row["attempt_id"] = _attempt_id(row, index)
             try:
-                row.setdefault("source_path", path.relative_to(root).as_posix())
+                source_path = path.relative_to(root).as_posix()
             except ValueError:
-                row.setdefault("source_path", path.as_posix())
-            row.setdefault("source_line", line_number)
+                source_path = path.as_posix()
+            row["source_path"] = source_path
+            row["source_line"] = line_number
             attempts.append(row)
     return attempts
 
