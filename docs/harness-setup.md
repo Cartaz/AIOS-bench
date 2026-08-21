@@ -148,16 +148,70 @@ facility is explicitly enabled by the adapter.
 
 ## Agent Zero
 
-Agent Zero is integrated through its documented external HTTP API, not by scraping its Web UI. Start a local Agent Zero instance and create a dedicated benchmark project/workspace that maps to the benchmark fixture.
+Agent Zero is integrated through its documented external HTTP API, not by
+scraping the Web UI. Because the Agent Zero service owns its own filesystem,
+plugins and model configuration, use a **dedicated benchmark project** whose
+workdir maps only to the benchmark workspace boundary. Never reuse a personal
+project.
+
+Before running AIOS-bench, configure that Agent Zero project so native persistent
+memory cannot create a second hidden state channel:
+
+- enable project memory isolation;
+- disable **Memory auto-recall** (`memory_recall_enabled=false`);
+- disable **Auto-memorize** (`memory_memorize_enabled=false`);
+- configure the project/profile main model to exactly the model passed to
+  `aiosbench --model`;
+- if Agent Zero uses a utility model during the selected profile, bind it to the
+  same benchmark model or otherwise include that difference in the declared
+  inference configuration.
+
+Then configure the benchmark client:
 
 ```bash
 export AIOS_BENCH_AGENTZERO_URL=http://127.0.0.1:80
 export AIOS_BENCH_AGENTZERO_API_KEY=<api-key>
 export AIOS_BENCH_AGENTZERO_PROJECT=aios-bench
+export AIOS_BENCH_AGENTZERO_ISOLATED_PROJECT=1
+export AIOS_BENCH_AGENTZERO_RESOLVED_MODEL=<model>
+
+# Optional but recommended provenance when known:
+export AIOS_BENCH_AGENTZERO_PROFILE=developer
+export AIOS_BENCH_AGENTZERO_PROVIDER=openai
+export AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT=http://127.0.0.1:8080/v1
+
 aiosbench --agentzero --model <model>
 ```
 
-The project must be configured so Agent Zero can operate on the isolated fixture. Do not point it at the real personal workspace during benchmark runs.
+`AIOS_BENCH_AGENTZERO_ISOLATED_PROJECT=1` is an explicit operator attestation,
+not an automatic reconfiguration of Agent Zero. The client fails closed if the
+project is missing, the attestation is absent, or
+`AIOS_BENCH_AGENTZERO_RESOLVED_MODEL` does not exactly match `--model`. For a
+publication-grade comparison, continue to provide the common
+`AIOS_BENCH_MODEL_DIGEST` and `AIOS_BENCH_INFERENCE_CONFIG`; the remote model
+binding is recorded as `operator_declared_remote`, not as if AIOS-bench itself
+had changed Agent Zero's model.
+
+Each task deliberately omits `context_id` on `/api_message`, forcing Agent Zero
+to create a fresh conversation context. After the task finishes, AIOS-bench
+retrieves the API-key-protected `/api_log_get` record, projects only structural
+event identity, and deletes the remote context with `/api_terminate_chat`.
+Assistant text, tool arguments, tool output, subordinate prompts/results and log
+content are never copied into benchmark telemetry.
+
+Agent Zero's `call_subordinate` implementation writes a first-class log item with
+`type="subagent"`. AIOS-bench treats that server-side type as non-inferred
+`subagent_start`/`subagent_end` evidence, so Agent Zero is eligible for Frontier
+`subagents` tasks without accepting prose claims. Structured `tool` and
+`browser` log items likewise provide tool telemetry and make browser tasks
+eligible. Token efficiency still comes from the shared server metrics path when
+configured; the external log API is not used to invent token counts.
+
+The Agent Zero service URL is a harness-control endpoint and is recorded in run
+configuration. It is **not** used as the model endpoint in the model identity
+fingerprint. Set `AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT` when the inference
+endpoint is Agent-Zero-specific; otherwise the common `AIOS_BENCH_ENDPOINT` can
+supply the model endpoint just as it does for the other harnesses.
 
 ## Capability policy
 
