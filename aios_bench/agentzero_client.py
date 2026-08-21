@@ -5,10 +5,14 @@ import os
 import re
 import sys
 import urllib.request
+from pathlib import Path
 from typing import Any
+
+from .agentzero_workspace import EphemeralAgentZeroProject
 
 
 _TOOL_HEADING_RE = re.compile(r"Using tool '([^']+)'", re.IGNORECASE)
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
 def _api_key() -> str:
@@ -44,8 +48,8 @@ def _tool_name(item: dict[str, Any]) -> str | None:
     match = _TOOL_HEADING_RE.search(heading)
     if not match:
         return None
-    # Agent Zero headings use name[:method].  Keep only the tool identity; the
-    # method and arguments can contain task data and are not benchmark telemetry.
+    # Agent Zero headings use name[:method]. Keep only the tool identity; method,
+    # arguments and output can contain task data and are not benchmark telemetry.
     return match.group(1).split(":", 1)[0].strip()[:200] or None
 
 
@@ -63,14 +67,20 @@ def _event(event_type: str, *, event_id: str | None = None, tool: str | None = N
     return event
 
 
+def _log_item_completed(item: dict[str, Any]) -> bool:
+    """Use content presence only as a completion bit; never retain the content."""
+    content = item.get("content")
+    return isinstance(content, str) and bool(content.strip())
+
+
 def normalize_log_items(items: object) -> list[dict[str, Any]]:
     """Project Agent Zero's server-side structured log into bounded events.
 
-    The external API log can contain prompts, tool arguments and tool results.
-    None of that content is copied to AIOS-bench.  Only log type, generated id,
-    tool identity parsed from Agent Zero's own canonical heading, and terminal
-    status are retained.  A ``subagent`` log item is native delegation evidence:
-    it is created by ``call_subordinate`` itself, not by model prose.
+    The external log can contain prompts, tool arguments and tool results. None
+    of that content is copied to AIOS-bench. A native ``subagent`` log item is
+    strong start evidence because ``call_subordinate`` creates that type itself.
+    Completion events are emitted only when Agent Zero populated the log result;
+    an empty/incomplete record is never upgraded to a successful end event.
     """
     if not isinstance(items, list):
         return []
@@ -81,43 +91,56 @@ def normalize_log_items(items: object) -> list[dict[str, Any]]:
             continue
         kind = str(raw.get("type") or "").strip().lower()
         event_id = str(raw.get("id") or raw.get("no") or "").strip() or None
+        completed = _log_item_completed(raw)
 
         if kind == "tool":
             tool = _tool_name(raw) or "agentzero_tool"
             events.append(_event("tool_call", event_id=event_id, tool=tool, status="started"))
-            events.append(_event("tool_result", event_id=event_id, tool=tool, status="completed"))
+            if completed:
+                events.append(_event("tool_result", event_id=event_id, tool=tool, status="observed"))
         elif kind == "subagent":
             tool = "call_subordinate"
             events.append(_event("tool_call", event_id=event_id, tool=tool, status="started"))
             events.append(_event("subagent_start", event_id=event_id, tool=tool, status="started"))
-            events.append(_event("tool_result", event_id=event_id, tool=tool, status="completed"))
-            events.append(_event("subagent_end", event_id=event_id, tool=tool, status="completed"))
+            if completed:
+                events.append(_event("tool_result", event_id=event_id, tool=tool, status="observed"))
+                events.append(_event("subagent_end", event_id=event_id, tool=tool, status="observed"))
         elif kind == "browser":
             events.append(_event("tool_call", event_id=event_id, tool="browser", status="started"))
-            events.append(_event("tool_result", event_id=event_id, tool="browser", status="completed"))
+            if completed:
+                events.append(_event("tool_result", event_id=event_id, tool="browser", status="observed"))
         elif kind == "code_exe":
             events.append(_event("tool_call", event_id=event_id, tool="code_execution", status="started"))
-            events.append(_event("tool_result", event_id=event_id, tool="code_execution", status="completed"))
+            if completed:
+                events.append(_event("tool_result", event_id=event_id, tool="code_execution", status="observed"))
         elif kind == "error":
             events.append(_event("error", event_id=event_id, error="agentzero_structured_error"))
         elif kind == "response":
-            # Presence only. Never copy the assistant response text.
-            events.append(_event("assistant", event_id=event_id, status="completed"))
+            events.append(_event("assistant", event_id=event_id, status="observed"))
 
     return events
 
 
-def _validate_profile() -> tuple[str, str | None]:
-    project = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECT", "").strip()
-    if not project:
+def _validate_profile() -> tuple[str, str | None, Path, Path]:
+    template = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECT", "").strip()
+    if not template:
         raise RuntimeError(
-            "AIOS_BENCH_AGENTZERO_PROJECT is required; use a dedicated benchmark project"
+            "AIOS_BENCH_AGENTZERO_PROJECT is required; use a neutral template project"
         )
-    isolated = os.environ.get("AIOS_BENCH_AGENTZERO_ISOLATED_PROJECT", "").strip().lower()
-    if isolated not in {"1", "true", "yes", "on"}:
+    projects_root_raw = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", "").strip()
+    if not projects_root_raw:
+        raise RuntimeError("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT is required")
+    workspace_raw = os.environ.get("AIOS_BENCH_WORKSPACE", "").strip()
+    if not workspace_raw:
+        raise RuntimeError("AIOS_BENCH_WORKSPACE is required")
+
+    isolated_service = os.environ.get(
+        "AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE", ""
+    ).strip().lower()
+    if isolated_service not in _TRUE_VALUES:
         raise RuntimeError(
-            "AIOS_BENCH_AGENTZERO_ISOLATED_PROJECT=1 is required after disabling native "
-            "memory recall/memorization in the dedicated benchmark project"
+            "AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE=1 is required for a dedicated "
+            "Agent Zero service/container with no personal host mounts"
         )
 
     requested = os.environ.get("AIOS_BENCH_REQUESTED_MODEL", "").strip()
@@ -130,24 +153,29 @@ def _validate_profile() -> tuple[str, str | None]:
         raise RuntimeError("Agent Zero resolved-model declaration does not match --model")
 
     profile = os.environ.get("AIOS_BENCH_AGENTZERO_PROFILE", "").strip() or None
-    return project, profile
+    return template, profile, Path(projects_root_raw), Path(workspace_raw)
 
 
 def run(prompt: str) -> int:
-    project, profile = _validate_profile()
+    template, profile, projects_root, workspace = _validate_profile()
+    bridge = EphemeralAgentZeroProject(workspace, projects_root, template)
     context_id: str | None = None
     cleanup_warning = False
     try:
+        # Every attempt gets a new physical Agent Zero project copied from the
+        # neutral metadata-only template. A timed-out/orphaned remote run can
+        # therefore never write into the next task's workspace.
+        ephemeral_project = bridge.prepare()
         payload: dict[str, Any] = {
             "message": prompt,
             "lifetime_hours": 0.25,
-            "project_name": project,
+            "project_name": ephemeral_project,
         }
         if profile:
             payload["agent_profile"] = profile
 
-        # Deliberately omit context_id: Agent Zero creates a fresh context for
-        # every benchmark task, preventing chat/history reuse across attempts.
+        # Deliberately omit context_id: Agent Zero creates a fresh conversation
+        # in the fresh physical project for every benchmark task.
         result = _request_json("/api_message", payload)
         context_id = str(result.get("context_id") or "").strip()
         if not context_id:
@@ -159,6 +187,16 @@ def run(prompt: str) -> int:
         )
         log = log_data.get("log") if isinstance(log_data.get("log"), dict) else {}
         items = log.get("items") if isinstance(log, dict) else []
+
+        # Stop the completed context before copying artifacts back, removing any
+        # chance of a post-response context update racing the local grader.
+        try:
+            _request_json("/api_terminate_chat", {"context_id": context_id})
+            context_id = None
+        except Exception:
+            cleanup_warning = True
+
+        bridge.sync_back()
         for event in normalize_log_items(items):
             print(json.dumps(event, sort_keys=True, separators=(",", ":")))
         return 0
@@ -168,6 +206,10 @@ def run(prompt: str) -> int:
                 _request_json("/api_terminate_chat", {"context_id": context_id})
             except Exception:
                 cleanup_warning = True
+        # On normal/error exits remove the ephemeral project. If the outer
+        # benchmark SIGKILLs this client on timeout, cleanup cannot run; the
+        # unique project name still prevents cross-task contamination.
+        bridge.cleanup()
         if cleanup_warning:
             print("Agent Zero context cleanup warning", file=sys.stderr)
 
@@ -179,8 +221,8 @@ def main() -> int:
     try:
         return run(sys.argv[1])
     except Exception as exc:
-        # Keep failure telemetry structured and content-free.  Exception text may
-        # contain endpoint details, so stderr exposes only the exception class.
+        # Keep failure telemetry structured and content-free. Exception text may
+        # contain endpoint/path details, so stderr exposes only the class.
         print(json.dumps(_event("error", error=type(exc).__name__), sort_keys=True))
         print(f"Agent Zero API error: {type(exc).__name__}", file=sys.stderr)
         return 1
