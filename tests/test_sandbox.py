@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aios_bench.sandbox import workspace_sandbox
+from aios_bench.sandbox import _result_history_paths, workspace_sandbox
 
 
 def _has_sequence(command: list[str], sequence: list[str]) -> bool:
@@ -12,7 +12,7 @@ def _has_sequence(command: list[str], sequence: list[str]) -> bool:
 
 def test_bubblewrap_confines_writes_to_workspace(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
-    monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda: ([], []))
+    monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda workspace: ([], []))
     plan = workspace_sandbox("piagent", tmp_path, "required")
     command = plan.wrap(["pi", "--mode", "rpc"])
     assert plan.strategy == "bubblewrap_readonly_root"
@@ -25,7 +25,7 @@ def test_bubblewrap_masks_benchmark_owned_grader_paths(monkeypatch, tmp_path: Pa
     monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
     hidden_dir = tmp_path / "benchmarks"; hidden_dir.mkdir()
     hidden_file = tmp_path / "reference_checks.py"; hidden_file.write_text("secret", encoding="utf-8")
-    monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda: ([hidden_dir], [hidden_file]))
+    monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda workspace: ([hidden_dir], [hidden_file]))
     workspace = tmp_path / "workspace"; workspace.mkdir()
     plan = workspace_sandbox("hermes", workspace, "required")
     command = plan.wrap(["hermes"])
@@ -35,11 +35,31 @@ def test_bubblewrap_masks_benchmark_owned_grader_paths(monkeypatch, tmp_path: Pa
     assert _has_sequence(command, ["--ro-bind", "/dev/null", str(hidden_file.resolve())])
 
 
+def test_historical_results_and_sibling_workspaces_are_hidden(tmp_path: Path):
+    local = tmp_path / "results" / ".local"
+    workspace = local / "piagent" / "ornith" / "runs" / "run-2" / "workspaces" / "task-2"
+    workspace.mkdir(parents=True)
+    other_harness = local / "hermes"; (other_harness / "m" / "runs" / "r").mkdir(parents=True)
+    other_model = local / "piagent" / "old-model"; (other_model / "runs" / "r").mkdir(parents=True)
+    other_run = local / "piagent" / "ornith" / "runs" / "run-1"; other_run.mkdir(parents=True)
+    sibling = workspace.parent / "task-1"; sibling.mkdir()
+    logs = workspace.parent.parent / "logs"; logs.mkdir()
+    metadata = workspace.parent.parent / "run.json"; metadata.write_text("{}", encoding="utf-8")
+    directories, files = _result_history_paths(workspace)
+    assert other_harness in directories
+    assert other_model in directories
+    assert other_run in directories
+    assert sibling in directories
+    assert logs in directories
+    assert metadata in files
+    assert workspace not in directories
+
+
 def test_pi_state_writes_use_an_ephemeral_overlay(monkeypatch, tmp_path: Path):
     pi_state = tmp_path / ".pi" / "agent"; pi_state.mkdir(parents=True)
     monkeypatch.setattr("aios_bench.sandbox.Path.home", lambda: tmp_path)
     monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
-    monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda: ([], []))
+    monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda workspace: ([], []))
     command = workspace_sandbox("piagent", tmp_path / "workspace", "required").wrap(["pi"])
     assert _has_sequence(command, ["--overlay-src", str(pi_state), "--tmp-overlay", str(pi_state)])
 
@@ -48,7 +68,7 @@ def test_other_harnesses_do_not_expose_pi_state(monkeypatch, tmp_path: Path):
     pi_state = tmp_path / ".pi" / "agent"; pi_state.mkdir(parents=True)
     monkeypatch.setattr("aios_bench.sandbox.Path.home", lambda: tmp_path)
     monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
-    monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda: ([], []))
+    monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda workspace: ([], []))
     command = workspace_sandbox("hermes", tmp_path / "workspace", "required").wrap(["hermes"])
     assert "--tmp-overlay" not in command
 
