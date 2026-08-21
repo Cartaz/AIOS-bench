@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Mapping
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -54,6 +55,7 @@ def _fingerprint(value: object) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+@lru_cache(maxsize=8)
 def _file_digest(path: str | None) -> str | None:
     if not path:
         return None
@@ -206,6 +208,9 @@ def build_run_manifest(
         else "declared_model" if effective_model
         else "unverified"
     )
+    strictly_comparable = bool(
+        effective_model and digest and safe_inference and not digest_mismatch
+    )
 
     return {
         "schema": MANIFEST_SCHEMA,
@@ -220,7 +225,7 @@ def build_run_manifest(
             "resolution": resolution,
             "digest": digest,
             "verification": verification,
-            "strictly_comparable": bool(effective_model and digest and not digest_mismatch),
+            "strictly_comparable": strictly_comparable,
             "digest_source": "model_file" if computed_digest else "declared" if declared_digest else None,
             "digest_mismatch": digest_mismatch,
             "identity_fingerprint": _fingerprint(model_identity),
@@ -228,6 +233,11 @@ def build_run_manifest(
             "endpoint": model_identity["endpoint"],
         },
         "inference": safe_inference,
+        "comparability": {
+            "model_digest_recorded": bool(digest),
+            "inference_recorded": bool(safe_inference),
+            "strict": strictly_comparable,
+        },
         "configuration": safe_configuration,
         "runtime": {
             "python": platform.python_version(),
