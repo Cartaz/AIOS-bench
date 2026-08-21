@@ -10,7 +10,7 @@
     "acceptance": [
       {"type": "exists", "path": "reports/monthly_expense_report.md", "weight": 1, "fatal": true},
       {"type": "exists", "path": "tools/expense_report.py", "weight": 1, "fatal": true},
-      {"type": "parametric_reference", "family": "expense_report", "weight": 8, "fatal": true}
+      {"type": "parametric_reference", "family": "expense_report", "task_id": "autonomy_expense_001", "weight": 8, "fatal": true}
     ]
   }
 ]
