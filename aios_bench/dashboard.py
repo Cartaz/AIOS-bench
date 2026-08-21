@@ -155,6 +155,103 @@ def _efficiency_rows(groups: list[dict[str, Any]]) -> str:
     )
 
 
+def _failure_text(value: Any) -> str:
+    counts = value if isinstance(value, dict) else {}
+    return " · ".join(
+        f'{_display(kind)}={int(count)}' for kind, count in sorted(counts.items())
+    ) or "none"
+
+
+def _parameters_text(value: Any) -> str:
+    parameters = value if isinstance(value, dict) else {}
+    return " · ".join(
+        f'{_display(name)}={_display(raw)}' for name, raw in sorted(parameters.items())
+    ) or "none"
+
+
+def _pressure_axis_rows(landscapes: list[dict[str, Any]]) -> str:
+    rows: list[str] = []
+    for landscape in landscapes:
+        axes = landscape.get("axes") if isinstance(landscape.get("axes"), dict) else {}
+        for axis, cells in sorted(axes.items()):
+            if not isinstance(cells, list):
+                continue
+            for cell in cells:
+                if not isinstance(cell, dict):
+                    continue
+                rows.append(
+                    '<tr>'
+                    f'<td>{_display(landscape.get("harness"))}</td>'
+                    f'<td>{_display(landscape.get("model"))}</td>'
+                    f'<td>{_display(landscape.get("variant_family"))}</td>'
+                    f'<td>{_display(axis)}</td>'
+                    f'<td>{_display(cell.get("value"))}</td>'
+                    f'<td>{int(cell.get("observations", 0))}</td>'
+                    f'<td>{int(cell.get("unique_variants", 0))}</td>'
+                    f'<td>{_percent(cell.get("pass_rate"))}</td>'
+                    f'<td>{_interval(cell.get("wilson_95"), percent=True)}</td>'
+                    f'<td>{_score(cell.get("mean_score"))}</td>'
+                    f'<td>{_score(cell.get("median_score"))}</td>'
+                    f'<td>{_failure_text(cell.get("failure_counts"))}</td>'
+                    '</tr>'
+                )
+    return "".join(rows)
+
+
+def _pressure_cell_rows(landscapes: list[dict[str, Any]]) -> str:
+    rows: list[str] = []
+    for landscape in landscapes:
+        cells = landscape.get("full_vector_cells") if isinstance(landscape.get("full_vector_cells"), list) else []
+        for cell in cells:
+            if not isinstance(cell, dict):
+                continue
+            rows.append(
+                '<tr>'
+                f'<td>{_display(landscape.get("harness"))}</td>'
+                f'<td>{_display(landscape.get("model"))}</td>'
+                f'<td>{_display(landscape.get("variant_family"))}</td>'
+                f'<td>{_parameters_text(cell.get("parameters"))}</td>'
+                f'<td>{int(cell.get("observations", 0))}</td>'
+                f'<td>{int(cell.get("unique_variants", 0))}</td>'
+                f'<td>{_percent(cell.get("pass_rate"))}</td>'
+                f'<td>{_interval(cell.get("wilson_95"), percent=True)}</td>'
+                f'<td>{_score(cell.get("mean_score"))}</td>'
+                f'<td>{_failure_text(cell.get("failure_counts"))}</td>'
+                '</tr>'
+            )
+    return "".join(rows)
+
+
+def _pressure_pair_rows(comparisons: list[dict[str, Any]]) -> str:
+    rows: list[str] = []
+    for item in comparisons:
+        if not item.get("comparable"):
+            rows.append(
+                '<tr>'
+                f'<td>{_display(item.get("harness_a"))}</td>'
+                f'<td>{_display(item.get("harness_b"))}</td>'
+                f'<td>{_display(item.get("variant_family"))}</td>'
+                f'<td>{_parameters_text(item.get("parameters"))}</td>'
+                f'<td colspan="5"><small>not comparable: {_display(item.get("reason"))}</small></td>'
+                '</tr>'
+            )
+            continue
+        rows.append(
+            '<tr>'
+            f'<td>{_display(item.get("harness_a"))}</td>'
+            f'<td>{_display(item.get("harness_b"))}</td>'
+            f'<td>{_display(item.get("variant_family"))}</td>'
+            f'<td>{_parameters_text(item.get("parameters"))}</td>'
+            f'<td>{int(item.get("matched_observations", 0))}</td>'
+            f'<td>{_score(item.get("mean_score_delta_a_minus_b"))}</td>'
+            f'<td>{_score(item.get("median_score_delta_a_minus_b"))}</td>'
+            f'<td>{int(item.get("wins_a", 0))}/{int(item.get("wins_b", 0))}/{int(item.get("ties", 0))}</td>'
+            f'<td>{int(item.get("a_pass_b_fail", 0))}/{int(item.get("b_pass_a_fail", 0))}</td>'
+            '</tr>'
+        )
+    return "".join(rows)
+
+
 def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     results_root.mkdir(parents=True, exist_ok=True)
     summary = build_summary(results_root)
@@ -169,6 +266,8 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     paired = paired_comparisons(raw_rows, **filters)
     failures = failure_distributions(raw_rows, **filters)
     efficiency = server_efficiency_groups(raw_rows, **filters)
+    landscapes = summary.get("pressure_landscapes") if isinstance(summary.get("pressure_landscapes"), list) else []
+    pressure_pairs = summary.get("pressure_paired_comparisons") if isinstance(summary.get("pressure_paired_comparisons"), list) else []
     selected = (
         f'{_display(summary.get("selected_suite"))} · '
         f'{_display(summary.get("selected_suite_revision"))}'
@@ -225,15 +324,21 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     paired_table = _paired_rows(paired)
     failure_table = _failure_rows(failures)
     efficiency_table = _efficiency_rows(efficiency)
+    pressure_axis_table = _pressure_axis_rows(landscapes)
+    pressure_cell_table = _pressure_cell_rows(landscapes)
+    pressure_pair_table = _pressure_pair_rows(pressure_pairs)
 
     html = f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIOS-bench Dashboard</title>
 <style>:root{{color-scheme:dark}}body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}}h1{{margin-bottom:4px}}.meta{{color:#999;margin-bottom:24px}}table{{border-collapse:collapse;width:100%;max-width:1400px}}th,td{{padding:12px;border-bottom:1px solid #333;text-align:left;vertical-align:top}}th{{color:#aaa}}code{{font-size:.9em}}.panel{{margin-top:28px;max-width:1400px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}}.card{{border:1px solid #333;border-radius:12px;padding:16px}}.bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}}.fill{{height:100%;background:#aaa}}small{{color:#999}}</style></head><body><h1>AIOS-bench</h1>
-<div class="meta">Harness × model comparison — newest observed suite revision: {selected}. Capability, reliability and efficiency are reported separately.</div>
+<div class="meta">Harness × model comparison — newest observed suite revision: {selected}. Capability, reliability, pressure response and efficiency are reported separately.</div>
 <div class="panel"><h2>Latest capability leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Suite</th><th>Revision</th><th>Profile</th><th>Run</th><th>Score</th><th>Passed</th><th>Unsupported</th><th>Blocked</th><th>Success</th><th>Runtime</th></tr></thead><tbody>{cards or '<tr><td colspan="12">No eligible benchmark results yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Reliability across repeats</h2><p><small>Attempt-level pass rate and Wilson 95% interval. Score range is descriptive; capability scoring is unchanged.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Repeats</th><th>Passed attempts</th><th>Pass rate</th><th>Wilson 95%</th><th>Median score</th><th>Score range</th></tr></thead><tbody>{reliability_table or '<tr><td colspan="8">No repeated observations yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Paired harness comparisons</h2><p><small>Strict same-model matched observations only. Δ = score(A) − score(B); CI is task-cluster bootstrap; p is paired sign-flip.</small></p><table><thead><tr><th>A</th><th>B</th><th>Tasks</th><th>Observations</th><th>Mean Δ</th><th>95% CI</th><th>p</th><th>W/L/T</th><th>A-only pass / B-only pass</th></tr></thead><tbody>{paired_table or '<tr><td colspan="9">No strict matched comparisons yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Frontier v4 pressure response — marginal axes</h2><p><small>Each row conditions on one observed coordinate value and marginalizes over other observed coordinates. Coordinates are workload descriptors, not assumed monotonic difficulty levels.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Family</th><th>Axis</th><th>Value</th><th>Obs.</th><th>Variants</th><th>Pass rate</th><th>Wilson 95%</th><th>Mean score</th><th>Median</th><th>Failure mix</th></tr></thead><tbody>{pressure_axis_table or '<tr><td colspan="12">No selected Frontier v4 pressure observations yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Frontier v4 joint pressure cells</h2><p><small>Joint cells preserve the complete generated pressure vector; no interpolation is performed between unobserved cells.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Family</th><th>Pressure vector</th><th>Obs.</th><th>Variants</th><th>Pass rate</th><th>Wilson 95%</th><th>Mean score</th><th>Failure mix</th></tr></thead><tbody>{pressure_cell_table or '<tr><td colspan="10">No joint pressure cells yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Matched harness deltas by pressure cell</h2><p><small>Strict same-model comparisons only. A pair is matched on experiment, repeat, task, task seed and variant digest. Δ = score(A) − score(B); these cell deltas are descriptive.</small></p><table><thead><tr><th>A</th><th>B</th><th>Family</th><th>Pressure vector</th><th>Matched</th><th>Mean Δ</th><th>Median Δ</th><th>W/L/T</th><th>A-only pass / B-only pass</th></tr></thead><tbody>{pressure_pair_table or '<tr><td colspan="9">No strict matched pressure-cell comparisons yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Failure taxonomy</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Observations</th><th>Counts</th></tr></thead><tbody>{failure_table or '<tr><td colspan="4">No classified observations yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Server-verified efficiency</h2><p><small>Only llama.cpp server-verified rows are included. Endpoint counters require an exclusive benchmark server for clean attribution.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Verified tasks</th><th>Prompt tokens</th><th>Output tokens</th><th>Prompt tok/s</th><th>Generation tok/s</th></tr></thead><tbody>{efficiency_table or '<tr><td colspan="7">No server-verified efficiency data yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Run history</h2><table><thead><tr><th>Run</th><th>Harness</th><th>Model</th><th>Suite</th><th>Revision</th><th>Profile</th><th>Status</th><th>Score</th><th>Passed</th><th>Unsupported</th><th>Blocked</th><th>Eligibility</th><th>Git commit</th></tr></thead><tbody>{history or '<tr><td colspan="13">No benchmark runs yet.</td></tr>'}</tbody></table></div>
