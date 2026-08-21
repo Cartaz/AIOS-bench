@@ -11,6 +11,7 @@ from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
 from .models import Trajectory
 from .parametric import ExpensePressure
+from .publication import render_derived, verify_publication, write_publication_manifest
 from .report import write_summary
 from .scheduler import MatchedInterleavedScheduler
 from .scoring import overall_score
@@ -175,40 +176,16 @@ def main() -> None:
         default=42,
         help="Base orchestration seed; in Frontier v4 it also deterministically derives task variants",
     )
-    parser.add_argument(
-        "--v4-expense-rows",
-        type=int,
-        default=48,
-        help="Frontier v4 expense-family row pressure coordinate",
-    )
-    parser.add_argument(
-        "--v4-expense-malformed",
-        type=int,
-        default=2,
-        help="Frontier v4 expense-family malformed-row pressure coordinate",
-    )
-    parser.add_argument(
-        "--v4-expense-distractors",
-        type=int,
-        default=3,
-        help="Frontier v4 expense-family distractor-file pressure coordinate",
-    )
-    parser.add_argument(
-        "--v4-expense-months",
-        type=int,
-        default=6,
-        help="Frontier v4 expense-family temporal-span pressure coordinate",
-    )
+    parser.add_argument("--v4-expense-rows", type=int, default=48, help="Frontier v4 expense-family row pressure coordinate")
+    parser.add_argument("--v4-expense-malformed", type=int, default=2, help="Frontier v4 expense-family malformed-row pressure coordinate")
+    parser.add_argument("--v4-expense-distractors", type=int, default=3, help="Frontier v4 expense-family distractor-file pressure coordinate")
+    parser.add_argument("--v4-expense-months", type=int, default=6, help="Frontier v4 expense-family temporal-span pressure coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
         help="llama.cpp Prometheus endpoint or server origin (requires llama-server --metrics)",
     )
-    parser.add_argument(
-        "--server-metrics-model",
-        default=None,
-        help="Optional llama.cpp router model id added to the /metrics query",
-    )
+    parser.add_argument("--server-metrics-model", default=None, help="Optional llama.cpp router model id added to the /metrics query")
     parser.add_argument(
         "--max-output-tokens",
         type=int,
@@ -226,7 +203,7 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["run", "list", "score", "dashboard", "publish", "validate"],
+        choices=["run", "list", "score", "dashboard", "publish", "verify", "validate"],
         default="run",
     )
     parser.add_argument("path", nargs="?", type=Path)
@@ -250,10 +227,17 @@ def main() -> None:
         print(f"Summary:   {summary}")
         return
     if args.command == "publish":
-        dashboard = build_dashboard(RESULTS, PUBLISHED)
-        summary = _summary(RESULTS, PUBLISHED)
-        print(f"Published dashboard: {dashboard}")
-        print(f"Published summary:   {summary}")
+        outputs = render_derived(RESULTS, PUBLISHED)
+        manifest = write_publication_manifest(RESULTS, PUBLISHED)
+        print(f"Published dashboard: {outputs['dashboard.html']}")
+        print(f"Published summary:   {outputs['summary.json']}")
+        print(f"Publication seal:    {manifest}")
+        return
+    if args.command == "verify":
+        result = verify_publication(RESULTS, PUBLISHED)
+        print(json.dumps(result, indent=2))
+        if not result["ok"]:
+            raise SystemExit(2)
         return
 
     tasks = load_tasks(TASKS, args.suite)
