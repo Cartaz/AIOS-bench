@@ -29,6 +29,7 @@ class AgentInvocation:
     environment: dict[str, str]
     requested_model: str | None = None
     resolved_model: str | None = None
+    model_resolution: str | None = None
     provider: str | None = None
     endpoint: str | None = None
     configuration: dict[str, Any] = field(default_factory=dict)
@@ -164,7 +165,6 @@ class HermesAdapter(Adapter):
             },
             requested_model=requested,
             resolved_model=requested,
-            provider=provider,
             configuration={
                 "mode": "oneshot",
                 "ignore_rules": True,
@@ -320,29 +320,72 @@ class LettaAdapter(Adapter):
 
 class AgentZeroAdapter(Adapter):
     name = "agentzero"
-    capabilities = frozenset({"memory", "knowledge", "projects", "api", "persistent_state"})
+    capabilities = frozenset({
+        "api",
+        "json_events",
+        "tool_events",
+        "structured_subagent_events",
+        "browser",
+        "terminal",
+        "projects",
+        "sessions",
+    })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
         command = ["python", "-m", "aios_bench.agentzero_client", prompt]
+        service_url = os.environ.get("AIOS_BENCH_AGENTZERO_URL", "http://127.0.0.1:80")
+        project = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECT", "").strip()
+        profile = os.environ.get("AIOS_BENCH_AGENTZERO_PROFILE", "").strip()
+        declared_model = os.environ.get("AIOS_BENCH_AGENTZERO_RESOLVED_MODEL", "").strip()
+        provider = os.environ.get("AIOS_BENCH_AGENTZERO_PROVIDER", "").strip() or None
+        model_endpoint = os.environ.get("AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT", "").strip() or None
+        isolated = os.environ.get("AIOS_BENCH_AGENTZERO_ISOLATED_PROJECT", "").strip()
+
         environment = {
             "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
-            "AIOS_BENCH_AGENTZERO_URL": os.environ.get("AIOS_BENCH_AGENTZERO_URL", "http://127.0.0.1:80"),
+            "AIOS_BENCH_AGENTZERO_URL": service_url,
             "AIOS_BENCH_AGENTZERO_API_KEY": os.environ.get("AIOS_BENCH_AGENTZERO_API_KEY", ""),
+            "AIOS_BENCH_AGENTZERO_PROJECT": project,
+            "AIOS_BENCH_AGENTZERO_PROFILE": profile,
+            "AIOS_BENCH_AGENTZERO_RESOLVED_MODEL": declared_model,
+            "AIOS_BENCH_AGENTZERO_ISOLATED_PROJECT": isolated,
         }
-        project = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECT")
-        if project:
-            environment["AIOS_BENCH_AGENTZERO_PROJECT"] = project
         if model and model != "unknown":
             environment["AIOS_BENCH_REQUESTED_MODEL"] = model
+
         requested = _requested_model(model)
+        resolved = declared_model or None
+        if requested and resolved != requested:
+            # The client fails closed before contacting Agent Zero. Keep the
+            # manifest equally conservative instead of claiming another model.
+            resolved = None
+
         return AgentInvocation(
             command,
             environment,
             requested_model=requested,
-            # The HTTP service owns the actual model configuration.
-            resolved_model=None,
-            endpoint=environment["AIOS_BENCH_AGENTZERO_URL"],
-            configuration={"project": project, "api_key_configured": bool(environment["AIOS_BENCH_AGENTZERO_API_KEY"])},
+            resolved_model=resolved,
+            model_resolution="operator_declared_remote" if resolved else None,
+            provider=provider,
+            # The Agent Zero HTTP URL is a harness-control endpoint, not the LLM
+            # endpoint. Only an explicitly declared model endpoint belongs in
+            # model identity; otherwise manifest.py may fall back to
+            # AIOS_BENCH_ENDPOINT shared with the other harnesses.
+            endpoint=model_endpoint,
+            configuration={
+                "transport": "external_api",
+                "service_endpoint": service_url,
+                "project": project or None,
+                "agent_profile": profile or None,
+                "api_key_configured": bool(environment["AIOS_BENCH_AGENTZERO_API_KEY"]),
+                "fresh_context_per_task": True,
+                "context_cleanup": "api_terminate_chat",
+                "telemetry": "api_log_get",
+                "structured_subagent_log_type": True,
+                "native_memory_expected": "disabled_by_dedicated_project",
+                "isolated_project_attestation": isolated.lower() in {"1", "true", "yes", "on"},
+                "model_binding": "operator_declared_remote",
+            },
         )
 
 
