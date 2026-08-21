@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from aios_bench.experiments import annotate_experiment, annotate_repeat, matched_schedule
+from aios_bench.experiments import (
+    annotate_experiment,
+    annotate_repeat,
+    make_experiment_id,
+    matched_schedule,
+)
 
 
 def test_repeat_annotation_updates_manifest_and_rows(tmp_path: Path):
@@ -14,6 +19,11 @@ def test_repeat_annotation_updates_manifest_and_rows(tmp_path: Path):
     assert metadata["orchestration_seed"] == row["orchestration_seed"] == 43
     assert metadata["experiment_schema"] == "aios-bench/experiment/v2"
     assert metadata["schedule_mode"] == "sequential"
+
+
+def test_experiment_ids_are_suite_aware():
+    assert make_experiment_id().endswith("_frontier-v3-exp")
+    assert make_experiment_id("frontier_v4").endswith("_frontier-v4-exp")
 
 
 def test_matched_schedule_is_deterministic_and_task_scoped():

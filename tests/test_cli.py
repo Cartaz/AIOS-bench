@@ -10,12 +10,31 @@ def test_active_cli_harnesses_exclude_codex():
     assert tuple(cli.AGENTS) == ("hermes", "piagent", "opencode", "goose", "letta", "agentzero")
 
 
-def test_list_does_not_require_a_harness(monkeypatch, capsys):
+def test_list_does_not_require_a_harness_and_defaults_to_v3(monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["aiosbench", "list"])
     cli.main()
     output = capsys.readouterr().out
-    assert "autonomy_001" in output
-    assert "tool_use_003" in output
+    ids = {line.split("\t", 1)[0] for line in output.splitlines() if line.strip()}
+    assert "autonomy_001" in ids
+    assert "tool_use_003" in ids
+    assert "autonomy_expense_001" not in ids
+
+
+def test_frontier_v4_list_is_explicit_opt_in(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["aiosbench", "--suite", "frontier_v4", "list"])
+    cli.main()
+    output = capsys.readouterr().out
+    ids = {line.split("\t", 1)[0] for line in output.splitlines() if line.strip()}
+    assert ids == {"autonomy_expense_001"}
+
+
+def test_frontier_v4_rejects_invalid_pressure_coordinates(monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv",
+        ["aiosbench", "--suite", "frontier_v4", "--v4-expense-rows", "5", "validate"],
+    )
+    with pytest.raises(SystemExit, match="invalid Frontier v4 expense pressure"):
+        cli.main()
 
 
 def test_publish_reads_local_results_and_writes_only_snapshots(monkeypatch, tmp_path: Path, capsys):

@@ -12,6 +12,8 @@ python -m pip install -e .
 python -m pip install -e '.[dev]'  # contributors and CI
 ```
 
+Frontier v3 is the frozen default baseline:
+
 ```bash
 aiosbench --piagent --model Qwen --no-resume
 ```
@@ -22,13 +24,20 @@ Or run every active harness with task-level matched interleaving:
 aiosbench --all --model Qwen --repeats 3 --seed 42
 ```
 
+Frontier v4 is a separate opt-in suite with deterministic seeded task variants:
+
+```bash
+aiosbench --suite frontier_v4 --all --model Ornith --repeats 5 --seed 42
+```
+
 The active harness matrix is Hermes, Pi Agent, OpenCode, Goose, Letta and Agent
 Zero. `--seed` is an **orchestration seed** used to make task-block ordering
 reproducible; it does not set the model's sampling RNG. With `--all`, each
-`(task, repeat)` is one matched block. Every harness receives the same static
-Frontier v3 task identity and derived `task_seed`, while harness order is
-shuffled independently and deterministically inside each block. This spreads
-server/thermal drift across harnesses without changing the benchmark task.
+`(task, repeat)` is one matched block and harness order is shuffled independently
+and deterministically inside each block. In Frontier v3 every harness receives
+the same static task. In Frontier v4 the same orchestration seed also derives a
+shared `task_seed`, so every harness in a block receives a byte-identical
+variant while the next repeat deterministically changes the variant.
 
 Sampling/server settings that affect generation should be supplied as JSON in
 `AIOS_BENCH_INFERENCE_CONFIG`. For strict same-model comparisons, set
@@ -46,13 +55,13 @@ discordant pass outcomes, a task-cluster bootstrap 95% interval and a
 deterministic paired sign-flip permutation p-value. Unsupported, blocked and
 otherwise unmatched observations are never imputed.
 
-The runner executes the active frontier v3 catalog in deterministic task order,
-creates an isolated workspace for each task, preserves explicit warm-state
-chains for memory and learning tasks, records observable execution data, applies
-deterministic reference checks, stores resumable results, and regenerates the
-comparison dashboard. Under matched interleaving, `--total-timeout` is an active
-execution budget per harness, so time spent waiting while another harness runs
-does not consume that harness's budget.
+The runner creates an isolated workspace for each task, records observable
+execution data, applies deterministic checks, stores resumable results and
+regenerates the comparison dashboard. Frontier v3 additionally preserves its
+explicit warm-state chains for memory and learning tasks. Under matched
+interleaving, `--total-timeout` is an active execution budget per harness, so
+time spent waiting while another harness runs does not consume that harness's
+budget.
 
 ### llama.cpp server telemetry
 
@@ -97,10 +106,17 @@ AIOS-bench uses **deterministic evaluators as the authoritative benchmark signal
 
 Frontier v3 replaces weak "file exists + keyword" acceptance with benchmark-owned reference oracles for the tasks where content matters. These checks can validate exact evidence provenance, alternate datasets, hidden regression tests, negative constraints, dependency chains, persistent memory state, and delegation telemetry without asking another model to grade the result.
 
+Frontier v4 extends the same principle to generated tasks. A generator consumes a
+seed plus explicit pressure coordinates and produces a workspace together with a
+benchmark-owned oracle. The oracle is stored outside the agent workspace under
+the local run directory and, on Linux with bubblewrap, is masked from the child
+process. Result rows record the variant seed, effective pressure coordinates and
+variant digest without exposing expected answers.
+
 Run checkpoints are resumable only when the full benchmark semantics match: the
-catalog, deterministic fixture inputs, and reference-oracle implementation are
-fingerprinted together. A fixture or oracle update therefore starts affected
-work again rather than silently mixing incomparable scores.
+catalog, deterministic fixture/generator inputs and oracle implementation are
+fingerprinted together. A fixture, generator or oracle update therefore starts
+affected work again rather than silently mixing incomparable scores.
 
 Comparable task score is `80% deterministic acceptance + 20% successful
 execution`. A failed task is capped at 49/100, so partial artifacts cannot look
@@ -110,15 +126,26 @@ diagnostic fields rather than cross-harness score inputs. Tasks recorded as
 
 ### Integrity preflight
 
+For the static Frontier v3 baseline:
+
 ```bash
 aiosbench validate
 ```
 
-The current preflight checks that every untouched fixture fails its deterministic
-acceptance grader. On Linux with bubblewrap, benchmark-owned task catalogs,
-tests, `.git`, reference-check bytecode/source, prior runs and sibling
-workspaces are masked from the child process in addition to write confinement.
-A positive reference-solution preflight is planned as the next integrity step.
+For Frontier v4 generated families:
+
+```bash
+aiosbench --suite frontier_v4 --seed 42 validate
+```
+
+The v3 preflight checks that every untouched fixture fails its deterministic
+acceptance grader. The v4 preflight additionally verifies that the same seed
+reproduces the same variant digest, a different seed changes the variant and an
+untouched generated workspace fails its grader. On Linux with bubblewrap,
+benchmark-owned task catalogs, tests, `.git`, reference-check bytecode/source,
+generated oracle directories, prior runs and sibling workspaces are masked from
+the child process in addition to write confinement. A positive reference-solution
+preflight remains a later integrity step.
 
 ## Results layout
 
@@ -139,12 +166,13 @@ results/
             run.json
             results.jsonl
             logs/
+            oracles/       # generated v4 oracle data; local and sandbox-masked
             workspaces/
 ```
 
 `.local/` is ignored by Git. The repository publishes only the regenerated
-aggregate `summary.json` and `dashboard.html`; a `run.json` remains beside its
-local run for audit and reproducibility. See [run lifecycle and
+aggregate `summary.json` and `dashboard.html`; run metadata and generated v4
+oracles remain local for audit and reproducibility. See [run lifecycle and
 comparability](docs/RUNS_AND_RESULTS.md) and the [artifact retention
 policy](docs/ARTIFACT_RETENTION.md).
 
@@ -155,7 +183,10 @@ aiosbench publish    # reviewed aggregate snapshot under results/
 
 ## Frontier v3
 
-The active catalog is `benchmarks/tasks/frontier_v3/*.json` and contains **28 tasks** split by capability. The category files are loaded in lexical order, giving a stable execution order.
+Frontier v3 is the frozen default baseline. Its catalog is
+`benchmarks/tasks/frontier_v3/*.json` and contains **28 tasks** split by
+capability. The category files are loaded in lexical order, giving a stable
+execution order.
 
 - **Tier 3 — Advanced:** multi-step work with several independent failure points.
 - **Tier 4 — Expert:** synthesis, recovery, validation, transfer, or grounded research.
@@ -173,3 +204,29 @@ mentions of delegation in a report or stdout do not count as evidence of a
 delegated run. Harnesses without compatible structured delegation telemetry
 are recorded as `unsupported`, with no score, and excluded from comparable
 aggregates rather than treated as failures.
+
+## Frontier v4
+
+Frontier v4 is experimental and opt-in with `--suite frontier_v4`; it does not
+replace or mutate Frontier v3. Its first family, `autonomy_expense_001`, generates
+authoritative and alternate transaction datasets from the task seed and verifies
+that an agent-built reporting tool generalizes across both datasets without
+modifying source data or hard-coding generated totals.
+
+The initial expense-family pressure coordinates are `rows`, `malformed_rows`,
+`distractor_files` and `months`. They are workload coordinates, **not an assumed
+monotonic difficulty scale**. They can be fixed explicitly, for example:
+
+```bash
+aiosbench --suite frontier_v4 --all --model Ornith --repeats 5 --seed 42 \
+  --v4-expense-rows 96 \
+  --v4-expense-malformed 4 \
+  --v4-expense-distractors 8 \
+  --v4-expense-months 9
+```
+
+At a fixed repeat, all harnesses receive the same generated source bytes and
+hidden expected values. Across repeats, the orchestration seed changes and the
+variant changes deterministically. This makes raw observations suitable for
+matched comparisons and later capability/failure landscapes without treating a
+single handcrafted fixture as the whole task family.

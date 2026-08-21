@@ -18,7 +18,7 @@ class SandboxPlan:
 
 
 def _result_history_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
-    """Return historical result paths that must not be visible to an agent."""
+    """Return result/oracle paths that must not be visible to an agent."""
     workspace = workspace.resolve()
     workspaces_dir = workspace.parent
     run_dir = workspaces_dir.parent
@@ -38,9 +38,10 @@ def _result_history_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
         path for path in workspaces_dir.iterdir()
         if path.is_dir() and path.resolve() != workspace
     )
-    logs = run_dir / "logs"
-    if logs.is_dir():
-        directories.append(logs)
+    for name in ("logs", "oracles"):
+        directory = run_dir / name
+        if directory.is_dir():
+            directories.append(directory)
     for name in ("run.json", "results.jsonl", "events.jsonl"):
         path = run_dir / name
         if path.is_file():
@@ -68,8 +69,9 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     """Return a cross-harness confinement plan.
 
     On Linux, local harnesses run below a read-only host root with only the task
-    workspace and /tmp writable. Benchmark-owned grader material, repository
-    history and historical result workspaces are masked from the child.
+    workspace and /tmp writable. Benchmark-owned grader material, generated
+    parametric oracles, repository history and historical result workspaces are
+    masked from the child.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
