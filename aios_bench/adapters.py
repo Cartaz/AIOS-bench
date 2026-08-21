@@ -189,10 +189,27 @@ class OpenCodeAdapter(Adapter):
 
 class GooseAdapter(Adapter):
     name = "goose"
-    capabilities = frozenset({"recipes", "extensions", "sessions", "provider_model"})
+    capabilities = frozenset({
+        "recipes",
+        "extensions",
+        "sessions",
+        "provider_model",
+        "json_events",
+        "tool_events",
+        "terminal",
+        "structured_subagent_events",
+    })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        command = ["goose", "run", "--no-session"]
+        # stream-json is NDJSON and exposes native toolRequest/toolResponse
+        # records, including Summon's default-enabled delegate tool. Explicitly
+        # request Developer so shell/write/edit behavior does not depend on a
+        # user's local extension toggle.
+        command = [
+            "goose", "run", "--no-session", "--quiet",
+            "--output-format", "stream-json",
+            "--with-builtin", "developer",
+        ]
         provider = os.environ.get("AIOS_BENCH_GOOSE_PROVIDER")
         if provider:
             command += ["--provider", provider]
@@ -206,7 +223,13 @@ class GooseAdapter(Adapter):
             requested_model=requested,
             resolved_model=requested,
             provider=provider,
-            configuration={"session": "disabled"},
+            configuration={
+                "session": "disabled",
+                "quiet": True,
+                "output_format": "stream-json",
+                "builtin_extensions": ["developer"],
+                "summon_delegate": "default_enabled_platform_extension",
+            },
         )
 
 
