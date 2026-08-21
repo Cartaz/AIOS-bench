@@ -11,26 +11,35 @@ class SandboxPlan:
     strategy: str
     command_prefix: tuple[str, ...] = ()
     write_confined: bool = False
+    grader_hidden: bool = False
 
     def wrap(self, command: list[str]) -> list[str]:
         return [*self.command_prefix, *command]
 
 
+def _benchmark_owned_paths() -> tuple[list[Path], list[Path]]:
+    root = Path(__file__).resolve().parents[1]
+    hidden_directories = [path for path in (root / "benchmarks", root / "tests") if path.exists()]
+    hidden_files = sorted((root / "aios_bench").glob("reference_checks*.py"))
+    return hidden_directories, hidden_files
+
+
 def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = None) -> SandboxPlan:
-    """Return a cross-harness write-confinement plan.
+    """Return a cross-harness confinement plan.
 
-    Codex supplies its own workspace-write sandbox. On Linux, other local
-    harnesses run under bubblewrap with a read-only root and only the task
-    workspace and /tmp writable. Network remains shared for research tasks.
+    On Linux, local harnesses run below a read-only host root with only the task
+    workspace and /tmp writable. Benchmark-owned task catalogs, tests and
+    deterministic reference checks are additionally masked from the child so
+    read-only access cannot leak grader implementation details.
     """
-
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
         raise ValueError("AIOS_BENCH_SANDBOX must be auto, required or off")
     if adapter_name == "codex":
-        return SandboxPlan("adapter_workspace_write", write_confined=True)
+        # Legacy compatibility only; Codex is not part of the active benchmark matrix.
+        return SandboxPlan("adapter_workspace_write", write_confined=True, grader_hidden=False)
     if selected == "off":
-        return SandboxPlan("disabled", write_confined=False)
+        return SandboxPlan("disabled", write_confined=False, grader_hidden=False)
     executable = shutil.which("bwrap")
     if executable:
         root = str(workspace.resolve())
@@ -38,10 +47,12 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             executable, "--die-with-parent", "--new-session",
             "--ro-bind", "/", "/", "--tmpfs", "/tmp",
         )
-        # Pi takes short-lived lock files next to its settings and credential
-        # store, even for read-only operations.  A tmp overlay preserves the
-        # host files as a read-only lower layer while keeping all runtime
-        # writes private to the sandbox and discarding them on exit.
+        hidden_directories, hidden_files = _benchmark_owned_paths()
+        for path in hidden_directories:
+            prefix += ("--tmpfs", str(path.resolve()))
+        for path in hidden_files:
+            prefix += ("--ro-bind", "/dev/null", str(path.resolve()))
+        grader_hidden = bool(hidden_directories or hidden_files)
         if adapter_name == "piagent":
             pi_state = Path.home() / ".pi" / "agent"
             if pi_state.is_dir():
@@ -52,7 +63,11 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             "--proc", "/proc", "--dev", "/dev",
             "--chdir", root, "--",
         )
-        return SandboxPlan("bubblewrap_readonly_root", prefix, write_confined=True)
+        strategy = (
+            "bubblewrap_readonly_root_grader_hidden"
+            if grader_hidden else "bubblewrap_readonly_root"
+        )
+        return SandboxPlan(strategy, prefix, write_confined=True, grader_hidden=grader_hidden)
     if selected == "required":
         raise RuntimeError("workspace sandbox required but bubblewrap is unavailable")
-    return SandboxPlan("cwd_only_unconfined", write_confined=False)
+    return SandboxPlan("cwd_only_unconfined", write_confined=False, grader_hidden=False)
