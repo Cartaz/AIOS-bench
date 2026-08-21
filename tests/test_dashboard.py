@@ -83,6 +83,7 @@ def test_dashboard_history_keeps_incomplete_and_dry_runs_off_leaderboard(tmp_pat
 
 
 def test_dashboard_renders_reliability_paired_failure_and_efficiency_panels(tmp_path: Path) -> None:
+    hidden_identity = "internal-model-fingerprint-7e3d19c4"
     for harness, score, success, failure in (
         ("hermes", 100, True, "PASS"),
         ("piagent", 80, False, "WRONG"),
@@ -114,7 +115,7 @@ def test_dashboard_renders_reliability_paired_failure_and_efficiency_panels(tmp_
             "experiment_id": "exp",
             "schedule_mode": "matched_interleaved",
             "task_seed": 99,
-            "model_identity_fingerprint": "same-model",
+            "model_identity_fingerprint": hidden_identity,
             "model_strictly_comparable": True,
             "failure_kind": failure,
             "usage_source": "server_verified",
@@ -137,7 +138,7 @@ def test_dashboard_renders_reliability_paired_failure_and_efficiency_panels(tmp_
     assert "Server-verified efficiency" in dashboard
     assert "PASS=1" in dashboard
     assert "WRONG=1" in dashboard
-    assert "same-model" not in dashboard  # internal identity stays out of the presentation
+    assert hidden_identity not in dashboard  # internal identity stays out of the presentation
     assert "20.0" in dashboard  # paired mean score delta and server generation tok/s
 
 
