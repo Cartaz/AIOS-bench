@@ -23,22 +23,31 @@ class StructuredDelegationAdapter(Adapter):
     capabilities = frozenset({"structured_subagent_events"})
 
 
+class NativeOnlyDelegationAdapter(Adapter):
+    name = "native-only"
+    capabilities = frozenset({"subagents"})
+
+
 def test_active_harness_matrix_excludes_codex():
     assert tuple(AGENTS) == ("hermes", "piagent", "opencode", "goose", "letta", "agentzero")
     assert "codex" not in AGENTS
 
 
 def test_capability_assessment_separates_native_feature_from_observability():
-    native_only = LettaAdapter().assess_capabilities("subagents")
+    native_only = NativeOnlyDelegationAdapter().assess_capabilities("subagents")
     structured = StructuredDelegationAdapter().assess_capabilities("subagents")
     opencode = OpenCodeAdapter().assess_capabilities("subagents")
+    letta = LettaAdapter().assess_capabilities("subagents")
     assert native_only.status == "unsupported"
     assert native_only.missing == frozenset({"structured_subagent_events"})
     assert structured.status == "supported"
     assert structured.to_dict()["missing"] == []
     assert opencode.status == "supported"
+    assert letta.status == "supported"
     assert "structured_subagent_events" in OpenCodeAdapter().capabilities
+    assert "structured_subagent_events" in LettaAdapter().capabilities
     assert "tool_events" in OpenCodeAdapter().capabilities
+    assert "tool_events" in LettaAdapter().capabilities
 
 
 def test_category_and_catalog_tag_requirements_are_composed():

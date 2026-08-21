@@ -13,6 +13,7 @@ from .adapters import PiAgentAdapter
 from .evaluators import evaluate_artifacts
 from .failures import classify_failure
 from .goose_telemetry import parse_goose_stream_json
+from .letta_telemetry import parse_letta_stream_json
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
 from .sandbox import workspace_sandbox
@@ -88,6 +89,11 @@ def _parse_harness_output(stdout: str, stderr: str, source: str) -> list[dict[st
         events = parse_goose_stream_json(stdout, source=source)
         # Goose stream-json owns stdout. Stderr remains a best-effort diagnostic
         # surface and uses the existing conservative text normalizer.
+        events.extend(parse_output("", stderr, source=source))
+    elif source == "letta":
+        events = parse_letta_stream_json(stdout, source=source)
+        # Letta stream-json likewise owns stdout. Never apply prose heuristics to
+        # it; only stderr is admitted as inferred diagnostics.
         events.extend(parse_output("", stderr, source=source))
     else:
         events = parse_output(stdout, stderr, source=source)

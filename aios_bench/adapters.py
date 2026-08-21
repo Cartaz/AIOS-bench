@@ -10,8 +10,8 @@ from typing import Any, Iterable
 UNKNOWN_MODEL_VALUES = frozenset({"", "unknown"})
 
 # These are hard comparability requirements, not a taxonomy of everything a
-# task happens to exercise.  Only categories which cannot be evaluated fairly
-# without a harness-level facility belong here.  Other categories use the
+# task happens to exercise. Only categories which cannot be evaluated fairly
+# without a harness-level facility belong here. Other categories use the
 # benchmark-owned workspace and deterministic oracle shared by every adapter.
 REQUIRED_CAPABILITIES_BY_CATEGORY: dict[str, frozenset[str]] = {
     "browser": frozenset({"browser"}),
@@ -67,7 +67,7 @@ def required_capabilities_for(
     """Return hard harness requirements for a catalog task.
 
     Catalogs may add ``requires:<capability>`` tags without requiring another
-    runner change.  Category requirements remain deliberately conservative so
+    runner change. Category requirements remain deliberately conservative so
     ordinary benchmark skills are not confused with harness integration APIs.
     """
 
@@ -235,24 +235,49 @@ class GooseAdapter(Adapter):
 
 class LettaAdapter(Adapter):
     name = "letta"
-    capabilities = frozenset({"memory", "skills", "subagents", "longitudinal", "headless", "sessions"})
+    capabilities = frozenset({
+        "headless",
+        "sessions",
+        "ephemeral",
+        "skills",
+        "json_events",
+        "tool_events",
+        "token_stats",
+        "terminal",
+        "structured_subagent_events",
+    })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        command = ["letta", "-p"]
-        agent_id = os.environ.get("AIOS_BENCH_LETTA_AGENT")
-        if agent_id:
-            command += ["--agent", agent_id]
-        environment = {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())}
+        # The benchmark profile intentionally avoids ambient Letta agent state.
+        # --ephemeral creates a fresh temporary conversation per task, --no-mods
+        # and bundled-only skills exclude personal/project customization, and
+        # --yolo prevents interactive approval prompts inside the outer sandbox.
+        command = [
+            "letta", "-p",
+            "--ephemeral",
+            "--output-format", "stream-json",
+            "--yolo",
+            "--no-mods",
+            "--skill-sources", "bundled",
+        ]
         if model and model != "unknown":
-            environment["AIOS_BENCH_REQUESTED_MODEL"] = model
+            command += ["--model", model]
+        command.append(prompt)
         requested = _requested_model(model)
         return AgentInvocation(
-            command + [prompt],
-            environment,
+            command,
+            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
             requested_model=requested,
-            # Letta resolves the model from the configured agent, not this CLI.
-            resolved_model=None,
-            configuration={"headless": True, "agent_id_configured": bool(agent_id)},
+            resolved_model=requested,
+            configuration={
+                "headless": True,
+                "ephemeral": True,
+                "output_format": "stream-json",
+                "permission_mode": "unrestricted",
+                "mods": "disabled",
+                "skill_sources": ["bundled"],
+                "structured_agent_tool": True,
+            },
         )
 
 
