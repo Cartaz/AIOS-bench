@@ -6,18 +6,18 @@ from typing import Any, Mapping
 from .events import Event, EventCollector
 
 
-_SUBAGENT_TOOLS = {"Agent", "Task"}
+_SUBAGENT_TOOLS = {"agent", "task"}
 _TERMINAL_TOOLS = {
-    "Bash", "Shell", "shell", "shell_command", "ShellCommand",
-    "exec_command", "RunShellCommand", "run_shell_command",
+    "bash", "shell", "shell_command", "shellcommand",
+    "exec_command", "runshellcommand", "run_shell_command",
 }
 _FILE_READ_TOOLS = {
-    "Read", "read_file", "ReadFile", "read_file_gemini", "ReadFileGemini",
-    "read_many_files", "ReadManyFiles", "list_dir", "ListDir", "Glob", "Grep",
+    "read", "read_file", "readfile", "read_file_gemini", "readfilegemini",
+    "read_many_files", "readmanyfiles", "list_dir", "listdir", "glob", "grep",
 }
 _FILE_WRITE_TOOLS = {
-    "Edit", "Write", "MultiEdit", "apply_patch", "ApplyPatch", "replace",
-    "write_file", "write_file_gemini", "WriteFileGemini",
+    "edit", "write", "multiedit", "apply_patch", "applypatch", "replace",
+    "write_file", "write_file_gemini", "writefilegemini",
 }
 _REFUSAL_STOP_REASONS = {"refusal", "refused", "content_filter", "safety"}
 
@@ -71,21 +71,21 @@ def parse_letta_stream_json(text: str, *, source: str = "letta") -> list[Event]:
     """Normalize Letta Code headless ``stream-json`` output.
 
     The wire protocol emits explicit system/init, message, tool lifecycle,
-    retry/error and final result envelopes.  Canonical telemetry retains only
+    retry/error and final result envelopes. Canonical telemetry retains only
     bounded structure: message text, reasoning, tool arguments, stdout/stderr
     and tool returns are never copied into benchmark events.
 
     Letta's internal ``Task`` subagent tool is currently surfaced to models as
     ``Agent``; both names are accepted so the benchmark remains compatible with
-    older/newer Letta Code releases.  Only a structured tool_call_message is
-    delegation evidence.
+    older/newer Letta Code releases. Only a structured tool_call_message is
+    delegation evidence. A missing final ``result`` is never promoted into a
+    successful/non-inferred session end.
     """
     collector = EventCollector()
     call_tools: dict[str, str] = {}
     subagent_calls: set[str] = set()
     ended_subagents: set[str] = set()
     saw_session_start = False
-    saw_session_end = False
 
     for line in text.splitlines():
         if not line.strip():
@@ -135,6 +135,7 @@ def parse_letta_stream_json(text: str, *, source: str = "letta") -> list[Event]:
             message_type = str(item.get("message_type", "")).strip().lower()
             if message_type == "tool_call_message":
                 tool, call_id = _tool_call(item)
+                tool_key = str(tool or "").strip().lower()
                 collector.add(
                     "tool_call",
                     source=source,
@@ -144,13 +145,13 @@ def parse_letta_stream_json(text: str, *, source: str = "letta") -> list[Event]:
                 )
                 if call_id and tool:
                     call_tools[call_id] = tool
-                if tool in _TERMINAL_TOOLS:
+                if tool_key in _TERMINAL_TOOLS:
                     collector.add("terminal", source=source, tool=tool, call_id=call_id, inferred=False)
-                if tool in _FILE_READ_TOOLS:
+                if tool_key in _FILE_READ_TOOLS:
                     collector.add("file_read", source=source, tool=tool, call_id=call_id, inferred=False)
-                if tool in _FILE_WRITE_TOOLS:
+                if tool_key in _FILE_WRITE_TOOLS:
                     collector.add("file_write", source=source, tool=tool, call_id=call_id, inferred=False)
-                if tool in _SUBAGENT_TOOLS:
+                if tool_key in _SUBAGENT_TOOLS:
                     key = call_id or f"subagent:{len(subagent_calls)}"
                     if key not in subagent_calls:
                         collector.add(
@@ -178,7 +179,11 @@ def parse_letta_stream_json(text: str, *, source: str = "letta") -> list[Event]:
                     inferred=False,
                 )
                 key = call_id or ""
-                if tool in _SUBAGENT_TOOLS and key in subagent_calls and key not in ended_subagents:
+                if (
+                    str(tool or "").strip().lower() in _SUBAGENT_TOOLS
+                    and key in subagent_calls
+                    and key not in ended_subagents
+                ):
                     collector.add(
                         "subagent_end",
                         source=source,
@@ -247,17 +252,14 @@ def parse_letta_stream_json(text: str, *, source: str = "letta") -> list[Event]:
                 usage=usage,
                 inferred=False,
             )
-            saw_session_end = True
         elif kind in {
             "approval_requested", "approval_received", "tool_execution_started",
             "tool_execution_finished", "auto_approval", "stream_event", "cancel_ack",
         }:
             # These are useful lifecycle envelopes but would duplicate canonical
-            # call/result records or expose tool payloads.  Do not persist them.
+            # call/result records or expose tool payloads. Do not persist them.
             continue
         else:
             collector.add("unknown", source=source, letta_type=kind or "unknown")
 
-    if saw_session_start and not saw_session_end:
-        collector.add("session_end", source=source, inferred=False)
     return collector.events
