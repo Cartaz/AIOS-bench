@@ -5,6 +5,9 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlsplit, urlunsplit
+
+from .agentzero_workspace import template_project_digest
 
 
 UNKNOWN_MODEL_VALUES = frozenset({"", "unknown"})
@@ -23,12 +26,29 @@ def _requested_model(model: str) -> str | None:
     return model if model and model not in UNKNOWN_MODEL_VALUES else None
 
 
+def _public_service_endpoint(endpoint: str) -> str:
+    """Record service identity without credentials, query strings, or fragments."""
+    value = str(endpoint or "").strip()
+    parsed = urlsplit(value)
+    if not parsed.scheme or not parsed.netloc:
+        return value.split("?", 1)[0].split("#", 1)[0].rsplit("@", 1)[-1]
+    hostname = parsed.hostname or ""
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    try:
+        port = f":{parsed.port}" if parsed.port is not None else ""
+    except ValueError:
+        port = ""
+    return urlunsplit((parsed.scheme, f"{hostname}{port}", parsed.path, "", ""))
+
+
 @dataclass(frozen=True)
 class AgentInvocation:
     command: list[str]
     environment: dict[str, str]
     requested_model: str | None = None
     resolved_model: str | None = None
+    model_resolution: str | None = None
     provider: str | None = None
     endpoint: str | None = None
     configuration: dict[str, Any] = field(default_factory=dict)
@@ -320,29 +340,88 @@ class LettaAdapter(Adapter):
 
 class AgentZeroAdapter(Adapter):
     name = "agentzero"
-    capabilities = frozenset({"memory", "knowledge", "projects", "api", "persistent_state"})
+    capabilities = frozenset({
+        "api",
+        "json_events",
+        "tool_events",
+        "structured_subagent_events",
+        "browser",
+        "terminal",
+        "projects",
+        "sessions",
+    })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
         command = ["python", "-m", "aios_bench.agentzero_client", prompt]
+        service_url = os.environ.get("AIOS_BENCH_AGENTZERO_URL", "http://127.0.0.1:80")
+        template = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECT", "").strip()
+        projects_root = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", "").strip()
+        profile = os.environ.get("AIOS_BENCH_AGENTZERO_PROFILE", "").strip()
+        declared_model = os.environ.get("AIOS_BENCH_AGENTZERO_RESOLVED_MODEL", "").strip()
+        utility_model = os.environ.get("AIOS_BENCH_AGENTZERO_UTILITY_MODEL", "").strip()
+        provider = os.environ.get("AIOS_BENCH_AGENTZERO_PROVIDER", "").strip() or None
+        model_endpoint = os.environ.get("AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT", "").strip() or None
+        isolated_service = os.environ.get("AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE", "").strip()
+        project_memory_isolation = os.environ.get(
+            "AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION", ""
+        ).strip()
+        service_revision = os.environ.get("AIOS_BENCH_AGENTZERO_REVISION", "").strip()
+        template_digest = template_project_digest(projects_root or None, template or None)
+
         environment = {
             "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
-            "AIOS_BENCH_AGENTZERO_URL": os.environ.get("AIOS_BENCH_AGENTZERO_URL", "http://127.0.0.1:80"),
+            "AIOS_BENCH_AGENTZERO_URL": service_url,
             "AIOS_BENCH_AGENTZERO_API_KEY": os.environ.get("AIOS_BENCH_AGENTZERO_API_KEY", ""),
+            "AIOS_BENCH_AGENTZERO_PROJECT": template,
+            "AIOS_BENCH_AGENTZERO_PROJECTS_ROOT": projects_root,
+            "AIOS_BENCH_AGENTZERO_PROFILE": profile,
+            "AIOS_BENCH_AGENTZERO_RESOLVED_MODEL": declared_model,
+            "AIOS_BENCH_AGENTZERO_UTILITY_MODEL": utility_model,
+            "AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE": isolated_service,
+            "AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION": project_memory_isolation,
+            "AIOS_BENCH_AGENTZERO_REVISION": service_revision,
         }
-        project = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECT")
-        if project:
-            environment["AIOS_BENCH_AGENTZERO_PROJECT"] = project
         if model and model != "unknown":
             environment["AIOS_BENCH_REQUESTED_MODEL"] = model
+
         requested = _requested_model(model)
+        resolved = declared_model or None
+        if requested and resolved != requested:
+            resolved = None
+
+        true_values = {"1", "true", "yes", "on"}
         return AgentInvocation(
             command,
             environment,
             requested_model=requested,
-            # The HTTP service owns the actual model configuration.
-            resolved_model=None,
-            endpoint=environment["AIOS_BENCH_AGENTZERO_URL"],
-            configuration={"project": project, "api_key_configured": bool(environment["AIOS_BENCH_AGENTZERO_API_KEY"])},
+            resolved_model=resolved,
+            model_resolution="operator_declared_remote" if resolved else None,
+            provider=provider,
+            endpoint=model_endpoint,
+            configuration={
+                "transport": "external_api",
+                "service_endpoint": _public_service_endpoint(service_url),
+                "service_revision": service_revision or None,
+                "service_revision_resolution": "operator_declared_remote" if service_revision else None,
+                "project_template": template or None,
+                "project_template_digest": template_digest,
+                "projects_root_configured": bool(projects_root),
+                "agent_profile": profile or None,
+                "api_key_configured": bool(environment["AIOS_BENCH_AGENTZERO_API_KEY"]),
+                "fresh_context_per_task": True,
+                "ephemeral_physical_project_per_task": True,
+                "timeout_orphan_isolated_by_project": True,
+                "workspace_bridge": "shared_projects_root",
+                "context_cleanup": "api_terminate_chat",
+                "telemetry": "api_log_get",
+                "structured_subagent_log_type": True,
+                "native_memory_scope": "ephemeral_project",
+                "isolated_service_attestation": isolated_service.lower() in true_values,
+                "project_memory_isolation_attestation": project_memory_isolation.lower() in true_values,
+                "main_model_attestation": declared_model or None,
+                "utility_model_attestation": utility_model or None,
+                "model_binding": "operator_declared_remote",
+            },
         )
 
 

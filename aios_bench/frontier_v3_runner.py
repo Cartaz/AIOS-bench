@@ -8,11 +8,11 @@ from .server_metrics import build_server_metrics_client
 from .task_execution import run_frontier_task
 
 SEMANTIC_FILES = (
-    'adapters.py', 'evaluators.py', 'experiments.py', 'failures.py', 'fixtures.py',
-    'frontier_v3_runner.py', 'goose_telemetry.py', 'hermes_telemetry.py',
-    'letta_telemetry.py', 'manifest.py', 'models.py', 'pi_rpc.py', 'runner.py',
-    'sandbox.py', 'scheduler.py', 'scoring.py', 'task_execution.py', 'tasks.py',
-    'telemetry.py',
+    'adapters.py', 'agentzero_client.py', 'agentzero_workspace.py', 'evaluators.py',
+    'experiments.py', 'failures.py', 'fixtures.py', 'frontier_v3_runner.py',
+    'goose_telemetry.py', 'hermes_telemetry.py', 'letta_telemetry.py', 'manifest.py',
+    'models.py', 'pi_rpc.py', 'runner.py', 'sandbox.py', 'scheduler.py', 'scoring.py',
+    'task_execution.py', 'tasks.py', 'telemetry.py',
 )
 SEMANTIC_DIRS = ('server_metrics',)
 
@@ -45,9 +45,6 @@ class FrontierV3Runner(BenchmarkRunner):
         return manifest
     def _revision(self):
         h=hashlib.sha256()
-        # A result is comparable only when the task definition *and* the
-        # deterministic oracle/fixture are identical. Hash execution semantics
-        # too so telemetry/taxonomy/scheduler changes cannot reuse stale rows.
         roots=[
             self.repo_root/'benchmarks/tasks/frontier_v3',
             self.repo_root/'benchmarks/fixtures',

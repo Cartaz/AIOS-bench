@@ -148,16 +148,124 @@ facility is explicitly enabled by the adapter.
 
 ## Agent Zero
 
-Agent Zero is integrated through its documented external HTTP API, not by scraping its Web UI. Start a local Agent Zero instance and create a dedicated benchmark project/workspace that maps to the benchmark fixture.
+Agent Zero is integrated through its documented external HTTP API, not by
+scraping the Web UI. Its service owns a separate project filesystem, so the
+benchmark uses a shared projects-root bridge rather than pretending that a
+static Agent Zero project is the same directory as an AIOS-bench task workspace.
+For publication-grade runs, use a **dedicated Agent Zero service/container** with
+no personal host mounts or personal projects visible to the service.
+
+Create one neutral template project, for example `aios-bench`, under Agent
+Zero's `usr/projects` directory. The template is deliberately narrower than a
+normal Agent Zero project: it may contain only `.a0proj/project.json`, an optional
+empty `.a0proj/mcp_servers.json`, and empty metadata directories. AIOS-bench
+rejects project variables, secrets, subagent overrides, prior project memory,
+plugin extension files, custom instruction/knowledge/skill/agent files, task
+files outside `.a0proj`, symlinks, and configured MCP servers.
+
+The neutral `project.json` may contain only the ordinary identity fields used by
+the benchmark template. Its title must be empty or `AIOS-bench`; description and
+instructions must be empty; `include_agents_md` must be `false`; `git_url` must
+be empty. Custom project file-structure policy is not accepted. The validated
+`.a0proj` tree is hashed into the run manifest so changing template semantics
+changes the execution fingerprint.
+
+The projects directory must be visible to both the Agent Zero service and the
+AIOS-bench process. If Agent Zero runs in a container, bind-mount a host
+directory as the service's `usr/projects` and point
+`AIOS_BENCH_AGENTZERO_PROJECTS_ROOT` at that same host directory. Do not point it
+at a directory containing personal projects.
+
+Configure the benchmark client as follows:
 
 ```bash
 export AIOS_BENCH_AGENTZERO_URL=http://127.0.0.1:80
 export AIOS_BENCH_AGENTZERO_API_KEY=<api-key>
 export AIOS_BENCH_AGENTZERO_PROJECT=aios-bench
+export AIOS_BENCH_AGENTZERO_PROJECTS_ROOT=/path/to/dedicated/agent-zero/usr/projects
+export AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE=1
+export AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION=1
+export AIOS_BENCH_AGENTZERO_REVISION=<release-commit-or-immutable-image-digest>
+export AIOS_BENCH_AGENTZERO_RESOLVED_MODEL=<model>
+export AIOS_BENCH_AGENTZERO_UTILITY_MODEL=<model>
+
+# Optional but recommended provenance when known:
+export AIOS_BENCH_AGENTZERO_PROFILE=developer
+export AIOS_BENCH_AGENTZERO_PROVIDER=openai
+export AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT=http://127.0.0.1:8080/v1
+
 aiosbench --agentzero --model <model>
 ```
 
-The project must be configured so Agent Zero can operate on the isolated fixture. Do not point it at the real personal workspace during benchmark runs.
+`AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE=1` is an explicit operator attestation
+that the Agent Zero instance/container is benchmark-only and has no personal
+host mounts. `AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION=1` is a separate
+attestation that the Agent Zero `_memory` plugin is configured with
+`project_memory_isolation=true`. This matters because Agent Zero otherwise
+falls back to a shared/default memory store instead of the active project's
+`.a0proj/memory` directory.
+
+`AIOS_BENCH_AGENTZERO_REVISION` identifies the remote Agent Zero implementation
+used for the run; use a release, commit SHA, or immutable container-image digest.
+The external `/api_message` surface does not provide a model or service-version
+override that AIOS-bench can pin itself, so this value is recorded honestly as
+operator-declared remote provenance. Likewise, Agent Zero's main and utility
+models must already be configured remotely. Both
+`AIOS_BENCH_AGENTZERO_RESOLVED_MODEL` and
+`AIOS_BENCH_AGENTZERO_UTILITY_MODEL` must exactly equal the model passed through
+`--model`; the client fails closed before contacting Agent Zero if either model
+declaration is absent or mismatched.
+
+For a publication-grade comparison, continue to provide the common
+`AIOS_BENCH_MODEL_DIGEST` and `AIOS_BENCH_INFERENCE_CONFIG`. These attest the
+shared model/inference identity across harnesses; Agent Zero's separate service
+revision, main/utility-model attestations, memory-isolation attestation and
+project-template digest become additional execution provenance rather than being
+misrepresented as adapter-pinned remote state.
+
+For each task, AIOS-bench creates a new physical sibling project with a unique
+name, copies the neutral `.a0proj` metadata plus the task workspace into it, and
+passes that ephemeral project name to `/api_message` without a `context_id`.
+Thus each attempt receives both a fresh Agent Zero project and a fresh chat
+context. With project-memory isolation enabled, Agent Zero's native memory for
+that attempt is written below that unique project and cannot become a cross-task
+hidden state channel. Warm memory/learning chains remain benchmark-owned because
+their artifacts are copied through the ordinary AIOS-bench workspace just like
+every other harness.
+
+After the response, AIOS-bench retrieves the API-key-protected `/api_log_get`
+record, terminates the chat through `/api_terminate_chat`, validates the remote
+project tree, copies artifacts back into the authoritative task workspace while
+excluding `.a0proj`, and removes the ephemeral project. Symlinks are rejected
+both on input and before the copy-back so a remote project cannot escape the
+workspace boundary. Under bubblewrap the host root stays read-only; only the
+normal task workspace, `/tmp`, and the explicitly configured projects-root
+bridge are writable by the Agent Zero client.
+
+If the outer runner kills the client on timeout, its `finally` cleanup cannot be
+guaranteed. This does not permit cross-task contamination: the timed-out attempt
+has a unique project name and the next task always receives another new project.
+A benchmark-only service/projects-root remains required so such orphaned
+projects cannot interact with unrelated user state and can be removed safely
+outside a run if necessary.
+
+Agent Zero's server-side log provides the observability surface. A native
+`type="subagent"` entry written by `call_subordinate` is accepted as
+non-inferred `subagent_start` evidence; `subagent_end` is emitted only when the
+same structured record contains an observed result. Structured `tool`, `browser`,
+`code_exe`, `error`, and `response` entries are normalized similarly without
+copying assistant text, reasoning, prompts, tool arguments, tool output, or
+subordinate content. Consequently Agent Zero is eligible for browser and
+`subagents` tasks without accepting prose claims. Token efficiency still comes
+from the shared server-metrics path when configured; `/api_log_get` is not used
+to invent token counts.
+
+The Agent Zero service URL is a harness-control endpoint and is recorded only in
+run configuration after credentials/query/fragment are removed. It is **not**
+the model inference endpoint. Set `AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT` when the
+actual inference endpoint is Agent-Zero-specific; otherwise the common
+`AIOS_BENCH_ENDPOINT` can supply model provenance just as it does for the other
+harnesses.
 
 ## Capability policy
 
@@ -191,5 +299,6 @@ whether writes were confined are recorded in
 Set `AIOS_BENCH_SANDBOX=required` to fail closed when bubblewrap is unavailable,
 or `AIOS_BENCH_SANDBOX=off` only for a deliberately unconfined diagnostic run.
 The default `auto` mode records an explicit `cwd_only_unconfined` fallback on
-platforms without bubblewrap. Agent Zero additionally depends on its configured
-remote project boundary; never point that project at a personal workspace.
+platforms without bubblewrap. Agent Zero is the one active harness with an
+additional writable path: its explicitly configured benchmark-only projects-root
+bridge. No other host path is made writable by that integration.
