@@ -16,27 +16,43 @@ python -m pip install -e '.[dev]'  # contributors and CI
 aiosbench --piagent --model Qwen --no-resume
 ```
 
-Or run every active harness in repeated experimental blocks:
+Or run every active harness with task-level matched interleaving:
 
 ```bash
 aiosbench --all --model Qwen --repeats 3 --seed 42
 ```
 
 The active harness matrix is Hermes, Pi Agent, OpenCode, Goose, Letta and Agent
-Zero. `--seed` is an **orchestration seed** used to make repeat ordering
-reproducible; it does not set the model's sampling RNG. Sampling/server settings
-that affect generation should be supplied as JSON in
+Zero. `--seed` is an **orchestration seed** used to make task-block ordering
+reproducible; it does not set the model's sampling RNG. With `--all`, each
+`(task, repeat)` is one matched block. Every harness receives the same static
+Frontier v3 task identity and derived `task_seed`, while harness order is
+shuffled independently and deterministically inside each block. This spreads
+server/thermal drift across harnesses without changing the benchmark task.
+
+Sampling/server settings that affect generation should be supplied as JSON in
 `AIOS_BENCH_INFERENCE_CONFIG`. For strict same-model comparisons, set
 `AIOS_BENCH_MODEL_DIGEST` to an immutable model/GGUF digest. Optionally set
 `AIOS_BENCH_MODEL_FILE` to compute and record the SHA-256 directly; if both are
 provided, a mismatch is recorded and strict comparability is disabled.
 
-Each repeated suite run remains an independent raw run. The generated summary
-adds repeat-level diagnostics including pass rate, empirical pass@k/pass^k,
-median score, score range and an attempt-level Wilson 95% interval. Paired and
-cluster-aware publication statistics are intentionally a later protocol phase.
+Each repeat remains an independent raw run. The generated summary adds
+repeat-level diagnostics including pass rate, empirical pass@k/pass^k, median
+score, score range and an attempt-level Wilson 95% interval. Matched
+multi-harness experiments additionally produce strict pairwise comparisons.
+Pairs are accepted only when both harnesses report the same strict model
+identity fingerprint. The report includes matched score deltas, wins/losses,
+discordant pass outcomes, a task-cluster bootstrap 95% interval and a
+deterministic paired sign-flip permutation p-value. Unsupported, blocked and
+otherwise unmatched observations are never imputed.
 
-The runner executes the active frontier v3 catalog in deterministic order, creates an isolated workspace for each task, preserves explicit warm-state chains for memory and learning tasks, records observable execution data, applies deterministic reference checks, stores resumable results, and regenerates the comparison dashboard.
+The runner executes the active frontier v3 catalog in deterministic task order,
+creates an isolated workspace for each task, preserves explicit warm-state
+chains for memory and learning tasks, records observable execution data, applies
+deterministic reference checks, stores resumable results, and regenerates the
+comparison dashboard. Under matched interleaving, `--total-timeout` is an active
+execution budget per harness, so time spent waiting while another harness runs
+does not consume that harness's budget.
 
 ## Deterministic evaluation
 
@@ -63,9 +79,9 @@ aiosbench validate
 
 The current preflight checks that every untouched fixture fails its deterministic
 acceptance grader. On Linux with bubblewrap, benchmark-owned task catalogs,
-tests and `reference_checks*.py` files are masked from the child process in
-addition to the existing write confinement. A positive reference-solution
-preflight is planned as the next integrity step.
+tests, `.git`, reference-check bytecode/source, prior runs and sibling
+workspaces are masked from the child process in addition to write confinement.
+A positive reference-solution preflight is planned as the next integrity step.
 
 ## Results layout
 

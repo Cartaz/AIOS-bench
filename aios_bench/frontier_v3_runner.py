@@ -4,8 +4,8 @@ from .fixtures import materialize_long_horizon_corpus
 from .runner import BenchmarkRunner
 
 SEMANTIC_FILES = (
-    'adapters.py', 'evaluators.py', 'fixtures.py', 'frontier_v3_runner.py',
-    'manifest.py', 'models.py', 'pi_rpc.py', 'runner.py', 'sandbox.py',
+    'adapters.py', 'evaluators.py', 'experiments.py', 'fixtures.py', 'frontier_v3_runner.py',
+    'manifest.py', 'models.py', 'pi_rpc.py', 'runner.py', 'sandbox.py', 'scheduler.py',
     'scoring.py', 'tasks.py', 'telemetry.py',
 )
 
