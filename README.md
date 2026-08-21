@@ -54,6 +54,43 @@ comparison dashboard. Under matched interleaving, `--total-timeout` is an active
 execution budget per harness, so time spent waiting while another harness runs
 does not consume that harness's budget.
 
+### llama.cpp server telemetry
+
+For cross-harness efficiency measurements, start `llama-server` with its
+Prometheus metrics endpoint enabled (`--metrics`) and give AIOS-bench the server
+origin or `/metrics` URL:
+
+```bash
+aiosbench --all --model Ornith --repeats 5 \
+  --server-metrics-url http://127.0.0.1:8080 \
+  --max-output-tokens 65536
+```
+
+`AIOS_BENCH_SERVER_METRICS_URL` is the environment-variable equivalent. In
+llama.cpp router mode, `--server-metrics-model MODEL_ID` adds the model filter to
+the metrics query. If `AIOS_BENCH_ENDPOINT` is already set, AIOS-bench can derive
+the same-origin `/metrics` URL automatically.
+
+AIOS-bench snapshots cumulative llama.cpp counters immediately before and after
+each task and stores server-derived prompt/output tokens, prompt/generation
+seconds and derived throughput. Cross-harness efficiency uses only rows marked
+`usage_source=server_verified`; harness-reported token counts remain diagnostic.
+If metrics are unavailable or counters reset during a task, measurement fails
+closed to non-comparable efficiency without changing the task's capability
+result.
+
+The llama.cpp metrics endpoint is aggregate server state. For publication-grade
+efficiency runs, dedicate the measured model/server to AIOS-bench while the run
+is active. Concurrent external requests would otherwise contaminate counter
+deltas. `--max-output-tokens` uses the same server counter as a runaway guard;
+set it to `0` to disable the guard. A triggered guard records `RUNAWAY` rather
+than conflating it with `TIMEOUT` or `CRASH`.
+
+Raw task rows carry one mutually exclusive failure kind: `PASS`, `WRONG`,
+`CRASH`, `TIMEOUT`, `RUNAWAY`, `REFUSED`, `INFRA_ERROR`, `UNSUPPORTED` or
+`BLOCKED`. `REFUSED` requires structured harness telemetry or an explicit
+refusal/safety stop reason; AIOS-bench does not infer refusals from prose.
+
 ## Deterministic evaluation
 
 AIOS-bench uses **deterministic evaluators as the authoritative benchmark signal**. There is no LLM judge. A task passes only when the agent execution and its required artifacts satisfy reproducible acceptance checks.
