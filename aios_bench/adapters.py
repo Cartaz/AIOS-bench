@@ -5,6 +5,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlsplit, urlunsplit
 
 
 UNKNOWN_MODEL_VALUES = frozenset({"", "unknown"})
@@ -21,6 +22,22 @@ REQUIRED_CAPABILITIES_BY_CATEGORY: dict[str, frozenset[str]] = {
 
 def _requested_model(model: str) -> str | None:
     return model if model and model not in UNKNOWN_MODEL_VALUES else None
+
+
+def _public_service_endpoint(endpoint: str) -> str:
+    """Record service identity without credentials, query strings, or fragments."""
+    value = str(endpoint or "").strip()
+    parsed = urlsplit(value)
+    if not parsed.scheme or not parsed.netloc:
+        return value.split("?", 1)[0].split("#", 1)[0].rsplit("@", 1)[-1]
+    hostname = parsed.hostname or ""
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    try:
+        port = f":{parsed.port}" if parsed.port is not None else ""
+    except ValueError:
+        port = ""
+    return urlunsplit((parsed.scheme, f"{hostname}{port}", parsed.path, "", ""))
 
 
 @dataclass(frozen=True)
@@ -165,6 +182,7 @@ class HermesAdapter(Adapter):
             },
             requested_model=requested,
             resolved_model=requested,
+            provider=provider,
             configuration={
                 "mode": "oneshot",
                 "ignore_rules": True,
@@ -374,7 +392,7 @@ class AgentZeroAdapter(Adapter):
             endpoint=model_endpoint,
             configuration={
                 "transport": "external_api",
-                "service_endpoint": service_url,
+                "service_endpoint": _public_service_endpoint(service_url),
                 "project": project or None,
                 "agent_profile": profile or None,
                 "api_key_configured": bool(environment["AIOS_BENCH_AGENTZERO_API_KEY"]),
