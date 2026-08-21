@@ -10,6 +10,7 @@ from aios_bench.adapters import (
     AgentZeroAdapter,
     HermesAdapter,
     LettaAdapter,
+    OpenCodeAdapter,
     PiAgentAdapter,
     required_capabilities_for,
 )
@@ -30,10 +31,14 @@ def test_active_harness_matrix_excludes_codex():
 def test_capability_assessment_separates_native_feature_from_observability():
     native_only = LettaAdapter().assess_capabilities("subagents")
     structured = StructuredDelegationAdapter().assess_capabilities("subagents")
+    opencode = OpenCodeAdapter().assess_capabilities("subagents")
     assert native_only.status == "unsupported"
     assert native_only.missing == frozenset({"structured_subagent_events"})
     assert structured.status == "supported"
     assert structured.to_dict()["missing"] == []
+    assert opencode.status == "supported"
+    assert "structured_subagent_events" in OpenCodeAdapter().capabilities
+    assert "tool_events" in OpenCodeAdapter().capabilities
 
 
 def test_category_and_catalog_tag_requirements_are_composed():

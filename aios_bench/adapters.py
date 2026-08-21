@@ -162,7 +162,15 @@ class PiAgentAdapter(Adapter):
 
 class OpenCodeAdapter(Adapter):
     name = "opencode"
-    capabilities = frozenset({"json_events", "sessions", "server", "mcp", "token_stats"})
+    capabilities = frozenset({
+        "json_events",
+        "sessions",
+        "server",
+        "mcp",
+        "token_stats",
+        "tool_events",
+        "structured_subagent_events",
+    })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
         command = ["opencode", "run", "--dir", str(workspace.resolve()), "--format", "json", "--auto"]
@@ -175,7 +183,7 @@ class OpenCodeAdapter(Adapter):
             {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
             requested_model=requested,
             resolved_model=requested,
-            configuration={"format": "json", "auto": True},
+            configuration={"format": "json", "auto": True, "structured_task_tool": True},
         )
 
 
