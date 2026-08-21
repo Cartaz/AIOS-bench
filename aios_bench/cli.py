@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 from pathlib import Path
 
 from .config import AGENTS
@@ -48,6 +47,18 @@ def _summary(root: Path, output: Path | None = None) -> Path:
     return path
 
 
+def _runner_kwargs(args: argparse.Namespace) -> dict:
+    return {
+        "resume": not args.no_resume,
+        "model": args.model,
+        "keep_raw": args.keep_raw,
+        "server_metrics_url": args.server_metrics_url,
+        "server_metrics_model": args.server_metrics_model,
+        "max_output_tokens": args.max_output_tokens,
+        "metrics_poll_interval": args.metrics_poll_interval,
+    }
+
+
 def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> int:
     exit_code = 0
     for repeat in range(1, args.repeats + 1):
@@ -65,10 +76,8 @@ def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> 
             RESULTS,
             args.timeout,
             args.total_timeout,
-            resume=not args.no_resume,
-            model=args.model,
-            keep_raw=args.keep_raw,
             run_id=run_id,
+            **_runner_kwargs(args),
         )
         try:
             exit_code = max(exit_code, runner.run(tasks))
@@ -93,10 +102,8 @@ def _run_matched_interleaved(args: argparse.Namespace, harnesses: list[str], tas
                 RESULTS,
                 args.timeout,
                 args.total_timeout,
-                resume=not args.no_resume,
-                model=args.model,
-                keep_raw=args.keep_raw,
                 run_id=run_id,
+                **_runner_kwargs(args),
             )
             for harness in harnesses
         }
@@ -126,6 +133,28 @@ def main() -> None:
         type=int,
         default=42,
         help="Base orchestration seed for block ordering; does not set model sampling RNG",
+    )
+    parser.add_argument(
+        "--server-metrics-url",
+        default=None,
+        help="llama.cpp Prometheus endpoint or server origin (requires llama-server --metrics)",
+    )
+    parser.add_argument(
+        "--server-metrics-model",
+        default=None,
+        help="Optional llama.cpp router model id added to the /metrics query",
+    )
+    parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=65536,
+        help="Server-verified per-task output-token runaway cap; 0 disables the guard",
+    )
+    parser.add_argument(
+        "--metrics-poll-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between server-metrics polls while a task is running",
     )
     parser.add_argument("--dashboard", action="store_true", help="Build the local comparison dashboard after the run")
     parser.add_argument("--keep-raw", action="store_true", help="Keep raw event/stdout/dependency artifacts after the run")
@@ -172,6 +201,10 @@ def main() -> None:
         raise SystemExit("Select a harness, e.g. aiosbench --piagent --model Qwen, or use --all")
     if args.repeats < 1:
         raise SystemExit("--repeats must be >= 1")
+    if args.max_output_tokens < 0:
+        raise SystemExit("--max-output-tokens must be >= 0")
+    if args.metrics_poll_interval <= 0:
+        raise SystemExit("--metrics-poll-interval must be > 0")
 
     tasks = load_tasks(TASKS)
     if len(harnesses) == 1:
