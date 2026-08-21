@@ -66,7 +66,9 @@ def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
             raise ValueError(f"Task {task_id} needs exactly one authoritative oracle")
         oracle = authoritative[0]
         if oracle.get("task_id") != task_id:
-            raise ValueError(f"Task {task_id} needs its matching authoritative oracle")
+            if oracle.get("type") == "reference":
+                raise ValueError(f"Task {task_id} needs its matching reference oracle")
+            raise ValueError(f"Task {task_id} needs its matching parametric oracle")
         if oracle.get("type") == "parametric_reference" and not oracle.get("family"):
             raise ValueError(f"Task {task_id} parametric oracle needs a family")
 
