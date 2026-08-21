@@ -9,13 +9,12 @@ def test_goose_adapter_uses_reproducible_stream_json_mode(monkeypatch, tmp_path:
     monkeypatch.setenv("AIOS_BENCH_GOOSE_PROVIDER", "openai")
     invocation = GooseAdapter().build("private benchmark prompt", tmp_path, "local/model")
 
-    assert invocation.command[:7] == [
+    assert invocation.command == [
         "goose", "run", "--no-session", "--quiet",
-        "--output-format", "stream-json", "--with-builtin",
+        "--output-format", "stream-json", "--with-builtin", "developer",
+        "--provider", "openai", "--model", "local/model",
+        "-t", "private benchmark prompt",
     ]
-    assert invocation.command[7] == "developer"
-    assert invocation.command[-5:-1] == ["--provider", "openai", "--model", "local/model"]
-    assert invocation.command[-1] == "private benchmark prompt"
     assert invocation.configuration["output_format"] == "stream-json"
     assert invocation.configuration["builtin_extensions"] == ["developer"]
     assert invocation.configuration["summon_delegate"] == "default_enabled_platform_extension"
