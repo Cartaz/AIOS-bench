@@ -156,11 +156,19 @@ For publication-grade runs, use a **dedicated Agent Zero service/container** wit
 no personal host mounts or personal projects visible to the service.
 
 Create one neutral template project, for example `aios-bench`, under Agent
-Zero's `usr/projects` directory. The template is configuration only: AIOS-bench
-requires that it contain no task files outside `.a0proj`, no project
-instructions, no bound Git repository, no custom instruction/knowledge/skill or
-agent files, no configured MCP servers, and `include_agents_md=false`. The
-validated `.a0proj` tree is hashed into the run manifest.
+Zero's `usr/projects` directory. The template is deliberately narrower than a
+normal Agent Zero project: it may contain only `.a0proj/project.json`, an optional
+empty `.a0proj/mcp_servers.json`, and empty metadata directories. AIOS-bench
+rejects project variables, secrets, subagent overrides, prior project memory,
+plugin extension files, custom instruction/knowledge/skill/agent files, task
+files outside `.a0proj`, symlinks, and configured MCP servers.
+
+The neutral `project.json` may contain only the ordinary identity fields used by
+the benchmark template. Its title must be empty or `AIOS-bench`; description and
+instructions must be empty; `include_agents_md` must be `false`; `git_url` must
+be empty. Custom project file-structure policy is not accepted. The validated
+`.a0proj` tree is hashed into the run manifest so changing template semantics
+changes the execution fingerprint.
 
 The projects directory must be visible to both the Agent Zero service and the
 AIOS-bench process. If Agent Zero runs in a container, bind-mount a host
@@ -176,7 +184,10 @@ export AIOS_BENCH_AGENTZERO_API_KEY=<api-key>
 export AIOS_BENCH_AGENTZERO_PROJECT=aios-bench
 export AIOS_BENCH_AGENTZERO_PROJECTS_ROOT=/path/to/dedicated/agent-zero/usr/projects
 export AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE=1
+export AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION=1
+export AIOS_BENCH_AGENTZERO_REVISION=<release-commit-or-immutable-image-digest>
 export AIOS_BENCH_AGENTZERO_RESOLVED_MODEL=<model>
+export AIOS_BENCH_AGENTZERO_UTILITY_MODEL=<model>
 
 # Optional but recommended provenance when known:
 export AIOS_BENCH_AGENTZERO_PROFILE=developer
@@ -188,22 +199,39 @@ aiosbench --agentzero --model <model>
 
 `AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE=1` is an explicit operator attestation
 that the Agent Zero instance/container is benchmark-only and has no personal
-host mounts. The client fails closed if the template/project-root/workspace is
-missing, that attestation is absent, or
-`AIOS_BENCH_AGENTZERO_RESOLVED_MODEL` does not exactly match `--model`. For a
-publication-grade comparison, continue to provide the common
-`AIOS_BENCH_MODEL_DIGEST` and `AIOS_BENCH_INFERENCE_CONFIG`; the remote model
-binding is recorded as `operator_declared_remote`, not as if AIOS-bench itself
-had changed Agent Zero's model.
+host mounts. `AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION=1` is a separate
+attestation that the Agent Zero `_memory` plugin is configured with
+`project_memory_isolation=true`. This matters because Agent Zero otherwise
+falls back to a shared/default memory store instead of the active project's
+`.a0proj/memory` directory.
+
+`AIOS_BENCH_AGENTZERO_REVISION` identifies the remote Agent Zero implementation
+used for the run; use a release, commit SHA, or immutable container-image digest.
+The external `/api_message` surface does not provide a model or service-version
+override that AIOS-bench can pin itself, so this value is recorded honestly as
+operator-declared remote provenance. Likewise, Agent Zero's main and utility
+models must already be configured remotely. Both
+`AIOS_BENCH_AGENTZERO_RESOLVED_MODEL` and
+`AIOS_BENCH_AGENTZERO_UTILITY_MODEL` must exactly equal the model passed through
+`--model`; the client fails closed before contacting Agent Zero if either model
+declaration is absent or mismatched.
+
+For a publication-grade comparison, continue to provide the common
+`AIOS_BENCH_MODEL_DIGEST` and `AIOS_BENCH_INFERENCE_CONFIG`. These attest the
+shared model/inference identity across harnesses; Agent Zero's separate service
+revision, main/utility-model attestations, memory-isolation attestation and
+project-template digest become additional execution provenance rather than being
+misrepresented as adapter-pinned remote state.
 
 For each task, AIOS-bench creates a new physical sibling project with a unique
 name, copies the neutral `.a0proj` metadata plus the task workspace into it, and
 passes that ephemeral project name to `/api_message` without a `context_id`.
 Thus each attempt receives both a fresh Agent Zero project and a fresh chat
-context. Native Agent Zero state that is project-scoped is confined to that
-single attempt rather than becoming a cross-task hidden channel. Warm
-memory/learning chains remain benchmark-owned because their artifacts are copied
-through the ordinary AIOS-bench workspace just like every other harness.
+context. With project-memory isolation enabled, Agent Zero's native memory for
+that attempt is written below that unique project and cannot become a cross-task
+hidden state channel. Warm memory/learning chains remain benchmark-owned because
+their artifacts are copied through the ordinary AIOS-bench workspace just like
+every other harness.
 
 After the response, AIOS-bench retrieves the API-key-protected `/api_log_get`
 record, terminates the chat through `/api_terminate_chat`, validates the remote
