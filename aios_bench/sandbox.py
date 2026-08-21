@@ -35,9 +35,6 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
         raise ValueError("AIOS_BENCH_SANDBOX must be auto, required or off")
-    if adapter_name == "codex":
-        # Legacy compatibility only; Codex is not part of the active benchmark matrix.
-        return SandboxPlan("adapter_workspace_write", write_confined=True, grader_hidden=False)
     if selected == "off":
         return SandboxPlan("disabled", write_confined=False, grader_hidden=False)
     executable = shutil.which("bwrap")
