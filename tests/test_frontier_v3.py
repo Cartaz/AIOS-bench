@@ -37,7 +37,7 @@ def test_long_horizon_workspace_contains_the_declared_large_corpus(tmp_path: Pat
     tasks = load_tasks(ROOT / "benchmarks/tasks")
     task = next(task for task in tasks if task.id == "long_horizon_001")
     runner = FrontierV3Runner(
-        ROOT, AGENTS["codex"], tmp_path, task_timeout=1, total_timeout=None,
+        ROOT, AGENTS["piagent"], tmp_path, task_timeout=1, total_timeout=None,
         model="test", run_id="corpus-check",
     )
     workspace = runner._workspace(task)
@@ -55,7 +55,7 @@ def test_long_horizon_workspace_contains_the_declared_large_corpus(tmp_path: Pat
 def test_long_horizon_reference_oracle_checks_recovery_and_grounding(tmp_path: Path):
     task = next(task for task in load_tasks(ROOT / "benchmarks/tasks") if task.id == "long_horizon_001")
     runner = FrontierV3Runner(
-        ROOT, AGENTS["codex"], tmp_path, task_timeout=1, total_timeout=None,
+        ROOT, AGENTS["piagent"], tmp_path, task_timeout=1, total_timeout=None,
         model="test", run_id="oracle-check",
     )
     workspace = runner._workspace(task)
@@ -77,7 +77,7 @@ def test_long_horizon_reference_oracle_checks_recovery_and_grounding(tmp_path: P
 def test_frontier_v3_resume_rejects_results_from_another_suite_revision(tmp_path: Path):
     tasks = load_tasks(ROOT / "benchmarks/tasks")
     runner = FrontierV3Runner(
-        ROOT, AGENTS["codex"], tmp_path, task_timeout=1, total_timeout=None,
+        ROOT, AGENTS["piagent"], tmp_path, task_timeout=1, total_timeout=None,
         model="test", run_id="resume-check",
     )
     task = tasks[0]
