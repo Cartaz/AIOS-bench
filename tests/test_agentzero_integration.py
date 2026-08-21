@@ -49,9 +49,12 @@ def _agentzero_env(
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", str(projects_root))
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_PROFILE", "developer")
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE", "1")
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION", "1")
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_REVISION", "b22a144bf59f15b1516084c9e7b88133ba92c8a9")
     monkeypatch.setenv("AIOS_BENCH_WORKSPACE", str(workspace))
     monkeypatch.setenv("AIOS_BENCH_REQUESTED_MODEL", "Ornith")
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_RESOLVED_MODEL", "Ornith")
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_UTILITY_MODEL", "Ornith")
     return projects_root, workspace
 
 
@@ -119,8 +122,23 @@ def test_agentzero_profile_guards_fail_closed(
         _validate_profile()
 
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE", "1")
+    monkeypatch.delenv("AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION", raising=False)
+    with pytest.raises(RuntimeError, match="PROJECT_MEMORY_ISOLATION=1"):
+        _validate_profile()
+
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION", "1")
+    monkeypatch.delenv("AIOS_BENCH_AGENTZERO_REVISION", raising=False)
+    with pytest.raises(RuntimeError, match="AGENTZERO_REVISION is required"):
+        _validate_profile()
+
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_REVISION", "agentzero-revision")
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_RESOLVED_MODEL", "OtherModel")
-    with pytest.raises(RuntimeError, match="does not match"):
+    with pytest.raises(RuntimeError, match="resolved-model declaration does not match"):
+        _validate_profile()
+
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_RESOLVED_MODEL", "Ornith")
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_UTILITY_MODEL", "OtherModel")
+    with pytest.raises(RuntimeError, match="utility-model declaration does not match"):
         _validate_profile()
 
 
@@ -218,9 +236,14 @@ def test_agentzero_adapter_declares_observable_capabilities_and_remote_model(
     assert invocation.provider == "openai"
     assert invocation.endpoint == "http://10.0.0.2:8080/v1"
     assert invocation.configuration["service_endpoint"] == "http://127.0.0.1:50001"
+    assert invocation.configuration["service_revision"] == "b22a144bf59f15b1516084c9e7b88133ba92c8a9"
+    assert invocation.configuration["service_revision_resolution"] == "operator_declared_remote"
     assert invocation.configuration["fresh_context_per_task"] is True
     assert invocation.configuration["ephemeral_physical_project_per_task"] is True
     assert invocation.configuration["isolated_service_attestation"] is True
+    assert invocation.configuration["project_memory_isolation_attestation"] is True
+    assert invocation.configuration["main_model_attestation"] == "Ornith"
+    assert invocation.configuration["utility_model_attestation"] == "Ornith"
     assert invocation.configuration["project_template_digest"].startswith("sha256:")
     assert invocation.configuration["projects_root_configured"] is True
     assert str(projects_root) not in json.dumps(invocation.configuration)
@@ -244,6 +267,8 @@ def test_agentzero_manifest_keeps_service_endpoint_out_of_model_identity(
     assert manifest["model"]["endpoint"] == "http://10.0.0.2:8080/v1"
     assert manifest["model"]["strictly_comparable"] is True
     assert manifest["configuration"]["service_endpoint"] == "http://127.0.0.1:50001"
+    assert manifest["configuration"]["service_revision"] == "b22a144bf59f15b1516084c9e7b88133ba92c8a9"
+    assert manifest["configuration"]["utility_model_attestation"] == "Ornith"
     assert str(projects_root) not in json.dumps(manifest["configuration"])
 
 
