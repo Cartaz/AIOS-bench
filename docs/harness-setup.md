@@ -54,14 +54,32 @@ fingerprint rather than silently changing the current isolation semantics.
 
 ## Goose
 
-Install Goose and configure its provider. AIOS-bench uses non-session `goose run` by default so each cold benchmark task starts cleanly.
+Install a current Goose CLI and configure its provider. AIOS-bench runs each task
+with an isolated non-session CLI process and requests Goose's NDJSON stream:
 
 ```bash
 export AIOS_BENCH_GOOSE_PROVIDER=openai
 aiosbench --goose --model <model>
 ```
 
-For local providers, configure Goose's normal provider settings first. Recipes/extensions should be pinned in a later benchmark profile rather than implicitly inherited from a developer's personal configuration.
+The effective invocation uses `goose run --no-session --quiet --output-format
+stream-json --with-builtin developer`. Developer is requested explicitly so the
+benchmark's shell/write/edit surface does not depend on a personal extension
+toggle. Goose's default-enabled Summon platform extension remains available and
+its native `delegate` tool creates real subagent sessions.
+
+AIOS-bench parses only structured `message`, `error`, `notification` and
+`complete` records. Nested `toolRequest`/`toolResponse` records become canonical
+tool events without retaining prompts, tool arguments or tool output. A
+structured `delegate` tool request becomes a non-inferred `subagent_start`, and
+the matching tool response becomes `subagent_end`; prose mentioning delegation
+never counts. Goose is therefore eligible for Frontier v3 `subagents` tasks.
+
+The final `complete.total_tokens` value is retained only as a structured total.
+AIOS-bench does not invent an input/output split from it; server-verified
+llama.cpp counters remain the authoritative efficiency source. Browser tasks
+remain unsupported by the default Goose benchmark profile because browser
+control requires an additional extension that is not enabled by this adapter.
 
 ## Letta Code
 
