@@ -13,7 +13,13 @@ ROOT = Path(__file__).resolve().parents[1]
 TASK_ROOT = ROOT / "benchmarks" / "tasks"
 
 
-def _runner(results: Path, seed: int, run_id: str) -> FrontierV4Runner:
+def _runner(
+    results: Path,
+    seed: int,
+    run_id: str,
+    parameters: dict | None = None,
+    max_output_tokens: int = 65536,
+) -> FrontierV4Runner:
     return FrontierV4Runner(
         ROOT,
         AGENTS["piagent"],
@@ -23,6 +29,8 @@ def _runner(results: Path, seed: int, run_id: str) -> FrontierV4Runner:
         model="test",
         run_id=run_id,
         variant_base_seed=seed,
+        parametric_parameters=parameters,
+        max_output_tokens=max_output_tokens,
     )
 
 
@@ -80,6 +88,37 @@ def test_different_v4_repeat_seed_changes_variant(tmp_path: Path) -> None:
         "distractor_files": 3,
         "months": 6,
     }
+
+
+def test_landscape_profile_excludes_only_pressure_coordinates(tmp_path: Path) -> None:
+    first = _runner(
+        tmp_path / "a",
+        42,
+        "first",
+        {"expense_report": {"rows": 48, "malformed_rows": 2, "distractor_files": 3, "months": 6}},
+    )
+    second = _runner(
+        tmp_path / "b",
+        42,
+        "second",
+        {"expense_report": {"rows": 96, "malformed_rows": 4, "distractor_files": 8, "months": 9}},
+    )
+    changed_guard = _runner(
+        tmp_path / "c",
+        42,
+        "changed-guard",
+        {"expense_report": {"rows": 96, "malformed_rows": 4, "distractor_files": 8, "months": 9}},
+        max_output_tokens=32768,
+    )
+
+    assert first.execution_fingerprint != second.execution_fingerprint
+    assert first.landscape_execution_fingerprint == second.landscape_execution_fingerprint
+    assert changed_guard.landscape_execution_fingerprint != second.landscape_execution_fingerprint
+
+    task = load_tasks(TASK_ROOT, "frontier_v4")[0]
+    assert first._result_identity(task)["landscape_execution_fingerprint"] == (
+        first.landscape_execution_fingerprint
+    )
 
 
 def test_frontier_v4_semantic_fingerprint_covers_generators() -> None:

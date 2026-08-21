@@ -18,6 +18,7 @@ ANALYSIS_IMPLEMENTATION_FILES = (
     "raw.py",
     "report.py",
     "statistics.py",
+    "landscapes.py",
     "dashboard.py",
     "publication.py",
 )

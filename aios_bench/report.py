@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from .landscapes import pressure_landscapes, pressure_paired_comparisons
 from .raw import latest_attempts, load_attempts, source_index
 
 
@@ -275,6 +276,10 @@ def build_summary(root: Path) -> dict[str, Any]:
     runs = summarize_rows(rows, _manifests(root))
     selected = selected_suite_revision(runs)
     sources = source_index(root)
+    filters = {
+        "suite": selected[0] if selected else None,
+        "suite_revision": selected[1] if selected else None,
+    }
     return {
         "analysis_schema": ANALYSIS_SCHEMA,
         "runs": runs,
@@ -285,6 +290,8 @@ def build_summary(root: Path) -> dict[str, Any]:
         "result_count": len(rows),
         "raw_source_digest": sources["digest"],
         "raw_source_file_count": sources["file_count"],
+        "pressure_landscapes": pressure_landscapes(rows, **filters),
+        "pressure_paired_comparisons": pressure_paired_comparisons(rows, **filters),
     }
 
 
