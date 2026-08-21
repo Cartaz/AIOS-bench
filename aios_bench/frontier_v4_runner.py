@@ -4,7 +4,6 @@ import hashlib
 import json
 import shutil
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Mapping
 
 from .experiments import derive_seed
@@ -156,11 +155,14 @@ class FrontierV4Runner(FrontierV3Runner):
         identity = super()._result_identity(task)
         family = self._family(task)
         variant = self._variants.get(task.id) or {}
+        parameters = variant.get("parameters")
+        if not isinstance(parameters, dict):
+            parameters = dict(self.parametric_parameters.get(family, {}))
         identity.update({
             "variant_schema": "aios-bench/parametric/v1",
             "variant_family": family,
             "variant_seed": self._task_seed(task),
-            "variant_parameters": dict(self.parametric_parameters.get(family, {})),
+            "variant_parameters": parameters,
             "variant_digest": variant.get("variant_digest"),
         })
         return identity
