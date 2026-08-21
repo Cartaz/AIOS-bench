@@ -39,6 +39,14 @@ def _quantile(values: list[float], probability: float) -> float | None:
     return ordered[lower] * (1 - weight) + ordered[upper] * weight
 
 
+def _matches_suite(row: dict[str, Any], suite: str | None, suite_revision: str | None) -> bool:
+    if suite is not None and str(row.get("suite")) != suite:
+        return False
+    if suite_revision is not None and str(row.get("suite_revision")) != suite_revision:
+        return False
+    return True
+
+
 def wilson_interval(successes: int, attempts: int, z: float = 1.959963984540054) -> tuple[float, float]:
     """Wilson score interval for a Bernoulli success proportion."""
     if attempts <= 0:
@@ -63,9 +71,7 @@ def aggregate_repeat_rows(
             continue
         if row.get("status") == "unsupported" or row.get("comparable") is False:
             continue
-        if suite is not None and str(row.get("suite")) != suite:
-            continue
-        if suite_revision is not None and str(row.get("suite_revision")) != suite_revision:
+        if not _matches_suite(row, suite, suite_revision):
             continue
         key = (
             str(row.get("harness", row.get("agent", "unknown"))),
@@ -198,9 +204,7 @@ def paired_comparisons(
     for row in rows:
         if row.get("schedule_mode") != "matched_interleaved" or not row.get("experiment_id"):
             continue
-        if suite is not None and str(row.get("suite")) != suite:
-            continue
-        if suite_revision is not None and str(row.get("suite_revision")) != suite_revision:
+        if not _matches_suite(row, suite, suite_revision):
             continue
         key = (
             str(row.get("experiment_id")),
@@ -294,8 +298,95 @@ def paired_comparisons(
     return comparisons
 
 
+def failure_distributions(
+    rows: Iterable[dict[str, Any]],
+    *,
+    suite: str | None = None,
+    suite_revision: str | None = None,
+) -> list[dict[str, Any]]:
+    """Count mutually exclusive failure kinds by harness/model execution profile."""
+    groups: dict[tuple[str, str, str, str, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    totals: dict[tuple[str, str, str, str, str], int] = defaultdict(int)
+    for row in rows:
+        if not _matches_suite(row, suite, suite_revision):
+            continue
+        key = (
+            str(row.get("harness", row.get("agent", "unknown"))),
+            str(row.get("model", "unknown")),
+            str(row.get("suite", "legacy")),
+            str(row.get("suite_revision", "legacy")),
+            str(row.get("execution_fingerprint", "unreported")),
+        )
+        kind = str(row.get("failure_kind") or "UNCLASSIFIED")
+        groups[key][kind] += 1
+        totals[key] += 1
+    return [
+        {
+            "harness": key[0],
+            "model": key[1],
+            "suite": key[2],
+            "suite_revision": key[3],
+            "execution_fingerprint": key[4],
+            "observations": totals[key],
+            "counts": dict(sorted(groups[key].items())),
+        }
+        for key in sorted(groups)
+    ]
+
+
+def server_efficiency_groups(
+    rows: Iterable[dict[str, Any]],
+    *,
+    suite: str | None = None,
+    suite_revision: str | None = None,
+) -> list[dict[str, Any]]:
+    """Aggregate only server-verified usage for cross-harness efficiency."""
+    grouped: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if not _matches_suite(row, suite, suite_revision):
+            continue
+        usage = row.get("server_usage")
+        if not isinstance(usage, dict) or not usage.get("trusted_for_efficiency"):
+            continue
+        if row.get("usage_source") != "server_verified":
+            continue
+        key = (
+            str(row.get("harness", row.get("agent", "unknown"))),
+            str(row.get("model", "unknown")),
+            str(row.get("suite", "legacy")),
+            str(row.get("suite_revision", "legacy")),
+            str(row.get("execution_fingerprint", "unreported")),
+        )
+        grouped[key].append(row)
+
+    result: list[dict[str, Any]] = []
+    for key, items in sorted(grouped.items()):
+        prompt_tokens = sum(_number((item.get("server_usage") or {}).get("prompt_tokens")) or 0.0 for item in items)
+        output_tokens = sum(_number((item.get("server_usage") or {}).get("output_tokens")) or 0.0 for item in items)
+        prompt_seconds = sum(_number((item.get("server_usage") or {}).get("prompt_seconds")) or 0.0 for item in items)
+        generation_seconds = sum(_number((item.get("server_usage") or {}).get("generation_seconds")) or 0.0 for item in items)
+        result.append({
+            "harness": key[0],
+            "model": key[1],
+            "suite": key[2],
+            "suite_revision": key[3],
+            "execution_fingerprint": key[4],
+            "server_verified_tasks": len(items),
+            "prompt_tokens": int(round(prompt_tokens)),
+            "output_tokens": int(round(output_tokens)),
+            "prompt_seconds": prompt_seconds,
+            "generation_seconds": generation_seconds,
+            "prompt_tokens_per_second": prompt_tokens / prompt_seconds if prompt_seconds > 0 else None,
+            "generation_tokens_per_second": output_tokens / generation_seconds if generation_seconds > 0 else None,
+            "usage_source": "server_verified",
+            "scope": "endpoint_aggregate",
+            "requires_exclusive_server": True,
+        })
+    return result
+
+
 def augment_summary_file(summary_path: Any, results_root: Any) -> None:
-    """Add derived reliability and paired statistics to a generated summary."""
+    """Add derived reliability, paired, failure, and efficiency statistics."""
     import json
     from pathlib import Path
     from .report import load_results
@@ -309,6 +400,8 @@ def augment_summary_file(summary_path: Any, results_root: Any) -> None:
     }
     summary["repeat_groups"] = aggregate_repeat_rows(rows, **filters)
     summary["paired_comparisons"] = paired_comparisons(rows, **filters)
+    summary["failure_distributions"] = failure_distributions(rows, **filters)
+    summary["server_efficiency"] = server_efficiency_groups(rows, **filters)
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     temporary.replace(path)
