@@ -138,14 +138,23 @@ For Frontier v4 generated families:
 aiosbench --suite frontier_v4 --seed 42 validate
 ```
 
-The v3 preflight checks that every untouched fixture fails its deterministic
-acceptance grader. The v4 preflight additionally verifies that the same seed
-reproduces the same variant digest, a different seed changes the variant and an
-untouched generated workspace fails its grader. On Linux with bubblewrap,
-benchmark-owned task catalogs, tests, `.git`, reference-check bytecode/source,
-generated oracle directories, prior runs and sibling workspaces are masked from
-the child process in addition to write confinement. A positive reference-solution
-preflight remains a later integrity step.
+The v3 preflight is bidirectional for every catalog task: an untouched fixture
+must fail its deterministic acceptance grader, and a benchmark-owned golden
+witness must pass the exact same evaluator/oracle. Golden witnesses are
+materialized deterministically and exercise executable contracts such as hidden
+pytest checks, alternate datasets, provenance, persistent state, git invariants
+and normalized subagent telemetry; no LLM or harness is invoked by validation.
+
+The v4 preflight additionally verifies generator A/A/B behavior: the same seed
+must reproduce the same variant digest and a different seed must change it. The
+untouched generated workspace must fail, while a benchmark-owned golden solution
+for that generated variant must pass. This positive contract also prevents an
+accidentally unsatisfiable oracle from surviving CI.
+
+On Linux with bubblewrap, benchmark-owned task catalogs, tests, `.git`,
+reference-check bytecode/source, generated oracle directories, prior runs and
+sibling workspaces are masked from the child process in addition to write
+confinement.
 
 ## Results layout and publication
 
