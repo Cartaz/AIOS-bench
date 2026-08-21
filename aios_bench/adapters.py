@@ -153,10 +153,20 @@ class HermesAdapter(Adapter):
     })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
+        # Hermes one-shot mode is purpose-built for scripts and emits only the
+        # final response on stdout. Pin an explicit built-in tool surface so a
+        # developer's `hermes tools` configuration cannot add native memory,
+        # session recall, plugins, or MCP tools to the benchmark run. Rules and
+        # ambient memory/AGENTS.md injection are disabled independently while
+        # provider configuration remains available for local/custom endpoints.
         usage_path = workspace.resolve() / ".aios_bench_hermes_usage.json"
-        toolsets = "terminal,file,web,browser,skills,todo,code_execution,delegation"
+        toolsets = (
+            "terminal,file,web,browser,skills,todo,code_execution,delegation"
+        )
         command = [
-            "hermes", "--ignore-rules", "--toolsets", toolsets,
+            "hermes",
+            "--ignore-rules",
+            "--toolsets", toolsets,
             "--usage-file", str(usage_path),
         ]
         provider = os.environ.get("AIOS_BENCH_HERMES_PROVIDER")
@@ -192,6 +202,8 @@ class PiAgentAdapter(Adapter):
     capabilities = frozenset({"json_events", "rpc", "sessions", "extensions", "tool_events", "token_stats"})
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
+        # Kept as a conventional invocation for discovery/backwards compatibility.
+        # The runner uses run_rpc() so stdin remains open until agent_settled.
         command = ["pi", "--mode", "rpc", "--no-session"]
         if model and model != "unknown":
             command += ["--model", model]
@@ -208,8 +220,13 @@ class PiAgentAdapter(Adapter):
 class OpenCodeAdapter(Adapter):
     name = "opencode"
     capabilities = frozenset({
-        "json_events", "sessions", "server", "mcp", "token_stats",
-        "tool_events", "structured_subagent_events",
+        "json_events",
+        "sessions",
+        "server",
+        "mcp",
+        "token_stats",
+        "tool_events",
+        "structured_subagent_events",
     })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
@@ -230,14 +247,25 @@ class OpenCodeAdapter(Adapter):
 class GooseAdapter(Adapter):
     name = "goose"
     capabilities = frozenset({
-        "recipes", "extensions", "sessions", "provider_model", "json_events",
-        "tool_events", "terminal", "structured_subagent_events",
+        "recipes",
+        "extensions",
+        "sessions",
+        "provider_model",
+        "json_events",
+        "tool_events",
+        "terminal",
+        "structured_subagent_events",
     })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
+        # stream-json is NDJSON and exposes native toolRequest/toolResponse
+        # records, including Summon's default-enabled delegate tool. Explicitly
+        # request Developer so shell/write/edit behavior does not depend on a
+        # user's local extension toggle.
         command = [
             "goose", "run", "--no-session", "--quiet",
-            "--output-format", "stream-json", "--with-builtin", "developer",
+            "--output-format", "stream-json",
+            "--with-builtin", "developer",
         ]
         provider = os.environ.get("AIOS_BENCH_GOOSE_PROVIDER")
         if provider:
@@ -265,14 +293,29 @@ class GooseAdapter(Adapter):
 class LettaAdapter(Adapter):
     name = "letta"
     capabilities = frozenset({
-        "headless", "sessions", "ephemeral", "skills", "json_events",
-        "tool_events", "token_stats", "terminal", "structured_subagent_events",
+        "headless",
+        "sessions",
+        "ephemeral",
+        "skills",
+        "json_events",
+        "tool_events",
+        "token_stats",
+        "terminal",
+        "structured_subagent_events",
     })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
+        # The benchmark profile intentionally avoids ambient Letta agent state.
+        # --ephemeral creates a fresh temporary conversation per task, --no-mods
+        # and bundled-only skills exclude personal/project customization, and
+        # --yolo prevents interactive approval prompts inside the outer sandbox.
         command = [
-            "letta", "-p", "--ephemeral", "--output-format", "stream-json",
-            "--yolo", "--no-mods", "--skill-sources", "bundled",
+            "letta", "-p",
+            "--ephemeral",
+            "--output-format", "stream-json",
+            "--yolo",
+            "--no-mods",
+            "--skill-sources", "bundled",
         ]
         if model and model != "unknown":
             command += ["--model", model]
@@ -298,8 +341,14 @@ class LettaAdapter(Adapter):
 class AgentZeroAdapter(Adapter):
     name = "agentzero"
     capabilities = frozenset({
-        "api", "json_events", "tool_events", "structured_subagent_events",
-        "browser", "terminal", "projects", "sessions",
+        "api",
+        "json_events",
+        "tool_events",
+        "structured_subagent_events",
+        "browser",
+        "terminal",
+        "projects",
+        "sessions",
     })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
@@ -309,9 +358,14 @@ class AgentZeroAdapter(Adapter):
         projects_root = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", "").strip()
         profile = os.environ.get("AIOS_BENCH_AGENTZERO_PROFILE", "").strip()
         declared_model = os.environ.get("AIOS_BENCH_AGENTZERO_RESOLVED_MODEL", "").strip()
+        utility_model = os.environ.get("AIOS_BENCH_AGENTZERO_UTILITY_MODEL", "").strip()
         provider = os.environ.get("AIOS_BENCH_AGENTZERO_PROVIDER", "").strip() or None
         model_endpoint = os.environ.get("AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT", "").strip() or None
         isolated_service = os.environ.get("AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE", "").strip()
+        project_memory_isolation = os.environ.get(
+            "AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION", ""
+        ).strip()
+        service_revision = os.environ.get("AIOS_BENCH_AGENTZERO_REVISION", "").strip()
         template_digest = template_project_digest(projects_root or None, template or None)
 
         environment = {
@@ -322,7 +376,10 @@ class AgentZeroAdapter(Adapter):
             "AIOS_BENCH_AGENTZERO_PROJECTS_ROOT": projects_root,
             "AIOS_BENCH_AGENTZERO_PROFILE": profile,
             "AIOS_BENCH_AGENTZERO_RESOLVED_MODEL": declared_model,
+            "AIOS_BENCH_AGENTZERO_UTILITY_MODEL": utility_model,
             "AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE": isolated_service,
+            "AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION": project_memory_isolation,
+            "AIOS_BENCH_AGENTZERO_REVISION": service_revision,
         }
         if model and model != "unknown":
             environment["AIOS_BENCH_REQUESTED_MODEL"] = model
@@ -332,6 +389,7 @@ class AgentZeroAdapter(Adapter):
         if requested and resolved != requested:
             resolved = None
 
+        true_values = {"1", "true", "yes", "on"}
         return AgentInvocation(
             command,
             environment,
@@ -343,6 +401,8 @@ class AgentZeroAdapter(Adapter):
             configuration={
                 "transport": "external_api",
                 "service_endpoint": _public_service_endpoint(service_url),
+                "service_revision": service_revision or None,
+                "service_revision_resolution": "operator_declared_remote" if service_revision else None,
                 "project_template": template or None,
                 "project_template_digest": template_digest,
                 "projects_root_configured": bool(projects_root),
@@ -356,7 +416,10 @@ class AgentZeroAdapter(Adapter):
                 "telemetry": "api_log_get",
                 "structured_subagent_log_type": True,
                 "native_memory_scope": "ephemeral_project",
-                "isolated_service_attestation": isolated_service.lower() in {"1", "true", "yes", "on"},
+                "isolated_service_attestation": isolated_service.lower() in true_values,
+                "project_memory_isolation_attestation": project_memory_isolation.lower() in true_values,
+                "main_model_attestation": declared_model or None,
+                "utility_model_attestation": utility_model or None,
                 "model_binding": "operator_declared_remote",
             },
         )
