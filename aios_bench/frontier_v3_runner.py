@@ -8,11 +8,11 @@ from .server_metrics import build_server_metrics_client
 from .task_execution import run_frontier_task
 
 SEMANTIC_FILES = (
-    'adapters.py', 'evaluators.py', 'experiments.py', 'failures.py', 'fixtures.py',
-    'frontier_v3_runner.py', 'goose_telemetry.py', 'hermes_telemetry.py',
-    'letta_telemetry.py', 'manifest.py', 'models.py', 'pi_rpc.py', 'runner.py',
-    'sandbox.py', 'scheduler.py', 'scoring.py', 'task_execution.py', 'tasks.py',
-    'telemetry.py',
+    'adapters.py', 'agentzero_client.py', 'evaluators.py', 'experiments.py',
+    'failures.py', 'fixtures.py', 'frontier_v3_runner.py', 'goose_telemetry.py',
+    'hermes_telemetry.py', 'letta_telemetry.py', 'manifest.py', 'models.py',
+    'pi_rpc.py', 'runner.py', 'sandbox.py', 'scheduler.py', 'scoring.py',
+    'task_execution.py', 'tasks.py', 'telemetry.py',
 )
 SEMANTIC_DIRS = ('server_metrics',)
 
