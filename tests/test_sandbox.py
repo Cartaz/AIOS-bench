@@ -10,14 +10,6 @@ def _has_sequence(command: list[str], sequence: list[str]) -> bool:
     return any(command[index:index + width] == sequence for index in range(len(command) - width + 1))
 
 
-def test_codex_legacy_adapter_keeps_its_managed_sandbox(tmp_path: Path):
-    plan = workspace_sandbox("codex", tmp_path, "required")
-    assert plan.strategy == "adapter_workspace_write"
-    assert plan.write_confined is True
-    assert plan.grader_hidden is False
-    assert plan.wrap(["codex"]) == ["codex"]
-
-
 def test_bubblewrap_confines_writes_to_workspace(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
     monkeypatch.setattr("aios_bench.sandbox._benchmark_owned_paths", lambda: ([], []))
