@@ -147,16 +147,19 @@ generated oracle directories, prior runs and sibling workspaces are masked from
 the child process in addition to write confinement. A positive reference-solution
 preflight remains a later integrity step.
 
-## Results layout
+## Results layout and publication
 
-Raw benchmark runs are local data. They live under `results/.local/` using one
-canonical layout:
+Raw benchmark runs are local data. `results.jsonl` is the authoritative
+append-only task-observation journal. Analysis preserves every valid row as a
+raw attempt with a deterministic derived `attempt_id`/`attempt_index`, then
+constructs the familiar latest-result-per-task view separately.
 
 ```text
 results/
   README.md
   summary.json
   dashboard.html
+  publication.json
   .local/
     <harness>/
       <model>/
@@ -170,16 +173,22 @@ results/
             workspaces/
 ```
 
-`.local/` is ignored by Git. The repository publishes only the regenerated
-aggregate `summary.json` and `dashboard.html`; run metadata and generated v4
-oracles remain local for audit and reproducibility. See [run lifecycle and
-comparability](docs/RUNS_AND_RESULTS.md) and the [artifact retention
-policy](docs/ARTIFACT_RETENTION.md).
+`.local/` is ignored by Git. `summary.json` and `dashboard.html` are derived
+artifacts, not benchmark sources. `publication.json` seals the SHA-256 index of
+the local `run.json`/`results.jsonl` inputs, the analysis implementation
+fingerprint and the hashes of both published outputs. Generated v4 oracles remain
+local for audit and reproducibility and are not publication inputs.
 
 ```bash
 aiosbench dashboard  # local diagnostic view under results/.local/
-aiosbench publish    # reviewed aggregate snapshot under results/
+aiosbench publish    # regenerate summary/dashboard and write publication.json
+aiosbench verify     # verify seals and regenerate outputs from raw inputs
 ```
+
+`verify` fails closed if raw inputs changed, the analysis implementation differs,
+a published output was modified, or byte-identical regeneration no longer
+matches the seal. See [run lifecycle and comparability](docs/RUNS_AND_RESULTS.md)
+and the [artifact retention policy](docs/ARTIFACT_RETENTION.md).
 
 ## Frontier v3
 
