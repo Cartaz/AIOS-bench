@@ -1,0 +1,16 @@
+[
+  {
+    "id": "autonomy_expense_001",
+    "category": "autonomy",
+    "tier": 3,
+    "revision": 4,
+    "prompt": "Produce a monthly expense report from the authoritative transaction CSV in the workspace. Create tools/expense_report.py with --input and --output, skip malformed transactions without guessing, validate the tool on the supplied alternate dataset, and save reports/monthly_expense_report.md. Do not modify any source data. The dataset size, malformed-row count and distractor count vary between benchmark variants, so derive all results from the files rather than fixture-specific constants.",
+    "mode": "cold",
+    "tags": ["autonomy", "frontier_v4", "parametric", "grounded"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/monthly_expense_report.md", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "tools/expense_report.py", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "expense_report", "weight": 8, "fatal": true}
+    ]
+  }
+]
