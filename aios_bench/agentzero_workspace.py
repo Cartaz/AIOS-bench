@@ -14,6 +14,15 @@ PROJECT_META_DIR = ".a0proj"
 _PROJECT_HEADER = "project.json"
 _MCP_FILE = "mcp_servers.json"
 _FORBIDDEN_CUSTOMIZATION_DIRS = frozenset({"instructions", "knowledge", "skills", "agents"})
+_ALLOWED_META_FILES = frozenset({_PROJECT_HEADER, _MCP_FILE})
+_ALLOWED_HEADER_KEYS = frozenset({
+    "title",
+    "description",
+    "instructions",
+    "include_agents_md",
+    "color",
+    "git_url",
+})
 _SAFE_COMPONENT = re.compile(r"[^A-Za-z0-9_-]+")
 
 
@@ -40,10 +49,13 @@ def _tree_digest(root: Path) -> str:
 
 
 def validate_template_project(projects_root: Path, template_name: str) -> tuple[Path, str]:
-    """Validate a metadata-only Agent Zero project template.
+    """Validate a neutral metadata-only Agent Zero project template.
 
-    The template supplies only Agent Zero's project configuration. Benchmark task
-    files are copied into a newly-created sibling project for each attempt.
+    The template supplies only the minimum Agent Zero project identity required
+    to activate a project. Benchmark task files are copied into a newly-created
+    sibling project for each attempt. Prompt-visible project customization,
+    secrets, variables, subagent overrides, MCP configuration and prior project
+    memory are rejected rather than silently entering a benchmark run.
     """
     root = projects_root.expanduser().resolve()
     if not root.is_dir():
@@ -77,6 +89,18 @@ def validate_template_project(projects_root: Path, template_name: str) -> tuple[
         raise RuntimeError("Agent Zero template project.json is invalid") from exc
     if not isinstance(header, dict):
         raise RuntimeError("Agent Zero template project.json must be an object")
+
+    unexpected_header = sorted(str(key) for key in header if key not in _ALLOWED_HEADER_KEYS)
+    if unexpected_header:
+        raise RuntimeError(
+            "Agent Zero benchmark template project.json contains non-neutral fields: "
+            + ", ".join(unexpected_header)
+        )
+    title = str(header.get("title") or "").strip()
+    if title not in {"", "AIOS-bench"}:
+        raise RuntimeError("Agent Zero benchmark template title must be empty or AIOS-bench")
+    if str(header.get("description") or "").strip():
+        raise RuntimeError("Agent Zero benchmark template must have empty project description")
     if str(header.get("instructions") or "").strip():
         raise RuntimeError("Agent Zero benchmark template must have empty project instructions")
     if header.get("include_agents_md", True) is not False:
@@ -100,6 +124,21 @@ def validate_template_project(projects_root: Path, template_name: str) -> tuple[
             raise RuntimeError(
                 f"Agent Zero benchmark template must not contain custom {dirname} files"
             )
+
+    # Agent Zero stores project variables, secrets, subagent availability,
+    # project memory and plugin extension data under .a0proj. Keep the template
+    # deliberately smaller than the full project schema: only the neutral header
+    # and an empty MCP file are accepted. Empty metadata directories are harmless.
+    unexpected_meta_files = sorted(
+        path.relative_to(meta).as_posix()
+        for path in meta.rglob("*")
+        if path.is_file() and path.relative_to(meta).as_posix() not in _ALLOWED_META_FILES
+    )
+    if unexpected_meta_files:
+        raise RuntimeError(
+            "Agent Zero benchmark template contains unsupported metadata files: "
+            + ", ".join(unexpected_meta_files)
+        )
 
     return template, _tree_digest(meta)
 
