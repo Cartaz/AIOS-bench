@@ -31,13 +31,26 @@ memory and learning chains.
 
 ## OpenCode
 
-Install OpenCode. AIOS-bench uses `opencode run --dir <workspace> --format json --auto` so the fixture directory and event stream are explicit.
+Install a current OpenCode release. AIOS-bench uses
+`opencode run --dir <workspace> --format json --auto`, so the fixture directory
+and raw JSON event stream are explicit:
 
 ```bash
 aiosbench --opencode --model <provider/model>
 ```
 
-OpenCode's `serve` API is reserved for a future persistent-server adapter.
+The adapter normalizes OpenCode `tool_use`, `step_finish`, structured error and
+lifecycle records. Tool input/output is not copied into benchmark telemetry.
+Per-step token usage is accumulated into whole-session input/output totals.
+OpenCode's built-in `task` tool is treated as structured delegation evidence:
+one native `task` call produces a non-inferred `subagent_start`, and a terminal
+tool state produces the corresponding `subagent_end`. Consequently OpenCode is
+eligible for Frontier v3 `subagents` tasks; prose that merely says a subagent was
+used still does not count.
+
+OpenCode's `serve` API remains separate from this one-process-per-task adapter.
+If a future persistent-server profile is added, it should have its own execution
+fingerprint rather than silently changing the current isolation semantics.
 
 ## Goose
 
@@ -97,11 +110,11 @@ publication](RUNS_AND_RESULTS.md).
 
 ## Workspace write isolation
 
-Codex retains its native `workspace-write` sandbox. On Linux, other local CLI
-harnesses are wrapped with bubblewrap: the host root is read-only and only the
-task workspace and a temporary `/tmp` are writable; network access remains
-available for research tasks. The chosen strategy and whether writes were
-confined are recorded in `run.json.manifest.configuration`.
+On Linux, local CLI harnesses are wrapped with bubblewrap: the host root is
+read-only and only the task workspace and a temporary `/tmp` are writable;
+network access remains available for research tasks. The chosen strategy and
+whether writes were confined are recorded in
+`run.json.manifest.configuration`.
 
 Set `AIOS_BENCH_SANDBOX=required` to fail closed when bubblewrap is unavailable,
 or `AIOS_BENCH_SANDBOX=off` only for a deliberately unconfined diagnostic run.
