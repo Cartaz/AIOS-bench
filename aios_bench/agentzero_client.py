@@ -143,14 +143,37 @@ def _validate_profile() -> tuple[str, str | None, Path, Path]:
             "Agent Zero service/container with no personal host mounts"
         )
 
+    project_memory_isolation = os.environ.get(
+        "AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION", ""
+    ).strip().lower()
+    if project_memory_isolation not in _TRUE_VALUES:
+        raise RuntimeError(
+            "AIOS_BENCH_AGENTZERO_PROJECT_MEMORY_ISOLATION=1 is required after "
+            "verifying Agent Zero project_memory_isolation=true"
+        )
+
+    revision = os.environ.get("AIOS_BENCH_AGENTZERO_REVISION", "").strip()
+    if not revision:
+        raise RuntimeError(
+            "AIOS_BENCH_AGENTZERO_REVISION is required; use an Agent Zero release, "
+            "commit, or immutable container-image digest"
+        )
+
     requested = os.environ.get("AIOS_BENCH_REQUESTED_MODEL", "").strip()
     declared = os.environ.get("AIOS_BENCH_AGENTZERO_RESOLVED_MODEL", "").strip()
+    utility = os.environ.get("AIOS_BENCH_AGENTZERO_UTILITY_MODEL", "").strip()
     if requested and not declared:
         raise RuntimeError(
             "AIOS_BENCH_AGENTZERO_RESOLVED_MODEL is required to bind the remote Agent Zero model"
         )
     if requested and declared != requested:
         raise RuntimeError("Agent Zero resolved-model declaration does not match --model")
+    if requested and not utility:
+        raise RuntimeError(
+            "AIOS_BENCH_AGENTZERO_UTILITY_MODEL is required to attest Agent Zero's utility model"
+        )
+    if requested and utility != requested:
+        raise RuntimeError("Agent Zero utility-model declaration does not match --model")
 
     profile = os.environ.get("AIOS_BENCH_AGENTZERO_PROFILE", "").strip() or None
     return template, profile, Path(projects_root_raw), Path(workspace_raw)
