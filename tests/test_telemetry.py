@@ -1,4 +1,4 @@
-from aios_bench.telemetry import parse_jsonl, parse_output, parse_text
+from aios_bench.telemetry import parse_jsonl, parse_output, parse_pi_rpc, parse_text
 
 
 def test_text_parser_normalizes_common_events():
@@ -30,3 +30,22 @@ def test_structured_payloads_drop_prompts_and_bulk_output():
     assert "secret" not in encoded
     assert "bulk" not in encoded
     assert "terminal" in encoded
+
+
+def test_refusal_is_not_inferred_from_plain_text():
+    events = parse_text("I refuse to continue", source="agent")
+    assert not any(event.type == "refusal" for event in events)
+
+
+def test_structured_json_refusal_is_normalized():
+    events = parse_jsonl('{"type":"refusal","reason":"safety"}\n', source="agent")
+    assert [event.type for event in events] == ["refusal"]
+
+
+def test_pi_stop_reason_refusal_is_normalized():
+    payload = (
+        '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"refusal"}}\n'
+    )
+    events = parse_pi_rpc(payload)
+    assert any(event.type == "assistant_message" for event in events)
+    assert any(event.type == "refusal" for event in events)
