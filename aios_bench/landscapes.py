@@ -113,10 +113,11 @@ def pressure_landscapes(
     Full-vector cells preserve the joint pressure coordinates. Axis cells are
     explicitly marginal summaries over all observed values of the other
     coordinates; they are descriptive responses, not fitted difficulty curves.
-    Strict model identity is part of the grouping key so different inference
-    identities are never silently mixed into one landscape.
+    Model identity and the pressure-excluded landscape execution profile are
+    both grouping keys, so neither inference settings nor runner settings are
+    silently mixed when cells from separate experiments are combined.
     """
-    grouped: dict[tuple[str, str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         if not _matches_suite(row, suite, suite_revision):
             continue
@@ -125,6 +126,12 @@ def pressure_landscapes(
         if parameters is None or not family:
             continue
         fingerprint = str(row.get("model_identity_fingerprint") or "unverified")
+        profile = row.get("landscape_execution_fingerprint")
+        if not profile:
+            # Older v4 rows did not persist a pressure-excluded profile. Keep
+            # them isolated by their ordinary execution fingerprint rather than
+            # pretending they are comparable across pressure configurations.
+            profile = f"legacy:{row.get('execution_fingerprint', 'unreported')}"
         key = (
             str(row.get("harness", row.get("agent", "unknown"))),
             str(row.get("model", "unknown")),
@@ -132,6 +139,7 @@ def pressure_landscapes(
             str(row.get("suite_revision", "legacy")),
             str(family),
             fingerprint,
+            str(profile),
         )
         grouped[key].append(row)
 
@@ -181,6 +189,7 @@ def pressure_landscapes(
             "suite_revision": key[3],
             "variant_family": key[4],
             "model_identity_fingerprint": None if key[5] == "unverified" else key[5],
+            "landscape_execution_fingerprint": key[6],
             "strict_model_comparable": key[5] != "unverified" and all_strict,
             "execution_fingerprints": sorted(execution_fingerprints),
             "pressure_axes": sorted(axes),
@@ -216,12 +225,12 @@ def pressure_paired_comparisons(
 ) -> list[dict[str, Any]]:
     """Compare harnesses inside identical Frontier v4 pressure vectors.
 
-    Matching requires experiment, repeat, task, task seed and variant digest.
-    No observation is paired across independently generated variants or model
-    identities. The output is descriptive; global paired inference remains in
-    statistics.paired_comparisons().
+    Comparisons are experiment-scoped and then match repeat, task, task seed
+    and variant digest. No observation is paired across independently generated
+    variants, experiments or model identities. The output is descriptive;
+    global paired inference remains in statistics.paired_comparisons().
     """
-    groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    groups: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         if not _matches_suite(row, suite, suite_revision):
             continue
@@ -230,6 +239,7 @@ def pressure_paired_comparisons(
         if not row.get("variant_family") or _params(row) is None:
             continue
         key = (
+            str(row.get("experiment_id")),
             str(row.get("model", "unknown")),
             str(row.get("suite", "legacy")),
             str(row.get("suite_revision", "legacy")),
@@ -260,10 +270,11 @@ def pressure_paired_comparisons(
                     a_rows, b_rows = by_harness[harness_a], by_harness[harness_b]
                     base = {
                         "schema": PAIR_SCHEMA,
-                        "model": group_key[0],
-                        "suite": group_key[1],
-                        "suite_revision": group_key[2],
-                        "variant_family": group_key[3],
+                        "experiment_id": group_key[0],
+                        "model": group_key[1],
+                        "suite": group_key[2],
+                        "suite_revision": group_key[3],
+                        "variant_family": group_key[4],
                         "pressure_cell_id": _stable_id(vector_params[vector]),
                         "parameters": vector_params[vector],
                         "harness_a": harness_a,
@@ -274,8 +285,8 @@ def pressure_paired_comparisons(
                         output.append({**base, "comparable": False, "reason": rejection, "matched_observations": 0})
                         continue
 
-                    def indexed(source: list[dict[str, Any]]) -> dict[tuple[str, int, str, int, str], dict[str, Any]]:
-                        result: dict[tuple[str, int, str, int, str], dict[str, Any]] = {}
+                    def indexed(source: list[dict[str, Any]]) -> dict[tuple[int, str, int, str], dict[str, Any]]:
+                        result: dict[tuple[int, str, int, str], dict[str, Any]] = {}
                         for row in source:
                             if row.get("status") == "unsupported" or row.get("comparable") is False:
                                 continue
@@ -283,7 +294,6 @@ def pressure_paired_comparisons(
                                 continue
                             try:
                                 match = (
-                                    str(row["experiment_id"]),
                                     int(row["repeat"]),
                                     str(row["task_id"]),
                                     int(row["task_seed"]),
