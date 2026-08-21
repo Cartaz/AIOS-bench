@@ -82,6 +82,65 @@ def test_dashboard_history_keeps_incomplete_and_dry_runs_off_leaderboard(tmp_pat
     assert "dry-run" in history
 
 
+def test_dashboard_renders_reliability_paired_failure_and_efficiency_panels(tmp_path: Path) -> None:
+    for harness, score, success, failure in (
+        ("hermes", 100, True, "PASS"),
+        ("piagent", 80, False, "WRONG"),
+    ):
+        directory = tmp_path / harness / "model" / "runs" / "exp-r01"
+        directory.mkdir(parents=True)
+        metadata = {
+            "harness": harness,
+            "model": "ornith",
+            "run_id": "exp-r01",
+            "suite": "frontier_v3",
+            "suite_revision": "revision",
+            "execution_fingerprint": f"profile-{harness}",
+            "status": "completed",
+            "task_count": 1,
+            "started_at": "2026-08-20T10:00:00Z",
+            "finished_at": "2026-08-20T10:01:00Z",
+        }
+        row = {
+            "task_id": "task_a",
+            "task_revision": 1,
+            "status": "completed" if success else "failed",
+            "success": success,
+            "score": score,
+            "category": "coding",
+            "tier": 3,
+            "repeat": 1,
+            "orchestration_seed": 42,
+            "experiment_id": "exp",
+            "schedule_mode": "matched_interleaved",
+            "task_seed": 99,
+            "model_identity_fingerprint": "same-model",
+            "model_strictly_comparable": True,
+            "failure_kind": failure,
+            "usage_source": "server_verified",
+            "server_usage": {
+                "trusted_for_efficiency": True,
+                "prompt_tokens": 100,
+                "output_tokens": 20,
+                "prompt_seconds": 2.0,
+                "generation_seconds": 1.0,
+            },
+        }
+        (directory / "run.json").write_text(json.dumps(metadata), encoding="utf-8")
+        (directory / "results.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    dashboard = build_dashboard(tmp_path).read_text(encoding="utf-8")
+
+    assert "Reliability across repeats" in dashboard
+    assert "Paired harness comparisons" in dashboard
+    assert "Failure taxonomy" in dashboard
+    assert "Server-verified efficiency" in dashboard
+    assert "PASS=1" in dashboard
+    assert "WRONG=1" in dashboard
+    assert "same-model" not in dashboard  # internal identity stays out of the presentation
+    assert "20.0" in dashboard  # paired mean score delta and server generation tok/s
+
+
 def test_dashboard_can_be_published_outside_raw_results(tmp_path: Path) -> None:
     raw = tmp_path / "raw"
     published = tmp_path / "published"
