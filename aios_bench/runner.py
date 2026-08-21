@@ -31,7 +31,6 @@ class AgentConfig:
 
 AGENTS = {
     name: AgentConfig(name, {
-        "codex": "Codex",
         "hermes": "Hermes Agent", "piagent": "Pi Agent", "opencode": "OpenCode",
         "goose": "Goose", "letta": "Letta", "agentzero": "Agent Zero",
     }[name], adapter)
@@ -137,6 +136,7 @@ class BenchmarkRunner:
         return build_run_manifest(self.agent.adapter, invocation, configuration={
             "runner_workspace_isolation": sandbox.strategy,
             "runner_write_confined": sandbox.write_confined,
+            "runner_grader_hidden": sandbox.grader_hidden,
             "remote_project_boundary": self.agent.name == "agentzero",
             "task_timeout_seconds": self.task_timeout,
             "total_timeout_seconds": self.total_timeout,
@@ -213,7 +213,6 @@ class BenchmarkRunner:
             temporary.symlink_to(Path("runs") / self.run_id, target_is_directory=True)
             temporary.replace(latest)
         except OSError:
-            # latest.txt is the portable authoritative pointer.
             pass
 
     def _clear_latest_if_current(self) -> None:
@@ -259,7 +258,6 @@ class BenchmarkRunner:
         }
 
     def _current_suite_revision(self) -> str:
-        """Fingerprint used to decide whether a checkpoint can be resumed."""
         return _suite_revision(self.repo_root)
 
     def _log(self, event: dict) -> None:

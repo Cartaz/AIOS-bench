@@ -253,28 +253,6 @@ class AgentZeroAdapter(Adapter):
         )
 
 
-class CodexAdapter(Adapter):
-    name = "codex"
-    capabilities = frozenset({"json_events", "terminal", "workspace_write", "sessions"})
-
-    def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        command = [
-            "codex", "exec", "--json", "--ephemeral", "--skip-git-repo-check",
-            "--sandbox", "workspace-write", "-C", str(workspace.resolve()),
-        ]
-        if model and model != "unknown":
-            command += ["--model", model]
-        command.append(prompt)
-        requested = _requested_model(model)
-        return AgentInvocation(
-            command,
-            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
-            requested_model=requested,
-            resolved_model=requested,
-            configuration={"events": "json", "ephemeral": True, "sandbox": "workspace-write"},
-        )
-
-
 class GenericAdapter(Adapter):
     def __init__(self, name: str, executable: str):
         self.name = name
@@ -297,7 +275,6 @@ class GenericAdapter(Adapter):
 
 
 ADAPTERS: dict[str, Adapter] = {
-    "codex": CodexAdapter(),
     "hermes": HermesAdapter(),
     "piagent": PiAgentAdapter(),
     "opencode": OpenCodeAdapter(),

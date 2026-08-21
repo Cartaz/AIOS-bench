@@ -16,11 +16,25 @@ python -m pip install -e '.[dev]'  # contributors and CI
 aiosbench --piagent --model Qwen --no-resume
 ```
 
-Or run every configured harness sequentially:
+Or run every active harness in repeated experimental blocks:
 
 ```bash
-aiosbench --all --model Qwen
+aiosbench --all --model Qwen --repeats 3 --seed 42
 ```
+
+The active harness matrix is Hermes, Pi Agent, OpenCode, Goose, Letta and Agent
+Zero. `--seed` is an **orchestration seed** used to make repeat ordering
+reproducible; it does not set the model's sampling RNG. Sampling/server settings
+that affect generation should be supplied as JSON in
+`AIOS_BENCH_INFERENCE_CONFIG`. For strict same-model comparisons, set
+`AIOS_BENCH_MODEL_DIGEST` to an immutable model/GGUF digest. Optionally set
+`AIOS_BENCH_MODEL_FILE` to compute and record the SHA-256 directly; if both are
+provided, a mismatch is recorded and strict comparability is disabled.
+
+Each repeated suite run remains an independent raw run. The generated summary
+adds repeat-level diagnostics including pass rate, empirical pass@k/pass^k,
+median score, score range and an attempt-level Wilson 95% interval. Paired and
+cluster-aware publication statistics are intentionally a later protocol phase.
 
 The runner executes the active frontier v3 catalog in deterministic order, creates an isolated workspace for each task, preserves explicit warm-state chains for memory and learning tasks, records observable execution data, applies deterministic reference checks, stores resumable results, and regenerates the comparison dashboard.
 
@@ -40,6 +54,18 @@ execution`. A failed task is capped at 49/100, so partial artifacts cannot look
 like a passing result. Telemetry-derived efficiency and recovery metrics remain
 diagnostic fields rather than cross-harness score inputs. Tasks recorded as
 `unsupported` or dependency-`blocked` have no score.
+
+### Integrity preflight
+
+```bash
+aiosbench validate
+```
+
+The current preflight checks that every untouched fixture fails its deterministic
+acceptance grader. On Linux with bubblewrap, benchmark-owned task catalogs,
+tests and `reference_checks*.py` files are masked from the child process in
+addition to the existing write confinement. A positive reference-solution
+preflight is planned as the next integrity step.
 
 ## Results layout
 

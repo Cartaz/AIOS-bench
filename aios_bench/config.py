@@ -1,12 +1,20 @@
-from __future__ import annotations
-
 from pathlib import Path
 
 # Compatibility facade for callers that imported the old configuration module.
-# The runner registry is authoritative; keeping a second list here previously
-# allowed supported harnesses and commands to drift out of sync.
-from .runner import AGENTS, AgentConfig
+# Keep the runner registry as the source of adapter definitions, but expose only
+# the harnesses that belong to the benchmark matrix.
+from .runner import AGENTS as _REGISTERED_AGENTS, AgentConfig
 
+ACTIVE_HARNESS_NAMES = (
+    "hermes",
+    "piagent",
+    "opencode",
+    "goose",
+    "letta",
+    "agentzero",
+)
+
+AGENTS = {name: _REGISTERED_AGENTS[name] for name in ACTIVE_HARNESS_NAMES}
 Harness = AgentConfig
 DEFAULT_HARNESSES = AGENTS
 
