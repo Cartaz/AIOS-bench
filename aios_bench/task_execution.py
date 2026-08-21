@@ -12,6 +12,7 @@ from typing import Any, Callable
 from .adapters import PiAgentAdapter
 from .evaluators import evaluate_artifacts
 from .failures import classify_failure
+from .goose_telemetry import parse_goose_stream_json
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
 from .sandbox import workspace_sandbox
@@ -80,6 +81,17 @@ def _usage_source(trajectory: Trajectory, server_usage: dict[str, Any]) -> str:
     if trajectory.input_tokens > 0 or trajectory.output_tokens > 0:
         return "harness_reported"
     return "unavailable"
+
+
+def _parse_harness_output(stdout: str, stderr: str, source: str) -> list[dict[str, Any]]:
+    if source == "goose":
+        events = parse_goose_stream_json(stdout, source=source)
+        # Goose stream-json owns stdout. Stderr remains a best-effort diagnostic
+        # surface and uses the existing conservative text normalizer.
+        events.extend(parse_output("", stderr, source=source))
+    else:
+        events = parse_output(stdout, stderr, source=source)
+    return [event.to_dict() for event in events]
 
 
 def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
@@ -233,7 +245,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
     stdout = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
     stderr = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
     runner_events = list(trajectory.events)
-    parsed_events = [event.to_dict() for event in parse_output(stdout, stderr, source=runner.agent.name)]
+    parsed_events = _parse_harness_output(stdout, stderr, runner.agent.name)
     trajectory.apply_events([*runner_events, *parsed_events])
     if trajectory.errors and status == "completed":
         status = "failed"
