@@ -37,7 +37,7 @@ def test_frontier_v4_rejects_invalid_pressure_coordinates(monkeypatch):
         cli.main()
 
 
-def test_publish_reads_local_results_and_writes_only_snapshots(monkeypatch, tmp_path: Path, capsys):
+def test_publish_reads_local_results_writes_sealed_snapshots_and_verifies(monkeypatch, tmp_path: Path, capsys):
     local = tmp_path / "results" / ".local"
     published = tmp_path / "results"
     monkeypatch.setattr(cli, "RESULTS", local)
@@ -46,8 +46,13 @@ def test_publish_reads_local_results_and_writes_only_snapshots(monkeypatch, tmp_
     cli.main()
     assert (published / "summary.json").is_file()
     assert (published / "dashboard.html").is_file()
+    assert (published / "publication.json").is_file()
     assert not (published / "results.jsonl").exists()
-    assert "Published dashboard" in capsys.readouterr().out
+    assert "Publication seal" in capsys.readouterr().out
+
+    monkeypatch.setattr("sys.argv", ["aiosbench", "verify"])
+    cli.main()
+    assert '"ok": true' in capsys.readouterr().out.lower()
 
 
 def test_multiple_harness_flags_are_rejected(monkeypatch):
