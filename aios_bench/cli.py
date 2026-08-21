@@ -17,7 +17,7 @@ from .scheduler import MatchedInterleavedScheduler
 from .scoring import overall_score
 from .statistics import augment_summary_file
 from .tasks import load_tasks
-from .validation import validate_negative_baseline, validate_parametric_baseline
+from .validation import validate_parametric_baseline, validate_static_baseline
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ROOT / "benchmarks" / "tasks"
@@ -250,7 +250,7 @@ def main() -> None:
                 parameters=_v4_parameters(args),
             )
         else:
-            result = validate_negative_baseline(ROOT, tasks)
+            result = validate_static_baseline(ROOT, tasks)
         print(json.dumps(result, indent=2))
         if not result["ok"]:
             raise SystemExit(2)
