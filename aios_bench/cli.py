@@ -15,6 +15,7 @@ from .publication import render_derived, verify_publication, write_publication_m
 from .report import write_summary
 from .scheduler import MatchedInterleavedScheduler
 from .scoring import overall_score
+from .smoke import discover_smoke_run_dirs, make_smoke_id, select_smoke_tasks, write_smoke_report
 from .statistics import augment_summary_file
 from .tasks import load_tasks
 from .validation import validate_parametric_baseline, validate_static_baseline
@@ -23,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TASKS = ROOT / "benchmarks" / "tasks"
 PUBLISHED = ROOT / "results"
 RESULTS = PUBLISHED / ".local"
+SMOKE_RESULTS = PUBLISHED / ".smoke"
 SUITES = ("frontier_v3", "frontier_v4")
 
 
@@ -86,7 +88,7 @@ def _build_runner(
     common = dict(
         repo_root=ROOT,
         agent=AGENTS[harness],
-        results_dir=RESULTS,
+        results_dir=getattr(args, "_results_dir", RESULTS),
         task_timeout=args.timeout,
         total_timeout=args.total_timeout,
         run_id=run_id,
@@ -203,7 +205,7 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["run", "list", "score", "dashboard", "publish", "verify", "validate"],
+        choices=["run", "smoke", "list", "score", "dashboard", "publish", "verify", "validate"],
         default="run",
     )
     parser.add_argument("path", nargs="?", type=Path)
@@ -264,6 +266,36 @@ def main() -> None:
         raise SystemExit("--max-output-tokens must be >= 0")
     if args.metrics_poll_interval <= 0:
         raise SystemExit("--metrics-poll-interval must be > 0")
+
+    if args.command == "smoke":
+        if args.suite != "frontier_v3":
+            raise SystemExit("smoke currently targets the Frontier v3 integration contracts")
+        if not args.model or args.model == "unknown":
+            raise SystemExit("smoke requires an explicit --model so model binding can be verified")
+        try:
+            tasks = select_smoke_tasks(tasks, harnesses)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        smoke_id = args.run_id or make_smoke_id()
+        args.run_id = smoke_id
+        args.no_resume = True
+        args._results_dir = SMOKE_RESULTS
+        print("Smoke profile: " + ", ".join(task.id for task in tasks))
+        print(f"Smoke output:  {SMOKE_RESULTS}")
+
+        if len(harnesses) == 1:
+            exit_code = _run_single_harness(args, harnesses[0], tasks)
+        else:
+            exit_code = _run_matched_interleaved(args, harnesses, tasks)
+
+        run_dirs = discover_smoke_run_dirs(SMOKE_RESULTS, smoke_id)
+        report_path = write_smoke_report(SMOKE_RESULTS, smoke_id, run_dirs, tasks)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        print(f"\nSmoke report:         {report_path}")
+        print(f"Integration OK:       {report['integration_ok']}")
+        print(f"Strict model ready:   {report['strict_model_ready']}")
+        print(f"Server metrics ready: {report['server_metrics_ready']}")
+        raise SystemExit(0 if report["integration_ok"] else max(exit_code, 1))
 
     if len(harnesses) == 1:
         exit_code = _run_single_harness(args, harnesses[0], tasks)
