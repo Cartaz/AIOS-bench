@@ -1,4 +1,10 @@
-from aios_bench.statistics import aggregate_repeat_rows, paired_comparisons, wilson_interval
+from aios_bench.statistics import (
+    aggregate_repeat_rows,
+    failure_distributions,
+    paired_comparisons,
+    server_efficiency_groups,
+    wilson_interval,
+)
 
 
 def _row(task, repeat, success, score):
@@ -84,3 +90,41 @@ def test_paired_comparison_rejects_model_identity_mismatch():
     assert comparison["comparable"] is False
     assert comparison["reason"] == "model_identity_mismatch"
     assert comparison["matched_observations"] == 0
+
+
+def test_failure_distribution_counts_all_taxonomy_outcomes():
+    rows = [
+        {**_row("a", 1, True, 100), "failure_kind": "PASS"},
+        {**_row("b", 1, False, 49), "failure_kind": "WRONG"},
+        {**_row("c", 1, False, 0), "failure_kind": "TIMEOUT"},
+    ]
+    group = failure_distributions(rows, suite="frontier_v3", suite_revision="rev")[0]
+    assert group["observations"] == 3
+    assert group["counts"] == {"PASS": 1, "TIMEOUT": 1, "WRONG": 1}
+
+
+def test_server_efficiency_uses_totals_not_mean_of_rates():
+    base = {
+        "harness": "piagent", "model": "ornith", "suite": "frontier_v3",
+        "suite_revision": "rev", "execution_fingerprint": "fp",
+        "usage_source": "server_verified",
+    }
+    rows = [
+        {**base, "task_id": "a", "server_usage": {
+            "trusted_for_efficiency": True, "prompt_tokens": 100, "output_tokens": 20,
+            "prompt_seconds": 2.0, "generation_seconds": 1.0,
+        }},
+        {**base, "task_id": "b", "server_usage": {
+            "trusted_for_efficiency": True, "prompt_tokens": 300, "output_tokens": 80,
+            "prompt_seconds": 3.0, "generation_seconds": 4.0,
+        }},
+        {**base, "task_id": "ignored", "usage_source": "harness_reported", "server_usage": {
+            "trusted_for_efficiency": False, "prompt_tokens": 999, "output_tokens": 999,
+        }},
+    ]
+    group = server_efficiency_groups(rows, suite="frontier_v3", suite_revision="rev")[0]
+    assert group["server_verified_tasks"] == 2
+    assert group["prompt_tokens"] == 400
+    assert group["output_tokens"] == 100
+    assert group["prompt_tokens_per_second"] == 80
+    assert group["generation_tokens_per_second"] == 20
