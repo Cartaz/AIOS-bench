@@ -8,7 +8,6 @@ from aios_bench.adapters import (
     Adapter,
     AgentInvocation,
     AgentZeroAdapter,
-    CodexAdapter,
     HermesAdapter,
     LettaAdapter,
     PiAgentAdapter,
@@ -41,15 +40,16 @@ def test_category_and_catalog_tag_requirements_are_composed():
     required = required_capabilities_for("browser", ["grounded", "requires:citations"])
     assert required == frozenset({"browser", "citations"})
     assert HermesAdapter().assess_capabilities("browser").is_supported
-    assert not CodexAdapter().assess_capabilities("browser").is_supported
-    assert CodexAdapter().assess_capabilities("coding").is_supported
+    assert not PiAgentAdapter().assess_capabilities("browser").is_supported
+    assert PiAgentAdapter().assess_capabilities("coding").is_supported
 
 
 def test_task_explicit_requirements_are_included():
     task = SimpleNamespace(category="coding", tags=(), required_capabilities=("terminal", "workspace_write"))
-    assessment = CodexAdapter().assess_task(task)
-    assert assessment.is_supported
+    assessment = HermesAdapter().assess_task(task)
+    assert not assessment.is_supported
     assert assessment.required == frozenset({"terminal", "workspace_write"})
+    assert assessment.missing == frozenset({"workspace_write"})
 
 
 def test_agentzero_manifest_never_serializes_api_key(monkeypatch, tmp_path: Path):
@@ -72,8 +72,8 @@ def test_agentzero_manifest_never_serializes_api_key(monkeypatch, tmp_path: Path
 
 
 def test_manifest_records_declared_model_and_safe_configuration(tmp_path: Path):
-    adapter = CodexAdapter()
-    invocation = adapter.build("private prompt", tmp_path, "openai/gpt-test")
+    adapter = PiAgentAdapter()
+    invocation = adapter.build("private prompt", tmp_path, "local/model")
     manifest = build_run_manifest(
         adapter,
         invocation,
@@ -81,13 +81,13 @@ def test_manifest_records_declared_model_and_safe_configuration(tmp_path: Path):
         probe_version=False,
     )
     assert manifest["schema"] == "aios-bench/run-manifest/v2"
-    assert manifest["model"]["requested"] == "openai/gpt-test"
-    assert manifest["model"]["resolved"] == "openai/gpt-test"
+    assert manifest["model"]["requested"] == "local/model"
+    assert manifest["model"]["resolved"] == "local/model"
     assert manifest["model"]["resolution"] == "adapter_pinned"
     assert manifest["model"]["verification"] == "declared_model"
     assert manifest["model"]["strictly_comparable"] is False
     assert len(manifest["model"]["identity_fingerprint"]) == 64
-    assert manifest["configuration"]["sandbox"] == "workspace-write"
+    assert manifest["configuration"]["mode"] == "rpc"
     assert manifest["configuration"]["access_token"] == "[redacted]"
 
 
