@@ -81,7 +81,8 @@ def test_agentzero_manifest_never_serializes_api_key(monkeypatch, tmp_path: Path
     assert manifest["model"]["resolution"] == "requested_unverified"
     assert manifest["model"]["verification"] == "unverified"
     assert manifest["model"]["strictly_comparable"] is False
-    assert manifest["model"]["endpoint"] == "https://example.test:8443/api"
+    assert manifest["model"]["endpoint"] is None
+    assert manifest["configuration"]["service_endpoint"] == "https://example.test:8443/api"
     assert manifest["configuration"]["api_key_configured"] is True
 
 
