@@ -99,4 +99,7 @@ def test_frontier_v3_resume_rejects_results_from_another_suite_revision(tmp_path
 
 
 def test_suite_revision_covers_execution_and_scoring_semantics():
-    assert {"runner.py", "adapters.py", "sandbox.py", "scoring.py", "telemetry.py"} <= set(SEMANTIC_FILES)
+    assert {
+        "runner.py", "adapters.py", "sandbox.py", "scoring.py", "telemetry.py",
+        "experiments.py", "scheduler.py",
+    } <= set(SEMANTIC_FILES)
