@@ -35,7 +35,7 @@ def test_bubblewrap_masks_benchmark_owned_grader_paths(monkeypatch, tmp_path: Pa
     assert _has_sequence(command, ["--ro-bind", "/dev/null", str(hidden_file.resolve())])
 
 
-def test_historical_results_and_sibling_workspaces_are_hidden(tmp_path: Path):
+def test_historical_results_sibling_workspaces_and_oracles_are_hidden(tmp_path: Path):
     local = tmp_path / "results" / ".local"
     workspace = local / "piagent" / "ornith" / "runs" / "run-2" / "workspaces" / "task-2"
     workspace.mkdir(parents=True)
@@ -43,16 +43,34 @@ def test_historical_results_and_sibling_workspaces_are_hidden(tmp_path: Path):
     other_model = local / "piagent" / "old-model"; (other_model / "runs" / "r").mkdir(parents=True)
     other_run = local / "piagent" / "ornith" / "runs" / "run-1"; other_run.mkdir(parents=True)
     sibling = workspace.parent / "task-1"; sibling.mkdir()
-    logs = workspace.parent.parent / "logs"; logs.mkdir()
-    metadata = workspace.parent.parent / "run.json"; metadata.write_text("{}", encoding="utf-8")
+    run_dir = workspace.parent.parent
+    logs = run_dir / "logs"; logs.mkdir()
+    oracles = run_dir / "oracles"; oracles.mkdir()
+    (oracles / "task-2.json").write_text('{"secret": true}', encoding="utf-8")
+    metadata = run_dir / "run.json"; metadata.write_text("{}", encoding="utf-8")
     directories, files = _result_history_paths(workspace)
     assert other_harness in directories
     assert other_model in directories
     assert other_run in directories
     assert sibling in directories
     assert logs in directories
+    assert oracles in directories
     assert metadata in files
     assert workspace not in directories
+
+
+def test_bubblewrap_masks_current_parametric_oracle_directory(monkeypatch, tmp_path: Path):
+    local = tmp_path / "results" / ".local"
+    workspace = local / "piagent" / "ornith" / "runs" / "run-2" / "workspaces" / "task-2"
+    workspace.mkdir(parents=True)
+    oracles = workspace.parent.parent / "oracles"
+    oracles.mkdir()
+    (oracles / "task-2.json").write_text('{"secret": true}', encoding="utf-8")
+    monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+
+    command = workspace_sandbox("hermes", workspace, "required").wrap(["hermes"])
+
+    assert _has_sequence(command, ["--tmpfs", str(oracles.resolve())])
 
 
 def test_pi_state_writes_use_an_ephemeral_overlay(monkeypatch, tmp_path: Path):
