@@ -149,30 +149,33 @@ facility is explicitly enabled by the adapter.
 ## Agent Zero
 
 Agent Zero is integrated through its documented external HTTP API, not by
-scraping the Web UI. Because the Agent Zero service owns its own filesystem,
-plugins and model configuration, use a **dedicated benchmark project** whose
-workdir maps only to the benchmark workspace boundary. Never reuse a personal
-project.
+scraping the Web UI. Its service owns a separate project filesystem, so the
+benchmark uses a shared projects-root bridge rather than pretending that a
+static Agent Zero project is the same directory as an AIOS-bench task workspace.
+For publication-grade runs, use a **dedicated Agent Zero service/container** with
+no personal host mounts or personal projects visible to the service.
 
-Before running AIOS-bench, configure that Agent Zero project so native persistent
-memory cannot create a second hidden state channel:
+Create one neutral template project, for example `aios-bench`, under Agent
+Zero's `usr/projects` directory. The template is configuration only: AIOS-bench
+requires that it contain no task files outside `.a0proj`, no project
+instructions, no bound Git repository, no custom instruction/knowledge/skill or
+agent files, no configured MCP servers, and `include_agents_md=false`. The
+validated `.a0proj` tree is hashed into the run manifest.
 
-- enable project memory isolation;
-- disable **Memory auto-recall** (`memory_recall_enabled=false`);
-- disable **Auto-memorize** (`memory_memorize_enabled=false`);
-- configure the project/profile main model to exactly the model passed to
-  `aiosbench --model`;
-- if Agent Zero uses a utility model during the selected profile, bind it to the
-  same benchmark model or otherwise include that difference in the declared
-  inference configuration.
+The projects directory must be visible to both the Agent Zero service and the
+AIOS-bench process. If Agent Zero runs in a container, bind-mount a host
+directory as the service's `usr/projects` and point
+`AIOS_BENCH_AGENTZERO_PROJECTS_ROOT` at that same host directory. Do not point it
+at a directory containing personal projects.
 
-Then configure the benchmark client:
+Configure the benchmark client as follows:
 
 ```bash
 export AIOS_BENCH_AGENTZERO_URL=http://127.0.0.1:80
 export AIOS_BENCH_AGENTZERO_API_KEY=<api-key>
 export AIOS_BENCH_AGENTZERO_PROJECT=aios-bench
-export AIOS_BENCH_AGENTZERO_ISOLATED_PROJECT=1
+export AIOS_BENCH_AGENTZERO_PROJECTS_ROOT=/path/to/dedicated/agent-zero/usr/projects
+export AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE=1
 export AIOS_BENCH_AGENTZERO_RESOLVED_MODEL=<model>
 
 # Optional but recommended provenance when known:
@@ -183,35 +186,58 @@ export AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT=http://127.0.0.1:8080/v1
 aiosbench --agentzero --model <model>
 ```
 
-`AIOS_BENCH_AGENTZERO_ISOLATED_PROJECT=1` is an explicit operator attestation,
-not an automatic reconfiguration of Agent Zero. The client fails closed if the
-project is missing, the attestation is absent, or
+`AIOS_BENCH_AGENTZERO_ISOLATED_SERVICE=1` is an explicit operator attestation
+that the Agent Zero instance/container is benchmark-only and has no personal
+host mounts. The client fails closed if the template/project-root/workspace is
+missing, that attestation is absent, or
 `AIOS_BENCH_AGENTZERO_RESOLVED_MODEL` does not exactly match `--model`. For a
 publication-grade comparison, continue to provide the common
 `AIOS_BENCH_MODEL_DIGEST` and `AIOS_BENCH_INFERENCE_CONFIG`; the remote model
 binding is recorded as `operator_declared_remote`, not as if AIOS-bench itself
 had changed Agent Zero's model.
 
-Each task deliberately omits `context_id` on `/api_message`, forcing Agent Zero
-to create a fresh conversation context. After the task finishes, AIOS-bench
-retrieves the API-key-protected `/api_log_get` record, projects only structural
-event identity, and deletes the remote context with `/api_terminate_chat`.
-Assistant text, tool arguments, tool output, subordinate prompts/results and log
-content are never copied into benchmark telemetry.
+For each task, AIOS-bench creates a new physical sibling project with a unique
+name, copies the neutral `.a0proj` metadata plus the task workspace into it, and
+passes that ephemeral project name to `/api_message` without a `context_id`.
+Thus each attempt receives both a fresh Agent Zero project and a fresh chat
+context. Native Agent Zero state that is project-scoped is confined to that
+single attempt rather than becoming a cross-task hidden channel. Warm
+memory/learning chains remain benchmark-owned because their artifacts are copied
+through the ordinary AIOS-bench workspace just like every other harness.
 
-Agent Zero's `call_subordinate` implementation writes a first-class log item with
-`type="subagent"`. AIOS-bench treats that server-side type as non-inferred
-`subagent_start`/`subagent_end` evidence, so Agent Zero is eligible for Frontier
-`subagents` tasks without accepting prose claims. Structured `tool` and
-`browser` log items likewise provide tool telemetry and make browser tasks
-eligible. Token efficiency still comes from the shared server metrics path when
-configured; the external log API is not used to invent token counts.
+After the response, AIOS-bench retrieves the API-key-protected `/api_log_get`
+record, terminates the chat through `/api_terminate_chat`, validates the remote
+project tree, copies artifacts back into the authoritative task workspace while
+excluding `.a0proj`, and removes the ephemeral project. Symlinks are rejected
+both on input and before the copy-back so a remote project cannot escape the
+workspace boundary. Under bubblewrap the host root stays read-only; only the
+normal task workspace, `/tmp`, and the explicitly configured projects-root
+bridge are writable by the Agent Zero client.
 
-The Agent Zero service URL is a harness-control endpoint and is recorded in run
-configuration. It is **not** used as the model endpoint in the model identity
-fingerprint. Set `AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT` when the inference
-endpoint is Agent-Zero-specific; otherwise the common `AIOS_BENCH_ENDPOINT` can
-supply the model endpoint just as it does for the other harnesses.
+If the outer runner kills the client on timeout, its `finally` cleanup cannot be
+guaranteed. This does not permit cross-task contamination: the timed-out attempt
+has a unique project name and the next task always receives another new project.
+A benchmark-only service/projects-root remains required so such orphaned
+projects cannot interact with unrelated user state and can be removed safely
+outside a run if necessary.
+
+Agent Zero's server-side log provides the observability surface. A native
+`type="subagent"` entry written by `call_subordinate` is accepted as
+non-inferred `subagent_start` evidence; `subagent_end` is emitted only when the
+same structured record contains an observed result. Structured `tool`, `browser`,
+`code_exe`, `error`, and `response` entries are normalized similarly without
+copying assistant text, reasoning, prompts, tool arguments, tool output, or
+subordinate content. Consequently Agent Zero is eligible for browser and
+`subagents` tasks without accepting prose claims. Token efficiency still comes
+from the shared server-metrics path when configured; `/api_log_get` is not used
+to invent token counts.
+
+The Agent Zero service URL is a harness-control endpoint and is recorded only in
+run configuration after credentials/query/fragment are removed. It is **not**
+the model inference endpoint. Set `AIOS_BENCH_AGENTZERO_MODEL_ENDPOINT` when the
+actual inference endpoint is Agent-Zero-specific; otherwise the common
+`AIOS_BENCH_ENDPOINT` can supply model provenance just as it does for the other
+harnesses.
 
 ## Capability policy
 
@@ -245,5 +271,6 @@ whether writes were confined are recorded in
 Set `AIOS_BENCH_SANDBOX=required` to fail closed when bubblewrap is unavailable,
 or `AIOS_BENCH_SANDBOX=off` only for a deliberately unconfined diagnostic run.
 The default `auto` mode records an explicit `cwd_only_unconfined` fallback on
-platforms without bubblewrap. Agent Zero additionally depends on its configured
-remote project boundary; never point that project at a personal workspace.
+platforms without bubblewrap. Agent Zero is the one active harness with an
+additional writable path: its explicitly configured benchmark-only projects-root
+bridge. No other host path is made writable by that integration.
