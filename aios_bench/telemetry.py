@@ -12,6 +12,7 @@ TOOL_PATTERNS = [
     re.compile(r"(?:tool|function)[ _-]*(?:call|use)[: ]+([A-Za-z0-9_.:-]+)", re.I),
     re.compile(r"<tool_call>.*?<name>(.*?)</name>", re.I | re.S),
 ]
+_REFUSAL_STOP_REASONS = {"refusal", "refused", "content_filter", "safety"}
 
 
 def _compact_payload(item: dict[str, Any]) -> dict[str, Any]:
@@ -73,6 +74,28 @@ def _usage(item: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _record_assistant_message(
+    collector: EventCollector,
+    *,
+    source: str,
+    message: dict[str, Any],
+    turn: bool = False,
+) -> None:
+    usage = _usage(message)
+    stop_reason = message.get("stopReason")
+    collector.add(
+        "assistant_message",
+        source=source,
+        content=message.get("content", []),
+        usage=usage,
+        stop_reason=stop_reason,
+        response_id=message.get("responseId"),
+        turn=turn,
+    )
+    if str(stop_reason or "").strip().lower() in _REFUSAL_STOP_REASONS:
+        collector.add("refusal", source=source, stop_reason=stop_reason)
+
+
 def parse_pi_rpc(text: str, *, source: str = "piagent") -> list[Event]:
     """Normalize Pi RPC JSONL events into AIOS-bench canonical events."""
     collector = EventCollector()
@@ -87,7 +110,6 @@ def parse_pi_rpc(text: str, *, source: str = "piagent") -> list[Event]:
 
         kind = item.get("type")
         if kind == "response":
-            # RPC command acknowledgements are protocol metadata, not agent events.
             continue
         if kind == "agent_start":
             collector.add("session_start", source=source, payload=_compact_payload(item))
@@ -95,28 +117,29 @@ def parse_pi_rpc(text: str, *, source: str = "piagent") -> list[Event]:
             collector.add("session_end", source=source, payload=_compact_payload(item))
         elif kind == "message_end":
             message = item.get("message") or {}
-            role = message.get("role")
-            usage = _usage(message)
-            if role == "assistant":
-                collector.add("assistant_message", source=source, content=message.get("content", []), usage=usage,
-                               stop_reason=message.get("stopReason"), response_id=message.get("responseId"))
+            if message.get("role") == "assistant":
+                _record_assistant_message(collector, source=source, message=message)
         elif kind == "turn_end":
             message = item.get("message") or {}
-            usage = _usage(message)
-            collector.add("assistant_message", source=source, content=message.get("content", []), usage=usage,
-                           stop_reason=message.get("stopReason"), response_id=message.get("responseId"), turn=True)
+            _record_assistant_message(collector, source=source, message=message, turn=True)
             for result in item.get("toolResults", []) or []:
-                collector.add("tool_result", source=source,
-                              payload=_compact_payload(result) if isinstance(result, dict) else {})
+                collector.add(
+                    "tool_result",
+                    source=source,
+                    payload=_compact_payload(result) if isinstance(result, dict) else {},
+                )
         elif kind == "tool_execution_start":
-            collector.add("tool_call", source=source, tool=item.get("toolName", item.get("name")),
-                           call_id=item.get("toolCallId", item.get("id")))
+            collector.add(
+                "tool_call", source=source, tool=item.get("toolName", item.get("name")),
+                call_id=item.get("toolCallId", item.get("id")),
+            )
         elif kind == "tool_execution_end":
-            collector.add("tool_result", source=source, tool=item.get("toolName", item.get("name")),
-                           call_id=item.get("toolCallId", item.get("id")), is_error=bool(item.get("isError")))
+            collector.add(
+                "tool_result", source=source, tool=item.get("toolName", item.get("name")),
+                call_id=item.get("toolCallId", item.get("id")), is_error=bool(item.get("isError")),
+            )
         elif kind == "tool_execution_update":
-            collector.add("tool_result", source=source, update=True,
-                          call_id=item.get("toolCallId", item.get("id")))
+            collector.add("tool_result", source=source, update=True, call_id=item.get("toolCallId", item.get("id")))
         elif kind == "bash_execution_update":
             collector.add("terminal", source=source, call_id=item.get("toolCallId", item.get("id")))
         elif kind in {"auto_retry_start", "summarization_retry_attempt_start"}:
@@ -126,13 +149,11 @@ def parse_pi_rpc(text: str, *, source: str = "piagent") -> list[Event]:
         elif kind == "agent_end":
             if item.get("willRetry"):
                 collector.add("retry", source=source, payload=_compact_payload(item))
+        elif kind in {"refusal", "refused", "safety_refusal"}:
+            collector.add("refusal", source=source, payload=_compact_payload(item))
         elif kind == "message_update":
-            # message_end carries the final content and usage. Persisting every
-            # streaming delta made canonical trajectories quadratic in size.
             continue
         elif kind in {"queue_update", "compaction_start", "compaction_end", "turn_start", "message_start"}:
-            # Preserve protocol lifecycle information without forcing it into a
-            # benchmark capability category.
             collector.add("unknown", source=source, rpc_type=kind)
         else:
             collector.add("unknown", source=source, rpc_type=kind)
@@ -169,6 +190,9 @@ def parse_jsonl(text: str, *, source: str) -> list[Event]:
             "subagent_end": "subagent_end",
             "file_read": "file_read",
             "file_write": "file_write",
+            "refusal": "refusal",
+            "refused": "refusal",
+            "safety_refusal": "refusal",
         }
         event_type = mapping.get(kind, "unknown")
         collector.add(event_type, source=source, payload=_compact_payload(item))

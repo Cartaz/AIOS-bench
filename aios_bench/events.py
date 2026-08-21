@@ -22,6 +22,8 @@ EVENT_TYPES = {
     "subagent_end",
     "error",
     "retry",
+    "refusal",
+    "server_metrics",
     "human_intervention",
     "unknown",
 }
