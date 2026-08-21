@@ -80,7 +80,12 @@ def _environment_json(name: str) -> dict[str, Any]:
             "parse_error": True,
             "raw_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
         }
-    return value if isinstance(value, dict) else {"value": value}
+    if not isinstance(value, dict):
+        return {
+            "parse_error": True,
+            "raw_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+        }
+    return value
 
 
 def sanitize_configuration(value: Any, *, _key: object = "") -> Any:
@@ -193,6 +198,7 @@ def build_run_manifest(
     if inference_configuration:
         inference.update(inference_configuration)
     safe_inference = sanitize_configuration(inference)
+    inference_valid = bool(safe_inference) and not bool(safe_inference.get("parse_error"))
 
     model_identity = {
         "resolved": effective_model,
@@ -209,7 +215,7 @@ def build_run_manifest(
         else "unverified"
     )
     strictly_comparable = bool(
-        effective_model and digest and safe_inference and not digest_mismatch
+        effective_model and digest and inference_valid and not digest_mismatch
     )
 
     return {
@@ -236,6 +242,7 @@ def build_run_manifest(
         "comparability": {
             "model_digest_recorded": bool(digest),
             "inference_recorded": bool(safe_inference),
+            "inference_valid": inference_valid,
             "strict": strictly_comparable,
         },
         "configuration": safe_configuration,
