@@ -43,6 +43,34 @@ def select_smoke_tasks(tasks: Iterable[Task], harnesses: Iterable[str]) -> list[
     return [by_id[task_id] for task_id in selected]
 
 
+def discover_smoke_run_dirs(output_root: Path, smoke_id: str) -> dict[str, list[Path]]:
+    """Find only runs created by one smoke invocation.
+
+    Smoke output is intentionally rooted outside ``results/.local``. Discovery
+    uses run metadata rather than model-path naming, so model identifiers never
+    need to be reconstructed by the diagnostic layer.
+    """
+
+    found: dict[str, list[Path]] = {}
+    if not output_root.is_dir():
+        return found
+    for metadata_path in sorted(output_root.glob("*/*/runs/*/run.json")):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        run_id = str(metadata.get("run_id") or "")
+        if run_id != smoke_id and not run_id.startswith(smoke_id + "-r"):
+            continue
+        harness = str(metadata.get("harness") or "")
+        if harness not in AGENTS:
+            continue
+        found.setdefault(harness, []).append(metadata_path.parent)
+    for harness in found:
+        found[harness].sort(key=lambda path: path.name)
+    return found
+
+
 def _latest_results(run_dir: Path) -> dict[str, dict]:
     checkpoint = run_dir / "results.jsonl"
     latest: dict[str, dict] = {}
@@ -73,11 +101,10 @@ def build_smoke_report(
     run_dirs: dict[str, list[Path]],
     tasks: list[Task],
 ) -> dict:
-    task_map = {task.id: task for task in tasks}
     harness_reports: list[dict] = []
-    integration_ok = True
-    strict_model_ready = True
-    server_metrics_ready = True
+    integration_ok = bool(run_dirs)
+    strict_model_ready = bool(run_dirs)
+    server_metrics_ready = bool(run_dirs)
 
     for harness in sorted(run_dirs):
         adapter = AGENTS[harness].adapter
@@ -144,12 +171,12 @@ def build_smoke_report(
                 "tasks": task_rows,
                 "ok": run_ok,
             })
-        harness_reports.append({"harness": harness, "runs": runs, "ok": all(run["ok"] for run in runs)})
+        harness_reports.append({"harness": harness, "runs": runs, "ok": bool(runs) and all(run["ok"] for run in runs)})
 
     return {
         "schema": SMOKE_SCHEMA,
         "suite": "frontier_v3",
-        "task_ids": [task.id for task in tasks if task.id in task_map],
+        "task_ids": [task.id for task in tasks],
         "integration_ok": integration_ok,
         "strict_model_ready": strict_model_ready,
         "server_metrics_ready": server_metrics_ready,
