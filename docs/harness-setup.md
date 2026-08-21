@@ -83,14 +83,42 @@ control requires an additional extension that is not enabled by this adapter.
 
 ## Letta Code
 
-Install Letta Code and configure an agent. Letta's headless `-p` path is used by the adapter. For longitudinal benchmarks, set a stable agent ID:
+Install a current Letta Code release and configure the backend/provider that can
+resolve the model passed to AIOS-bench:
 
 ```bash
-export AIOS_BENCH_LETTA_AGENT=<agent-id>
 aiosbench --letta --model <model>
 ```
 
-Model selection is deliberately not converted into an invented CLI flag; Letta configures model/provider at the agent level. The benchmark records the requested model as metadata, but the actual agent configuration must be verified before comparing runs.
+The benchmark profile intentionally does **not** resume a personal Letta agent.
+Each task uses `letta -p --ephemeral --output-format stream-json --yolo --no-mods
+--skill-sources bundled`, plus the requested `--model`. `--ephemeral` gives the
+task a fresh temporary conversation with no persisted agent memory/MemFS;
+`--no-mods` and bundled-only skill sources prevent personal/project extensions
+or skills from silently changing the run. `--yolo` only removes interactive tool
+approval prompts; AIOS-bench's outer workspace sandbox remains authoritative for
+write isolation. The legacy `AIOS_BENCH_LETTA_AGENT` variable is ignored by this
+default benchmark profile.
+
+Warm memory/learning chains remain benchmark-owned: AIOS-bench materializes the
+prior task's `.agent_memory` or `skills` artifacts into the next workspace. This
+keeps the state mechanism identical across harnesses rather than giving Letta an
+additional private persistent-memory channel.
+
+Letta's headless `stream-json` protocol exposes system/init, tool-call,
+tool-return, retry/error and final result records. AIOS-bench normalizes those
+records without retaining assistant text, reasoning, tool arguments,
+stdout/stderr or tool returns. Final structured usage supplies harness-reported
+input/output token counts when available; llama.cpp server counters remain the
+preferred efficiency source when configured.
+
+Letta's internal `Task` subagent tool is surfaced to current models as `Agent`.
+A structured `Agent`/`Task` `tool_call_message` produces a non-inferred
+`subagent_start`, and its matching `tool_return_message` produces
+`subagent_end`. Plain-text claims never count, so Letta is eligible for Frontier
+v3 `subagents` tasks only through native structured delegation evidence. Browser
+tasks remain unsupported in the default Letta profile because no browser
+facility is explicitly enabled by the adapter.
 
 ## Agent Zero
 
