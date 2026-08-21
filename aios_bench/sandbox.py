@@ -19,7 +19,13 @@ class SandboxPlan:
 
 def _benchmark_owned_paths() -> tuple[list[Path], list[Path]]:
     root = Path(__file__).resolve().parents[1]
-    hidden_directories = [path for path in (root / "benchmarks", root / "tests") if path.exists()]
+    candidates = (
+        root / ".git",
+        root / "benchmarks",
+        root / "tests",
+        root / "aios_bench" / "__pycache__",
+    )
+    hidden_directories = [path for path in candidates if path.exists()]
     hidden_files = sorted((root / "aios_bench").glob("reference_checks*.py"))
     return hidden_directories, hidden_files
 
@@ -28,9 +34,9 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     """Return a cross-harness confinement plan.
 
     On Linux, local harnesses run below a read-only host root with only the task
-    workspace and /tmp writable. Benchmark-owned task catalogs, tests and
-    deterministic reference checks are additionally masked from the child so
-    read-only access cannot leak grader implementation details.
+    workspace and /tmp writable. Benchmark-owned catalogs, tests, grader source,
+    grader bytecode and repository history are masked from the child so read-only
+    access cannot reveal deterministic oracle implementation details.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
