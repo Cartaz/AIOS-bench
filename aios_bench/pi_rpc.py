@@ -7,7 +7,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass
@@ -16,6 +16,7 @@ class PiRPCResult:
     stdout: str
     stderr: str
     timed_out: bool = False
+    runaway: bool = False
 
 
 class PiRPCClient:
@@ -24,13 +25,15 @@ class PiRPCClient:
     def __init__(self, model: str, workspace: Path, timeout: float,
                  environment: dict[str, str] | None = None,
                  extra_args: list[str] | None = None,
-                 command: list[str] | None = None) -> None:
+                 command: list[str] | None = None,
+                 runaway_check: Callable[[], bool] | None = None) -> None:
         self.model = model
         self.workspace = workspace
         self.timeout = timeout
         self.environment = environment or {}
         self.extra_args = list(extra_args or [])
         self.command = list(command) if command is not None else None
+        self.runaway_check = runaway_check
 
     def _command(self) -> list[str]:
         if self.command is not None:
@@ -54,6 +57,7 @@ class PiRPCClient:
         lines: list[str] = []
         stderr_text = ""
         timed_out = False
+        runaway = False
         protocol_succeeded = False
         protocol_failed = False
         selector = selectors.DefaultSelector()
@@ -66,6 +70,10 @@ class PiRPCClient:
                 remaining = self.timeout - (time.monotonic() - started)
                 if remaining <= 0:
                     timed_out = True
+                    proc.kill()
+                    break
+                if self.runaway_check is not None and self.runaway_check():
+                    runaway = True
                     proc.kill()
                     break
                 ready = selector.select(timeout=min(remaining, 0.25))
@@ -105,10 +113,10 @@ class PiRPCClient:
                 proc.kill(); proc.wait(timeout=2)
             if proc.stderr:
                 stderr_text = proc.stderr.read()
-        if timed_out or protocol_failed:
+        if timed_out or runaway or protocol_failed:
             returncode = 1
         elif protocol_succeeded:
             returncode = 0
         else:
             returncode = proc.returncode if proc.returncode is not None else 1
-        return PiRPCResult(returncode, "".join(lines), stderr_text, timed_out)
+        return PiRPCResult(returncode, "".join(lines), stderr_text, timed_out, runaway)
