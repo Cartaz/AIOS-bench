@@ -18,6 +18,7 @@ def _row(
     seed: int = 101,
     digest: str = "variant-a",
     fingerprint: str = "strict-model-fp",
+    landscape_profile: str = "stable-landscape-profile",
     experiment: str = "exp-1",
     repeat: int = 1,
 ) -> dict:
@@ -47,6 +48,7 @@ def _row(
             "months": months,
         },
         "execution_fingerprint": f"profile-{rows}-{malformed}-{distractors}-{months}",
+        "landscape_execution_fingerprint": landscape_profile,
         "model_identity_fingerprint": fingerprint,
         "model_strictly_comparable": True,
         "schedule_mode": "matched_interleaved",
@@ -71,6 +73,7 @@ def test_pressure_landscape_preserves_joint_cells_and_marginal_axes():
 
     assert len(groups) == 1
     group = groups[0]
+    assert group["landscape_execution_fingerprint"] == "stable-landscape-profile"
     assert group["pressure_axes"] == ["distractor_files", "malformed_rows", "months", "rows"]
     assert len(group["full_vector_cells"]) == 3
     row_axis = {cell["value"]: cell for cell in group["axes"]["rows"]}
@@ -82,13 +85,18 @@ def test_pressure_landscape_preserves_joint_cells_and_marginal_axes():
     assert row_axis[48]["failure_counts"] == {"PASS": 1, "WRONG": 1}
 
 
-def test_pressure_landscapes_never_mix_model_identities():
+def test_pressure_landscapes_never_mix_model_identities_or_execution_profiles():
     groups = pressure_landscapes([
-        _row("piagent", fingerprint="fp-a"),
-        _row("piagent", fingerprint="fp-b", seed=102, digest="b"),
+        _row("piagent", fingerprint="fp-a", landscape_profile="profile-a"),
+        _row("piagent", fingerprint="fp-b", landscape_profile="profile-a", seed=102, digest="b"),
+        _row("piagent", fingerprint="fp-a", landscape_profile="profile-b", seed=103, digest="c"),
     ])
-    assert len(groups) == 2
-    assert {group["model_identity_fingerprint"] for group in groups} == {"fp-a", "fp-b"}
+    assert len(groups) == 3
+    identities = {
+        (group["model_identity_fingerprint"], group["landscape_execution_fingerprint"])
+        for group in groups
+    }
+    assert identities == {("fp-a", "profile-a"), ("fp-b", "profile-a"), ("fp-a", "profile-b")}
 
 
 def test_pressure_pairs_require_exact_generated_variant_match():
@@ -116,6 +124,14 @@ def test_pressure_pairs_fail_closed_on_model_identity_mismatch():
     assert len(pairs) == 1
     assert pairs[0]["comparable"] is False
     assert pairs[0]["reason"] == "model_identity_mismatch"
+
+
+def test_pressure_pairs_do_not_cross_experiment_boundaries():
+    pairs = pressure_paired_comparisons([
+        _row("hermes", score=90, experiment="exp-a"),
+        _row("piagent", score=70, experiment="exp-b"),
+    ])
+    assert pairs == []
 
 
 def test_build_summary_includes_selected_v4_landscape(tmp_path: Path):
