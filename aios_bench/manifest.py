@@ -176,7 +176,7 @@ def build_run_manifest(
     if resolved_model:
         resolution = "harness_reported"
     elif invocation.resolved_model:
-        resolution = "adapter_pinned"
+        resolution = invocation.model_resolution or "adapter_pinned"
     elif requested_model:
         resolution = "requested_unverified"
     else:
