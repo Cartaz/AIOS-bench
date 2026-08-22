@@ -33,6 +33,7 @@ AGENTS = {
     name: AgentConfig(name, {
         "hermes": "Hermes Agent", "piagent": "Pi Agent", "opencode": "OpenCode",
         "goose": "Goose", "letta": "Letta", "agentzero": "Agent Zero",
+        "claude": "Claude Code",
     }[name], adapter)
     for name, adapter in ADAPTERS.items()
 }
