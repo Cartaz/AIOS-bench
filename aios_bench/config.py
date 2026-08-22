@@ -12,6 +12,7 @@ ACTIVE_HARNESS_NAMES = (
     "goose",
     "letta",
     "agentzero",
+    "claude",
 )
 
 AGENTS = {name: _REGISTERED_AGENTS[name] for name in ACTIVE_HARNESS_NAMES}

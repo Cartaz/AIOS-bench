@@ -30,14 +30,15 @@ Frontier v4 is a separate opt-in suite with deterministic seeded task variants:
 aiosbench --suite frontier_v4 --all --model Ornith --repeats 5 --seed 42
 ```
 
-The active harness matrix is Hermes, Pi Agent, OpenCode, Goose, Letta and Agent
-Zero. `--seed` is an **orchestration seed** used to make task-block ordering
-reproducible; it does not set the model's sampling RNG. With `--all`, each
-`(task, repeat)` is one matched block and harness order is shuffled independently
-and deterministically inside each block. In Frontier v3 every harness receives
-the same static task. In Frontier v4 the same orchestration seed also derives a
-shared `task_seed`, so every harness in a block receives a byte-identical
-variant while the next repeat deterministically changes the variant.
+The active harness matrix is Hermes, Pi Agent, OpenCode, Goose, Letta, Agent
+Zero and Claude Code. `--seed` is an **orchestration seed** used to make
+task-block ordering reproducible; it does not set the model's sampling RNG.
+With `--all`, each `(task, repeat)` is one matched block and harness order is
+shuffled independently and deterministically inside each block. In Frontier v3
+every harness receives the same static task. In Frontier v4 the same
+orchestration seed also derives a shared `task_seed`, so every harness in a
+block receives a byte-identical variant while the next repeat deterministically
+changes the variant.
 
 Sampling/server settings that affect generation should be supplied as JSON in
 `AIOS_BENCH_INFERENCE_CONFIG`. For strict same-model comparisons, set
@@ -62,6 +63,38 @@ explicit warm-state chains for memory and learning tasks. Under matched
 interleaving, `--total-timeout` is an active execution budget per harness, so
 time spent waiting while another harness runs does not consume that harness's
 budget.
+
+### Claude Code with a local model
+
+Claude Code is an external harness dependency; install it separately and expose
+your local model through an Anthropic-compatible endpoint or gateway. AIOS-bench
+runs Claude Code non-interactively in `safe-mode`, disables session persistence,
+MCP, Chrome and ambient project/user customizations, and consumes its structured
+`stream-json` output for tool, retry, token and native `Agent` delegation
+telemetry.
+
+For a namespaced benchmark configuration:
+
+```bash
+export AIOS_BENCH_CLAUDE_BASE_URL=http://127.0.0.1:8080
+export AIOS_BENCH_CLAUDE_API_KEY=local-placeholder   # only if the gateway requires it
+
+aiosbench --claude --model Ornith --no-resume --timeout 1800
+```
+
+`ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are also
+inherited when the corresponding `AIOS_BENCH_CLAUDE_*` override is absent. For
+fair same-model comparisons, the harness pins `ANTHROPIC_MODEL`, all Claude Code
+default model aliases (Haiku, Sonnet, Opus and Fable) and
+`CLAUDE_CODE_SUBAGENT_MODEL` to the requested `--model`. This prevents background
+or delegated work from silently using a second model.
+
+Claude Code's native `Agent` tool is retained and normalized to deterministic
+`subagent_start`/`subagent_end` events, so Frontier v3 subagent tasks are
+supported. Browser tasks remain capability-gated as `unsupported` by default:
+Claude Code has web tools, but their availability behind arbitrary local/custom
+Anthropic-compatible gateways is not portable enough to claim as a benchmark
+contract.
 
 ### llama.cpp server telemetry
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shlex
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -425,6 +427,120 @@ class AgentZeroAdapter(Adapter):
         )
 
 
+class ClaudeCodeAdapter(Adapter):
+    name = "claude"
+    capabilities = frozenset({
+        "headless",
+        "ephemeral",
+        "sessions",
+        "json_events",
+        "tool_events",
+        "token_stats",
+        "terminal",
+        "structured_subagent_events",
+    })
+
+    def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
+        requested = _requested_model(model)
+        configured_endpoint = os.environ.get("AIOS_BENCH_CLAUDE_BASE_URL", "").strip()
+        inherited_endpoint = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+        endpoint = configured_endpoint or inherited_endpoint or None
+        provider = os.environ.get("AIOS_BENCH_CLAUDE_PROVIDER", "").strip() or (
+            "anthropic_compatible_gateway" if endpoint else None
+        )
+
+        # Claude Code normally discovers user/project customization and writes
+        # state below ~/.claude. Safe mode keeps the native built-in tools (most
+        # importantly Agent) while disabling those ambient customizations. Use a
+        # per-workspace config root as a second isolation boundary and disable
+        # transcript persistence independently.
+        config_key = hashlib.sha256(str(workspace.resolve()).encode("utf-8")).hexdigest()[:16]
+        config_dir = Path(tempfile.gettempdir()) / "aios-bench-claude" / config_key
+        command = [
+            "claude",
+            "--safe-mode",
+            "-p",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--no-session-persistence",
+            "--dangerously-skip-permissions",
+            "--no-chrome",
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+        ]
+        if requested:
+            command += ["--model", requested]
+        command.append(prompt)
+
+        environment = {
+            "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
+            "CLAUDE_CONFIG_DIR": str(config_dir),
+            "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1",
+            "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
+            "DISABLE_TELEMETRY": "1",
+            "DISABLE_AUTOUPDATER": "1",
+        }
+
+        # Namespaced variables make benchmark configuration explicit while still
+        # allowing an existing ANTHROPIC_* setup to pass through untouched.
+        if configured_endpoint:
+            environment["ANTHROPIC_BASE_URL"] = configured_endpoint
+        api_key = os.environ.get("AIOS_BENCH_CLAUDE_API_KEY")
+        if api_key is not None:
+            environment["ANTHROPIC_API_KEY"] = api_key
+        auth_token = os.environ.get("AIOS_BENCH_CLAUDE_AUTH_TOKEN")
+        if auth_token is not None:
+            environment["ANTHROPIC_AUTH_TOKEN"] = auth_token
+
+        # Claude Code can otherwise use a Haiku-class model for background work,
+        # alias-specific models, or a separately configured subagent model. Pin
+        # every such surface to the benchmark model so one harness cannot gain a
+        # hidden second-model advantage.
+        if requested:
+            environment.update({
+                "ANTHROPIC_MODEL": requested,
+                "ANTHROPIC_DEFAULT_FABLE_MODEL": requested,
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": requested,
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": requested,
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": requested,
+                "CLAUDE_CODE_SUBAGENT_MODEL": requested,
+            })
+
+        effective_api_key = api_key if api_key is not None else os.environ.get("ANTHROPIC_API_KEY")
+        effective_auth_token = (
+            auth_token if auth_token is not None else os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        )
+        return AgentInvocation(
+            command,
+            environment,
+            requested_model=requested,
+            resolved_model=requested,
+            provider=provider,
+            endpoint=endpoint,
+            configuration={
+                "mode": "print",
+                "safe_mode": True,
+                "output_format": "stream-json",
+                "verbose": True,
+                "session_persistence": False,
+                "permission_mode": "bypassPermissions",
+                "chrome": False,
+                "mcp": "disabled",
+                "slash_commands": "disabled",
+                "ambient_customizations": "disabled",
+                "config_scope": "ephemeral_temp_dir_per_workspace",
+                "prompt_history": False,
+                "subprocess_credential_scrub": True,
+                "default_model_aliases_pinned": bool(requested),
+                "subagent_model_pinned": bool(requested),
+                "custom_base_url_configured": bool(endpoint),
+                "api_key_configured": bool(effective_api_key),
+                "auth_token_configured": bool(effective_auth_token),
+                "structured_agent_tool": True,
+            },
+        )
+
+
 class GenericAdapter(Adapter):
     def __init__(self, name: str, executable: str):
         self.name = name
@@ -453,4 +569,5 @@ ADAPTERS: dict[str, Adapter] = {
     "goose": GooseAdapter(),
     "letta": LettaAdapter(),
     "agentzero": AgentZeroAdapter(),
+    "claude": ClaudeCodeAdapter(),
 }

@@ -333,6 +333,260 @@ def parse_opencode_jsonl(text: str, *, source: str = "opencode") -> list[Event]:
     return collector.events
 
 
+def _claude_usage(item: dict[str, Any]) -> dict[str, int]:
+    usage = item.get("usage")
+    if not isinstance(usage, dict):
+        message = item.get("message")
+        usage = message.get("usage") if isinstance(message, dict) else {}
+    if not isinstance(usage, dict):
+        usage = {}
+    direct_input = int(usage.get("input_tokens", usage.get("input", 0)) or 0)
+    cache_creation = int(usage.get("cache_creation_input_tokens", 0) or 0)
+    cache_read = int(usage.get("cache_read_input_tokens", 0) or 0)
+    output = int(usage.get("output_tokens", usage.get("output", 0)) or 0)
+    reasoning = int(usage.get("reasoning_tokens", usage.get("reasoning", 0)) or 0)
+    input_tokens = direct_input + cache_creation + cache_read
+    return {
+        "input": input_tokens,
+        "output": output,
+        "reasoning": reasoning,
+        "total": input_tokens + output + reasoning,
+    }
+
+
+def _claude_content_blocks(item: dict[str, Any]) -> list[dict[str, Any]]:
+    message = item.get("message")
+    if not isinstance(message, dict):
+        return []
+    content = message.get("content")
+    if not isinstance(content, list):
+        return []
+    return [block for block in content if isinstance(block, dict)]
+
+
+def parse_claude_jsonl(text: str, *, source: str = "claude") -> list[Event]:
+    """Normalize Claude Code ``-p --output-format stream-json`` events.
+
+    Claude Code wraps Anthropic message content inside top-level ``assistant``
+    and ``user`` records. Tool calls and results therefore need explicit nested
+    parsing rather than the generic JSONL mapper. Native ``Agent`` tool calls are
+    authoritative delegation evidence and become non-inferred subagent events.
+    Prompts, tool input, tool output and final response text are intentionally
+    omitted from benchmark telemetry.
+    """
+    collector = EventCollector()
+    tool_names: dict[str, str] = {}
+    seen_calls: set[str] = set()
+    seen_results: set[str] = set()
+    seen_subagents: set[str] = set()
+    seen_subagent_ends: set[str] = set()
+    session_id: str | None = None
+    started = False
+    ended = False
+
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            _events_from_line(line, source, collector)
+            continue
+        if not isinstance(item, dict):
+            continue
+
+        kind = str(item.get("type", "")).strip().lower().replace("-", "_")
+        subtype = str(item.get("subtype", "")).strip().lower().replace("-", "_")
+
+        if kind == "system":
+            if subtype == "init":
+                session_id = str(item.get("session_id") or "") or session_id
+                tools = item.get("tools") if isinstance(item.get("tools"), list) else []
+                collector.add(
+                    "session_start",
+                    source=source,
+                    session_id=session_id,
+                    model=item.get("model"),
+                    tools=[str(tool)[:200] for tool in tools],
+                    mcp_server_count=len(item.get("mcp_servers") or []),
+                    plugin_count=len(item.get("plugins") or []),
+                    inferred=False,
+                )
+                started = True
+            elif subtype == "api_retry":
+                collector.add(
+                    "retry",
+                    source=source,
+                    attempt=item.get("attempt"),
+                    max_retries=item.get("max_retries"),
+                    retry_delay_ms=item.get("retry_delay_ms"),
+                    error_status=item.get("error_status"),
+                    error=item.get("error"),
+                    session_id=item.get("session_id"),
+                    inferred=False,
+                )
+            elif subtype in {"compact_boundary", "status"}:
+                continue
+            else:
+                collector.add("unknown", source=source, claude_type=kind, claude_subtype=subtype or None)
+            continue
+
+        if kind in {"assistant", "user"}:
+            if not started:
+                session_id = str(item.get("session_id") or "") or session_id
+                collector.add("session_start", source=source, session_id=session_id, inferred=False)
+                started = True
+
+            message = item.get("message") if isinstance(item.get("message"), dict) else {}
+            parent_tool_use_id = item.get("parent_tool_use_id")
+            if kind == "assistant":
+                stop_reason = message.get("stop_reason", message.get("stopReason"))
+                collector.add(
+                    "assistant_message",
+                    source=source,
+                    response_id=message.get("id"),
+                    parent_tool_use_id=parent_tool_use_id,
+                    stop_reason=stop_reason,
+                    usage=_claude_usage(item),
+                    inferred=False,
+                )
+                if str(stop_reason or "").strip().lower().replace("-", "_") in _REFUSAL_STOP_REASONS:
+                    collector.add("refusal", source=source, stop_reason=stop_reason, inferred=False)
+
+            for block in _claude_content_blocks(item):
+                block_type = str(block.get("type", "")).strip().lower().replace("-", "_")
+                if block_type == "tool_use":
+                    tool = str(block.get("name") or "").strip()
+                    call_id = str(block.get("id") or "").strip()
+                    call_key = call_id or f"{tool}:{len(seen_calls)}"
+                    if call_id:
+                        tool_names[call_id] = tool
+                    if call_key in seen_calls:
+                        continue
+                    collector.add(
+                        "tool_call",
+                        source=source,
+                        tool=tool or None,
+                        call_id=call_id or None,
+                        parent_tool_use_id=parent_tool_use_id,
+                        inferred=False,
+                    )
+                    seen_calls.add(call_key)
+                    normalized_tool = tool.lower().replace("_", "")
+                    if normalized_tool in {"read", "glob", "grep"}:
+                        collector.add(
+                            "file_read", source=source, tool=tool, call_id=call_id or None, inferred=False
+                        )
+                    elif normalized_tool in {"write", "edit", "notebookedit"}:
+                        collector.add(
+                            "file_write", source=source, tool=tool, call_id=call_id or None, inferred=False
+                        )
+                    elif normalized_tool in {"bash", "powershell"}:
+                        collector.add(
+                            "terminal", source=source, tool=tool, call_id=call_id or None, inferred=False
+                        )
+                    if normalized_tool == "agent" and call_key not in seen_subagents:
+                        collector.add(
+                            "subagent_start",
+                            source=source,
+                            tool=tool,
+                            call_id=call_id or None,
+                            parent_tool_use_id=parent_tool_use_id,
+                            inferred=False,
+                        )
+                        seen_subagents.add(call_key)
+
+                elif block_type == "tool_result":
+                    call_id = str(block.get("tool_use_id") or "").strip()
+                    tool = tool_names.get(call_id, "")
+                    result_key = call_id or f"result:{len(seen_results)}"
+                    if result_key in seen_results:
+                        continue
+                    is_error = bool(block.get("is_error"))
+                    collector.add(
+                        "tool_result",
+                        source=source,
+                        tool=tool or None,
+                        call_id=call_id or None,
+                        is_error=is_error,
+                        parent_tool_use_id=parent_tool_use_id,
+                        inferred=False,
+                    )
+                    seen_results.add(result_key)
+                    if tool.lower().replace("_", "") == "agent" and result_key not in seen_subagent_ends:
+                        collector.add(
+                            "subagent_end",
+                            source=source,
+                            tool=tool,
+                            call_id=call_id or None,
+                            is_error=is_error,
+                            parent_tool_use_id=parent_tool_use_id,
+                            inferred=False,
+                        )
+                        seen_subagent_ends.add(result_key)
+            continue
+
+        if kind == "result":
+            session_id = str(item.get("session_id") or "") or session_id
+            usage = _claude_usage(item)
+            model_usage = item.get("modelUsage")
+            if not isinstance(model_usage, dict):
+                model_usage = item.get("model_usage") if isinstance(item.get("model_usage"), dict) else {}
+            models = sorted(str(name)[:500] for name in model_usage)
+            stop_reason = item.get("stop_reason", item.get("stopReason"))
+            is_error = bool(item.get("is_error")) or subtype.startswith("error_")
+            if is_error:
+                errors = item.get("errors") if isinstance(item.get("errors"), list) else []
+                collector.add(
+                    "error",
+                    source=source,
+                    subtype=subtype or None,
+                    terminal_reason=item.get("terminal_reason"),
+                    api_error_status=item.get("api_error_status"),
+                    errors=[str(error)[:1000] for error in errors[:5]],
+                    inferred=False,
+                )
+            if str(stop_reason or "").strip().lower().replace("-", "_") in _REFUSAL_STOP_REASONS:
+                collector.add("refusal", source=source, stop_reason=stop_reason, inferred=False)
+            collector.add(
+                "session_end",
+                source=source,
+                session_id=session_id,
+                subtype=subtype or None,
+                terminal_reason=item.get("terminal_reason"),
+                stop_reason=stop_reason,
+                usage=usage,
+                models=models,
+                num_turns=item.get("num_turns"),
+                is_error=is_error,
+                inferred=False,
+            )
+            ended = True
+            continue
+
+        if kind in {"stream_event", "tool_progress", "status", "rate_limit_event", "prompt_suggestion"}:
+            continue
+        if kind in {"error", "refusal", "refused", "safety_refusal"}:
+            collector.add(
+                "refusal" if kind in {"refusal", "refused", "safety_refusal"} else "error",
+                source=source,
+                payload=_compact_payload(item),
+                inferred=False,
+            )
+        elif kind:
+            collector.add("unknown", source=source, claude_type=kind, claude_subtype=subtype or None)
+
+    if started and not ended:
+        collector.add(
+            "session_end",
+            source=source,
+            session_id=session_id,
+            incomplete=True,
+            inferred=True,
+        )
+    return collector.events
+
+
 def parse_text(text: str, *, source: str) -> list[Event]:
     collector = EventCollector()
     for line in text.splitlines():
@@ -377,6 +631,8 @@ def parse_output(stdout: str, stderr: str = "", *, source: str) -> list[Event]:
         events = parse_pi_rpc(stdout, source=source)
     elif source == "opencode":
         events = parse_opencode_jsonl(stdout, source=source)
+    elif source == "claude":
+        events = parse_claude_jsonl(stdout, source=source)
     else:
         events = parse_jsonl(stdout, source=source)
     events.extend(parse_text(stderr, source=f"{source}:stderr"))
