@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import AGENTS
 from .dashboard import build_dashboard
+from .doctor import apply_profile_environment, run_wizard
 from .experiments import annotate_repeat, make_experiment_id
 from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
@@ -202,14 +203,29 @@ def main() -> None:
     )
     parser.add_argument("--dashboard", action="store_true", help="Build the local comparison dashboard after the run")
     parser.add_argument("--keep-raw", action="store_true", help="Keep raw event/stdout/dependency artifacts after the run")
+    parser.add_argument("--setup", action="store_true", help="With doctor: guided install and benchmark-profile setup")
+    parser.add_argument("--check", action="store_true", help="With doctor: non-interactive readiness check")
+    parser.add_argument("--repair", action="store_true", help="With doctor: re-run guided setup for missing/broken components")
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["run", "smoke", "list", "score", "dashboard", "publish", "verify", "validate"],
+        choices=["run", "smoke", "list", "score", "dashboard", "publish", "verify", "validate", "doctor"],
         default="run",
     )
     parser.add_argument("path", nargs="?", type=Path)
     args = parser.parse_args()
+
+    if args.command == "doctor":
+        if sum(bool(value) for value in (args.setup, args.check, args.repair)) > 1:
+            raise SystemExit("doctor accepts only one of --setup, --check or --repair")
+        raise SystemExit(run_wizard(setup=args.setup, check_only=args.check, repair=args.repair))
+    if args.setup or args.check or args.repair:
+        raise SystemExit("--setup, --check and --repair are only valid with the doctor command")
+
+    profile = apply_profile_environment()
+    if args.model == "unknown" and isinstance(profile.get("model"), str) and profile["model"].strip():
+        args.model = profile["model"].strip()
+
     harnesses = _selected_harnesses(args)
 
     if args.command == "list":
