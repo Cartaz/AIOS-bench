@@ -8,7 +8,9 @@ from aios_bench import cli
 
 def test_active_cli_harnesses_exclude_codex():
     assert "codex" not in cli.AGENTS
-    assert tuple(cli.AGENTS) == ("hermes", "piagent", "opencode", "goose", "letta", "agentzero")
+    assert tuple(cli.AGENTS) == (
+        "hermes", "piagent", "opencode", "goose", "letta", "agentzero", "claude",
+    )
 
 
 def test_list_does_not_require_a_harness_and_defaults_to_v3(monkeypatch, capsys):
