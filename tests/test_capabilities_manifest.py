@@ -8,6 +8,7 @@ from aios_bench.adapters import (
     Adapter,
     AgentInvocation,
     AgentZeroAdapter,
+    ClaudeCodeAdapter,
     HermesAdapter,
     LettaAdapter,
     OpenCodeAdapter,
@@ -29,7 +30,9 @@ class NativeOnlyDelegationAdapter(Adapter):
 
 
 def test_active_harness_matrix_excludes_codex():
-    assert tuple(AGENTS) == ("hermes", "piagent", "opencode", "goose", "letta", "agentzero")
+    assert tuple(AGENTS) == (
+        "hermes", "piagent", "opencode", "goose", "letta", "agentzero", "claude",
+    )
     assert "codex" not in AGENTS
 
 
@@ -38,16 +41,20 @@ def test_capability_assessment_separates_native_feature_from_observability():
     structured = StructuredDelegationAdapter().assess_capabilities("subagents")
     opencode = OpenCodeAdapter().assess_capabilities("subagents")
     letta = LettaAdapter().assess_capabilities("subagents")
+    claude = ClaudeCodeAdapter().assess_capabilities("subagents")
     assert native_only.status == "unsupported"
     assert native_only.missing == frozenset({"structured_subagent_events"})
     assert structured.status == "supported"
     assert structured.to_dict()["missing"] == []
     assert opencode.status == "supported"
     assert letta.status == "supported"
+    assert claude.status == "supported"
     assert "structured_subagent_events" in OpenCodeAdapter().capabilities
     assert "structured_subagent_events" in LettaAdapter().capabilities
+    assert "structured_subagent_events" in ClaudeCodeAdapter().capabilities
     assert "tool_events" in OpenCodeAdapter().capabilities
     assert "tool_events" in LettaAdapter().capabilities
+    assert "tool_events" in ClaudeCodeAdapter().capabilities
 
 
 def test_category_and_catalog_tag_requirements_are_composed():
@@ -55,6 +62,7 @@ def test_category_and_catalog_tag_requirements_are_composed():
     assert required == frozenset({"browser", "citations"})
     assert HermesAdapter().assess_capabilities("browser").is_supported
     assert not PiAgentAdapter().assess_capabilities("browser").is_supported
+    assert not ClaudeCodeAdapter().assess_capabilities("browser").is_supported
     assert PiAgentAdapter().assess_capabilities("coding").is_supported
 
 
