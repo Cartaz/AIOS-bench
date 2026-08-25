@@ -9,7 +9,8 @@ from typing import Any, Iterable, Mapping
 from .evaluators import evaluate_artifacts
 from .experiments import derive_seed
 from .fixtures import materialize_long_horizon_corpus
-from .golden_solutions import materialize_parametric_golden, materialize_static_golden
+from .golden_solutions import materialize_static_golden
+from .parametric_goldens import materialize_parametric_golden
 from .parametric import materialize_variant
 
 
