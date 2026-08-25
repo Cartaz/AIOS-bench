@@ -12,6 +12,7 @@ from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
 from .models import Trajectory
 from .parametric import ConfigTraversalPressure, ExpensePressure
+from .paths import REPO_ROOT, RESULTS_ROOT, TASKS_ROOT
 from .publication import render_derived, verify_publication, write_publication_manifest
 from .report import write_summary
 from .scheduler import MatchedInterleavedScheduler
@@ -21,9 +22,9 @@ from .statistics import augment_summary_file
 from .tasks import load_tasks
 from .validation import validate_parametric_baseline, validate_static_baseline
 
-ROOT = Path(__file__).resolve().parents[1]
-TASKS = ROOT / "benchmarks" / "tasks"
-PUBLISHED = ROOT / "results"
+ROOT = REPO_ROOT
+TASKS = TASKS_ROOT
+PUBLISHED = RESULTS_ROOT
 RESULTS = PUBLISHED / ".local"
 SMOKE_RESULTS = PUBLISHED / ".smoke"
 SUITES = ("frontier_v3", "frontier_v4")
