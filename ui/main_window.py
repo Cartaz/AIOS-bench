@@ -33,8 +33,14 @@ class MainWindow(QMainWindow):
         view = QWebEngineView(self)
         page = LocalPage(view)
         settings = page.settings()
-        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, False)
-        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls,
+            False,
+        )
+        settings.setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls,
+            True,
+        )
         channel = QWebChannel(page)
         channel.registerObject("backend", bridge)
         page.setWebChannel(channel)
