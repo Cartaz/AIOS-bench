@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from aios_bench import doctor
+from core.benchmark import doctor
 
 
 def test_inspect_reports_all_active_harnesses(monkeypatch):
@@ -17,7 +17,7 @@ def test_inspect_reports_all_active_harnesses(monkeypatch):
 
 
 def test_profile_round_trip_and_environment_does_not_override_explicit_values(monkeypatch, tmp_path: Path):
-    path = tmp_path / "profile.json"
+    path = tmp_path / "settings.json"
     doctor.write_profile(
         model="Ornith",
         openai_url="http://127.0.0.1:8080/v1/",
@@ -27,8 +27,8 @@ def test_profile_round_trip_and_environment_does_not_override_explicit_values(mo
     value = json.loads(path.read_text(encoding="utf-8"))
     assert value["schema"] == doctor.PROFILE_SCHEMA
     assert value["model"] == "Ornith"
-    assert value["environment"]["AIOS_BENCH_ENDPOINT"] == "http://127.0.0.1:8080/v1"
-    assert value["environment"]["AIOS_BENCH_CLAUDE_BASE_URL"] == "http://127.0.0.1:8082"
+    assert value["openai_url"] == "http://127.0.0.1:8080/v1"
+    assert value["anthropic_url"] == "http://127.0.0.1:8082"
 
     monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://explicit.test/v1")
     loaded = doctor.apply_profile_environment(path)
@@ -44,10 +44,10 @@ def test_opencode_recipe_prefers_pacman_on_cachyos(monkeypatch):
     assert recipe.command == ("sudo", "pacman", "-S", "--needed", "opencode")
 
 
-def test_remote_shell_installers_require_opt_in(monkeypatch):
+def test_remote_shell_installers_are_never_executed(monkeypatch):
     calls = []
     monkeypatch.setattr(doctor.subprocess, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
-    answers = iter(["y", "n", "n", "n", "n"])
+    answers = iter(["y", "n"])
     monkeypatch.setattr(doctor, "inspect", lambda: {
         "schema": "aios-bench/doctor-report/v1",
         "system": {"platform": "Linux", "release": "x", "machine": "x86_64", "distribution": "cachyos", "python": "3.14", "node": "/bin/node", "npm": "/bin/npm", "bubblewrap": "/bin/bwrap"},
