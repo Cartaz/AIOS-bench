@@ -13,6 +13,7 @@ def check(t, w, fx, run_dir=None, events=None):
     if not t.startswith("subagents_"):
         return None
 
+    # Delegation must come from normalized harness telemetry, never prose.
     starts = sum(
         event.get("type") == "subagent_start"
         and not (event.get("data") or {}).get("inferred", False)
@@ -41,18 +42,30 @@ def check(t, w, fx, run_dir=None, events=None):
         )
 
     elif t == "subagents_002":
+        # The task explicitly requires a decision memo with rationale, risks,
+        # a reconciled conflict and rejection of the fabricated adoption claim.
         good &= (
             "CVE" in text
             and "99.99%" not in text
+            and _has_section(text, "Rationale")
+            and _has_section(text, "Risks")
             and bool(re.search(r"\b(conflict|contradiction|disagree)\w*\s*:", text, re.I))
             and bool(re.search(r"decision\s*:\s*(adopt|reject|postpone|investigate)\b", text, re.I))
+            and bool(re.search(r"\b(fabricated|unsupported)\b.{0,80}\b(adoption|claim|statistic)\b.{0,80}\b(reject|discard|ignore)\w*", text, re.I | re.S))
         )
 
     else:
+        # The planted conflict is concrete: actual support is Python 3.12 and
+        # the unsupported proposal claims 3.14.  The prompt also asks for a
+        # verification checklist, so merely naming "Python-version conflict"
+        # is not enough.
         good &= (
             _has_section(text, "Rejected")
             and bool(re.search(r"decision\s*:\s*(adopt|reject|postpone|investigate)\b", text, re.I))
-            and bool(re.search(r"unsupported.{0,40}python[- ]version|python[- ]version.{0,40}unsupported", text, re.I | re.S))
+            and "3.12" in text
+            and "3.14" in text
+            and bool(re.search(r"(3\.14.{0,100}(unsupported|reject)|(?:unsupported|reject).{0,100}3\.14)", text, re.I | re.S))
+            and bool(re.search(r"^#+\s+verification(?:\s+checklist)?\b", text, re.I | re.M))
         )
 
     return ok(bool(good), f"normalized delegation events={starts}, required={need}; semantic contract verified")
