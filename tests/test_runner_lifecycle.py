@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from aios_bench.adapters import Adapter, AgentInvocation
-from aios_bench.models import Task
+from aios_bench.models import Task, Trajectory
 from aios_bench.runner import AgentConfig, BenchmarkRunner
 
 
@@ -27,6 +27,24 @@ class LifecycleRunner(BenchmarkRunner):
 
     def _catalog_task_count(self) -> list[str]:
         return ["coding_001", "subagents_001"]
+
+    def run_task(self, task: Task, timeout: float) -> Trajectory:
+        trajectory = Trajectory(
+            agent=self.agent.name,
+            task_id=task.id,
+            success=True,
+            duration_seconds=0.01,
+            evaluation_score=1.0,
+        )
+        self._write_result({
+            **self._result_identity(task),
+            "status": "completed",
+            "success": True,
+            "score": 100.0,
+            "comparable": True,
+            "duration_seconds": trajectory.duration_seconds,
+        })
+        return trajectory
 
 
 TASKS = [
