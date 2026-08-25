@@ -81,21 +81,25 @@ def _benchmark_owned_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
 
 
 def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
-    """Preserve the canonical workspace path after hiding the repository mount.
-
-    Bubblewrap first binds the real workspace to /workspace. The repository is
-    then replaced by an empty tmpfs. Recreating only the workspace's parent
-    directories and binding /workspace back to the canonical absolute path lets
-    harnesses keep their existing argv/environment contract without exposing any
-    other repository content.
-    """
+    """Hide the repository while preserving one writable canonical workspace."""
     workspace = workspace.resolve()
     repo = REPO_ROOT.resolve()
     try:
         relative = workspace.relative_to(repo)
-    except ValueError as exc:
-        raise RuntimeError(f"benchmark workspace must live below repository root: {workspace}") from exc
+    except ValueError:
+        # Custom result roots and tests may live outside the repository. In that
+        # case hiding the repo cannot cover the workspace, so a direct bind is
+        # sufficient and avoids imposing a repository-layout requirement on the
+        # runner interface.
+        return (
+            "--tmpfs", str(repo),
+            "--bind", str(workspace), str(workspace),
+            "--chdir", str(workspace),
+        )
 
+    # When the workspace itself lives below the repository, preserve it through
+    # an alias before replacing the repository mount, then recreate only its
+    # parent path and bind the alias back at the original absolute location.
     args: tuple[str, ...] = (
         "--bind", str(workspace), str(_WORKSPACE_ALIAS),
         "--tmpfs", str(repo),
