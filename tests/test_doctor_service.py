@@ -20,12 +20,12 @@ def test_doctor_service_rejects_automatic_remote_shell_install(monkeypatch):
     service = DoctorService()
     called = False
 
-    def fail_if_called(recipe):
+    def fail_if_called(name):
         nonlocal called
         called = True
         return True
 
-    monkeypatch.setattr(doctor, "_run_install", fail_if_called)
+    monkeypatch.setattr(doctor, "install_harness", fail_if_called)
     try:
         service.install_harness("goose")
     except ValueError as exc:
@@ -33,6 +33,16 @@ def test_doctor_service_rejects_automatic_remote_shell_install(monkeypatch):
     else:
         raise AssertionError("Goose shell installer must stay manual")
     assert called is False
+
+
+def test_doctor_service_uses_public_install_contract(monkeypatch):
+    service = DoctorService()
+    called = []
+    monkeypatch.setattr(doctor, "install_harness", lambda name: called.append(name) or True)
+    monkeypatch.setattr(service, "inspect", lambda: {"ready": True})
+
+    assert service.install_harness("piagent") == {"ready": True}
+    assert called == ["piagent"]
 
 
 def test_doctor_service_profile_round_trip(tmp_path):
