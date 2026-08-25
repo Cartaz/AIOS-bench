@@ -11,7 +11,7 @@ from .experiments import annotate_repeat, make_experiment_id
 from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
 from .models import Trajectory
-from .parametric import ExpensePressure
+from .parametric import ConfigTraversalPressure, ExpensePressure
 from .publication import render_derived, verify_publication, write_publication_manifest
 from .report import write_summary
 from .scheduler import MatchedInterleavedScheduler
@@ -68,7 +68,7 @@ def _runner_kwargs(args: argparse.Namespace) -> dict:
 
 def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
     try:
-        pressure = ExpensePressure(
+        expense = ExpensePressure(
             rows=args.v4_expense_rows,
             malformed_rows=args.v4_expense_malformed,
             distractor_files=args.v4_expense_distractors,
@@ -76,7 +76,18 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 expense pressure: {exc}") from exc
-    return {"expense_report": pressure.to_dict()}
+    try:
+        config = ConfigTraversalPressure(
+            chain_depth=args.v4_config_chain_depth,
+            distractor_files=args.v4_config_distractors,
+            extra_settings=args.v4_config_extra_settings,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 config pressure: {exc}") from exc
+    return {
+        "expense_report": expense.to_dict(),
+        "config_traversal": config.to_dict(),
+    }
 
 
 def _build_runner(
@@ -183,6 +194,9 @@ def main() -> None:
     parser.add_argument("--v4-expense-malformed", type=int, default=2, help="Frontier v4 expense-family malformed-row pressure coordinate")
     parser.add_argument("--v4-expense-distractors", type=int, default=3, help="Frontier v4 expense-family distractor-file pressure coordinate")
     parser.add_argument("--v4-expense-months", type=int, default=6, help="Frontier v4 expense-family temporal-span pressure coordinate")
+    parser.add_argument("--v4-config-chain-depth", type=int, default=3, help="Frontier v4 config-family reference-chain depth coordinate")
+    parser.add_argument("--v4-config-distractors", type=int, default=3, help="Frontier v4 config-family distractor-file coordinate")
+    parser.add_argument("--v4-config-extra-settings", type=int, default=2, help="Frontier v4 config-family extra-setting coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
