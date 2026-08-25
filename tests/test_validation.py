@@ -36,7 +36,7 @@ def test_negative_preflight_rejects_fixture_that_already_passes(tmp_path: Path):
     assert result["failures"][0]["reason"] == "untouched fixture passes grader"
 
 
-def test_parametric_preflight_checks_determinism_variation_and_negative_baseline():
+def test_parametric_preflight_checks_all_catalog_families():
     tasks = load_tasks(ROOT / "benchmarks" / "tasks", "frontier_v4")
     result = validate_parametric_baseline(
         ROOT,
@@ -48,14 +48,24 @@ def test_parametric_preflight_checks_determinism_variation_and_negative_baseline
                 "malformed_rows": 2,
                 "distractor_files": 1,
                 "months": 4,
-            }
+            },
+            "config_traversal": {
+                "chain_depth": 4,
+                "distractor_files": 2,
+                "extra_settings": 3,
+            },
         },
     )
 
     assert result["ok"] is True
-    assert result["checked_tasks"] == 1
-    observation = result["observations"][0]
-    assert observation["same_seed_deterministic"] is True
-    assert observation["different_seed_changes_variant"] is True
-    assert observation["untouched_variant_fails"] is True
-    assert observation["variant_digest"] != observation["comparison_variant_digest"]
+    assert result["checked_tasks"] == 2
+    assert {item["family"] for item in result["observations"]} == {
+        "expense_report",
+        "config_traversal",
+    }
+    for observation in result["observations"]:
+        assert observation["same_seed_deterministic"] is True
+        assert observation["different_seed_changes_variant"] is True
+        assert observation["untouched_variant_fails"] is True
+        assert observation["golden_variant_passes"] is True
+        assert observation["variant_digest"] != observation["comparison_variant_digest"]
