@@ -10,42 +10,35 @@
 <body>
   <main class="shell">
     <header class="topbar">
-      <div>
-        <p class="eyebrow">LOCAL AGENT BENCHMARK</p>
-        <h1>AIOS-Bench</h1>
-      </div>
+      <div><p class="eyebrow">LOCAL AGENT BENCHMARK</p><h1>AIOS-Bench</h1></div>
+      <nav class="tabs" aria-label="Sezioni"><button class="tab selected" data-view="benchmark">Benchmark</button><button class="tab" data-view="doctor">Setup / Doctor</button></nav>
       <div id="runBadge" class="badge">Pronto</div>
     </header>
 
-    <section class="grid">
-      <aside class="panel controls">
-        <div class="section-head"><h2>Configurazione</h2></div>
-        <label>Suite<select id="suite"><option value="frontier_v3">Frontier v3</option><option value="frontier_v4">Frontier v4</option></select></label>
-        <label>Modello<input id="model" type="text" placeholder="Ornith"></label>
-        <div class="section-head"><h2>Harness</h2><div class="actions"><button data-harness-action="all">Tutti</button><button data-harness-action="none">Nessuno</button></div></div>
-        <div id="harnesses" class="toggle-list"></div>
-        <div class="two-col">
-          <label>Repeat<input id="repeats" type="number" min="1" value="1"></label>
-          <label>Seed<input id="seed" type="number" value="42"></label>
-          <label>Timeout task<input id="timeout" type="number" min="1" value="900"></label>
-          <label>Timeout totale<input id="totalTimeout" type="number" min="1" placeholder="nessuno"></label>
-        </div>
-        <button id="start" class="primary">Avvia benchmark</button>
-        <p id="error" class="error" role="alert"></p>
-      </aside>
+    <section id="benchmarkView" class="view">
+      <section class="grid">
+        <aside class="panel controls">
+          <div class="section-head"><h2>Configurazione</h2></div>
+          <label>Suite<select id="suite"><option value="frontier_v3">Frontier v3</option><option value="frontier_v4">Frontier v4</option></select></label>
+          <label>Modello<input id="model" type="text" placeholder="Ornith"></label>
+          <div class="section-head"><h2>Harness</h2><div class="actions"><button data-harness-action="all">Tutti</button><button data-harness-action="none">Nessuno</button></div></div>
+          <div id="harnesses" class="toggle-list"></div>
+          <div class="two-col"><label>Repeat<input id="repeats" type="number" min="1" value="1"></label><label>Seed<input id="seed" type="number" value="42"></label><label>Timeout task<input id="timeout" type="number" min="1" value="900"></label><label>Timeout totale<input id="totalTimeout" type="number" min="1" placeholder="nessuno"></label></div>
+          <button id="start" class="primary">Avvia benchmark</button>
+          <p id="error" class="error" role="alert"></p>
+        </aside>
 
-      <section class="panel tasks-panel">
-        <div class="section-head"><div><p class="eyebrow">CATALOGO</p><h2>Test</h2></div><div class="actions"><button data-task-action="all">Seleziona tutto</button><button data-task-action="none">Nessuno</button></div></div>
-        <div id="taskSummary" class="muted"></div>
-        <div id="tasks" class="task-groups"></div>
+        <section class="panel tasks-panel"><div class="section-head"><div><p class="eyebrow">CATALOGO</p><h2>Test</h2></div><div class="actions"><button data-task-action="all">Seleziona tutto</button><button data-task-action="none">Nessuno</button></div></div><div id="taskSummary" class="muted"></div><div id="tasks" class="task-groups"></div></section>
+        <section class="panel progress-panel"><div class="section-head"><h2>Run</h2><span id="counter" class="muted">0 / 0</span></div><div class="progress-track"><div id="progressBar"></div></div><div id="current" class="current">Nessuna run attiva.</div><div id="events" class="events"></div></section>
       </section>
+    </section>
 
-      <section class="panel progress-panel">
-        <div class="section-head"><h2>Run</h2><span id="counter" class="muted">0 / 0</span></div>
-        <div class="progress-track"><div id="progressBar"></div></div>
-        <div id="current" class="current">Nessuna run attiva.</div>
-        <div id="events" class="events"></div>
+    <section id="doctorView" class="view hidden">
+      <section class="doctor-grid">
+        <section class="panel doctor-status"><div class="section-head"><div><p class="eyebrow">AMBIENTE</p><h2>Doctor</h2></div><button id="refreshDoctor">Verifica tutto</button></div><div id="systemStatus" class="muted"></div><div id="doctorHarnesses" class="doctor-list"></div></section>
+        <section class="panel profile-panel"><div class="section-head"><div><p class="eyebrow">PROFILO LOCALE</p><h2>Modello e gateway</h2></div></div><label>Model ID<input id="profileModel" type="text" placeholder="aios-llamacpp/Ornith"></label><label>OpenAI-compatible URL<input id="openaiUrl" type="text" placeholder="http://127.0.0.1:8080/v1"></label><label>Anthropic-compatible URL<input id="anthropicUrl" type="text" placeholder="http://127.0.0.1:8080"></label><button id="saveProfile" class="primary">Salva profilo</button><p class="muted">Il profilo viene scritto esclusivamente da Python. Gli installer remoti che richiedono shell restano guidati e manuali.</p></section>
       </section>
+      <p id="doctorError" class="error" role="alert"></p>
     </section>
   </main>
   <script src="app.js"></script>
