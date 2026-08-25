@@ -59,3 +59,20 @@ def test_final_retry_failure_returns_without_waiting_for_timeout(tmp_path: Path)
     assert time.monotonic() - started < 3
     assert result.returncode != 0
     assert result.timed_out is False
+
+
+def test_large_stderr_does_not_deadlock_rpc_stdout(tmp_path: Path):
+    script = (
+        "import json, sys; "
+        "json.loads(sys.stdin.readline()); "
+        "sys.stderr.write('x' * 2000000); sys.stderr.flush(); "
+        "print(json.dumps({'type':'agent_settled'}), flush=True)"
+    )
+    started = time.monotonic()
+
+    result = _run_script(tmp_path, script, timeout=5)
+
+    assert time.monotonic() - started < 5
+    assert result.returncode == 0
+    assert result.timed_out is False
+    assert len(result.stderr) == 2_000_000
