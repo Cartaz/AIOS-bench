@@ -5,6 +5,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from .paths import BENCHMARK_PACKAGE_ROOT, REPO_ROOT
+
 
 @dataclass(frozen=True)
 class SandboxPlan:
@@ -50,15 +52,14 @@ def _result_history_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
 
 
 def _benchmark_owned_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
-    root = Path(__file__).resolve().parents[1]
     candidates = (
-        root / ".git",
-        root / "benchmarks",
-        root / "tests",
-        root / "aios_bench" / "__pycache__",
+        REPO_ROOT / ".git",
+        REPO_ROOT / "benchmarks",
+        REPO_ROOT / "tests",
+        BENCHMARK_PACKAGE_ROOT / "__pycache__",
     )
     hidden_directories = [path for path in candidates if path.exists()]
-    hidden_files = sorted((root / "aios_bench").glob("reference_checks*.py"))
+    hidden_files = sorted(BENCHMARK_PACKAGE_ROOT.glob("reference_checks*.py"))
     result_directories, result_files = _result_history_paths(workspace)
     hidden_directories.extend(result_directories)
     hidden_files.extend(result_files)
