@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from .processes import spawn_owned, terminate_owned
+
 
 @dataclass
 class PiRPCResult:
@@ -48,7 +50,7 @@ class PiRPCClient:
         env = os.environ.copy()
         env.update(self.environment)
         env["AIOS_BENCH_WORKSPACE"] = str(self.workspace.resolve())
-        proc = subprocess.Popen(
+        proc = spawn_owned(
             self._command(), cwd=self.workspace, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1,
@@ -70,11 +72,9 @@ class PiRPCClient:
                 remaining = self.timeout - (time.monotonic() - started)
                 if remaining <= 0:
                     timed_out = True
-                    proc.kill()
                     break
                 if self.runaway_check is not None and self.runaway_check():
                     runaway = True
-                    proc.kill()
                     break
                 ready = selector.select(timeout=min(remaining, 0.25))
                 if not ready:
@@ -105,12 +105,7 @@ class PiRPCClient:
             selector.close()
             if proc.stdin and not proc.stdin.closed:
                 proc.stdin.close()
-            if proc.poll() is None:
-                proc.terminate()
-            try:
-                proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                proc.kill(); proc.wait(timeout=2)
+            terminate_owned(proc)
             if proc.stderr:
                 stderr_text = proc.stderr.read()
         if timed_out or runaway or protocol_failed:
