@@ -19,16 +19,23 @@ class PiRPCResult:
     stderr: str
     timed_out: bool = False
     runaway: bool = False
+    cancelled: bool = False
 
 
 class PiRPCClient:
     """Small stdio JSONL client for pi --mode rpc."""
 
-    def __init__(self, model: str, workspace: Path, timeout: float,
-                 environment: dict[str, str] | None = None,
-                 extra_args: list[str] | None = None,
-                 command: list[str] | None = None,
-                 runaway_check: Callable[[], bool] | None = None) -> None:
+    def __init__(
+        self,
+        model: str,
+        workspace: Path,
+        timeout: float,
+        environment: dict[str, str] | None = None,
+        extra_args: list[str] | None = None,
+        command: list[str] | None = None,
+        runaway_check: Callable[[], bool] | None = None,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> None:
         self.model = model
         self.workspace = workspace
         self.timeout = timeout
@@ -36,6 +43,7 @@ class PiRPCClient:
         self.extra_args = list(extra_args or [])
         self.command = list(command) if command is not None else None
         self.runaway_check = runaway_check
+        self.cancellation_check = cancellation_check
 
     def _command(self) -> list[str]:
         if self.command is not None:
@@ -51,27 +59,38 @@ class PiRPCClient:
         env.update(self.environment)
         env["AIOS_BENCH_WORKSPACE"] = str(self.workspace.resolve())
         proc = spawn_owned(
-            self._command(), cwd=self.workspace, env=env,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, bufsize=1,
+            self._command(),
+            cwd=self.workspace,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
         )
         started = time.monotonic()
         lines: list[str] = []
         stderr_text = ""
         timed_out = False
         runaway = False
+        cancelled = False
         protocol_succeeded = False
         protocol_failed = False
         selector = selectors.DefaultSelector()
         try:
             assert proc.stdin is not None and proc.stdout is not None
-            proc.stdin.write(json.dumps({"id": "aios-bench", "type": "prompt", "message": prompt}) + "\n")
+            proc.stdin.write(
+                json.dumps({"id": "aios-bench", "type": "prompt", "message": prompt}) + "\n"
+            )
             proc.stdin.flush()
             selector.register(proc.stdout, selectors.EVENT_READ)
             while True:
                 remaining = self.timeout - (time.monotonic() - started)
                 if remaining <= 0:
                     timed_out = True
+                    break
+                if self.cancellation_check is not None and self.cancellation_check():
+                    cancelled = True
                     break
                 if self.runaway_check is not None and self.runaway_check():
                     runaway = True
@@ -88,9 +107,11 @@ class PiRPCClient:
                         event: dict[str, Any] = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    if (event.get("type") == "response"
-                            and event.get("command") == "prompt"
-                            and event.get("success") is False):
+                    if (
+                        event.get("type") == "response"
+                        and event.get("command") == "prompt"
+                        and event.get("success") is False
+                    ):
                         protocol_failed = True
                         break
                     if event.get("type") == "agent_settled":
@@ -108,10 +129,17 @@ class PiRPCClient:
             terminate_owned(proc)
             if proc.stderr:
                 stderr_text = proc.stderr.read()
-        if timed_out or runaway or protocol_failed:
+        if timed_out or runaway or cancelled or protocol_failed:
             returncode = 1
         elif protocol_succeeded:
             returncode = 0
         else:
             returncode = proc.returncode if proc.returncode is not None else 1
-        return PiRPCResult(returncode, "".join(lines), stderr_text, timed_out, runaway)
+        return PiRPCResult(
+            returncode,
+            "".join(lines),
+            stderr_text,
+            timed_out,
+            runaway,
+            cancelled,
+        )
