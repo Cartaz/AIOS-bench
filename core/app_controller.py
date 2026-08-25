@@ -7,6 +7,7 @@ from typing import Callable
 
 from config.settings import SettingsStore
 
+from .cancellation import CancellationToken
 from .doctor_service import DoctorProfile, DoctorService
 from .run_service import BenchmarkService, RunRequest
 
@@ -67,8 +68,13 @@ class AppController:
         self._benchmark.validate_request(request)
         return request
 
-    def run_benchmark(self, request: RunRequest, on_event: EventCallback) -> dict[str, object]:
-        return self._benchmark.run(request, on_event)
+    def run_benchmark(
+        self,
+        request: RunRequest,
+        on_event: EventCallback,
+        cancellation_token: CancellationToken | None = None,
+    ) -> dict[str, object]:
+        return self._benchmark.run(request, on_event, cancellation_token)
 
     @staticmethod
     def _json_object(payload: str, label: str) -> dict:
