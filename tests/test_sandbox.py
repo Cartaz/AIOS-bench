@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -33,6 +35,37 @@ def test_bubblewrap_hides_repository_and_rebinds_only_workspace(monkeypatch, tmp
     assert _has_sequence(command, ["--bind", "/workspace", str(workspace.resolve())])
     assert _has_sequence(command, ["--chdir", str(workspace.resolve())])
     assert command[-3:] == ["pi", "--mode", "rpc"]
+
+
+def test_bubblewrap_repository_hidden_contract_executes(monkeypatch, tmp_path: Path):
+    executable = shutil.which("bwrap")
+    if executable is None:
+        pytest.skip("bubblewrap is unavailable")
+
+    repo = tmp_path / "repo"
+    workspace = repo / "results" / ".local" / "hermes" / "model" / "runs" / "run" / "workspaces" / "task"
+    workspace.mkdir(parents=True)
+    visible = workspace / "visible.txt"
+    visible.write_text("workspace-visible", encoding="utf-8")
+    secret = repo / "golden-secret.txt"
+    secret.write_text("must-not-leak", encoding="utf-8")
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
+
+    plan = workspace_sandbox("hermes", workspace, "required")
+    command = plan.wrap([
+        "/bin/sh",
+        "-c",
+        (
+            f"test \"$(cat {visible})\" = workspace-visible && "
+            f"test ! -e {secret} && "
+            "printf sandbox-write > created-inside.txt"
+        ),
+    ])
+    completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=10)
+
+    assert completed.returncode == 0, completed.stderr
+    assert (workspace / "created-inside.txt").read_text(encoding="utf-8") == "sandbox-write"
+    assert secret.read_text(encoding="utf-8") == "must-not-leak"
 
 
 def test_local_harness_does_not_use_grader_blacklist(monkeypatch, tmp_path: Path):
