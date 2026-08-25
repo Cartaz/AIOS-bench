@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
-from typing import Callable
 
 from config.settings import SettingsStore
 
@@ -53,8 +53,12 @@ class AppController:
     def validate_install_harness(self, name: str) -> None:
         self._doctor.validate_install(name)
 
-    def install_harness(self, name: str) -> dict:
-        return self._doctor.install_harness(name)
+    def install_harness(
+        self,
+        name: str,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> dict:
+        return self._doctor.install_harness(name, cancellation_check)
 
     def prepare_run(self, payload: str) -> RunRequest:
         raw = self._json_object(payload, "Run configuration")
