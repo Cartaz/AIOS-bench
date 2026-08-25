@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from aios_bench import doctor
+from config.settings import AppSettings, SettingsStore
+from core.benchmark import doctor
 
 
 @dataclass(frozen=True)
@@ -16,11 +17,8 @@ class DoctorProfile:
 class DoctorService:
     """Application-facing Doctor API; keeps UI away from environment/filesystem details."""
 
-    def __init__(self, profile_path: Path | None = None) -> None:
-        self._profile_path = profile_path
-
-    def _profile(self) -> Path:
-        return self._profile_path or doctor.DEFAULT_PROFILE
+    def __init__(self, settings: SettingsStore | None = None) -> None:
+        self._settings = settings or SettingsStore()
 
     def inspect(self) -> dict:
         report = doctor.inspect()
@@ -37,19 +35,16 @@ class DoctorService:
         return report
 
     def load_profile(self) -> DoctorProfile:
-        value = doctor.load_profile(self._profile())
-        return DoctorProfile(
-            model=str(value.get("model") or ""),
-            openai_url=str(value.get("openai_compatible_url") or ""),
-            anthropic_url=str(value.get("anthropic_compatible_url") or ""),
-        )
+        value = self._settings.load()
+        return DoctorProfile(value.model, value.openai_url, value.anthropic_url)
 
     def save_profile(self, profile: DoctorProfile) -> Path:
-        return doctor.write_profile(
-            model=profile.model,
-            openai_url=profile.openai_url,
-            anthropic_url=profile.anthropic_url,
-            path=self._profile(),
+        return self._settings.save(
+            AppSettings(
+                model=profile.model,
+                openai_url=profile.openai_url,
+                anthropic_url=profile.anthropic_url,
+            )
         )
 
     def validate_install(self, name: str) -> None:
