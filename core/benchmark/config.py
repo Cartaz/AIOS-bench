@@ -1,36 +1,14 @@
-from pathlib import Path
+from __future__ import annotations
 
-# Compatibility facade for callers that imported the old configuration module.
-# Keep the runner registry as the source of adapter definitions, but expose only
-# the harnesses that belong to the benchmark matrix.
-from .runner import AGENTS as _REGISTERED_AGENTS, AgentConfig
+from .harness_registry import ACTIVE_HARNESS_NAMES, AGENTS, AgentConfig
 
-ACTIVE_HARNESS_NAMES = (
-    "hermes",
-    "piagent",
-    "opencode",
-    "goose",
-    "letta",
-    "agentzero",
-    "claude",
-)
-
-AGENTS = {name: _REGISTERED_AGENTS[name] for name in ACTIVE_HARNESS_NAMES}
 Harness = AgentConfig
 DEFAULT_HARNESSES = AGENTS
 
-
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
-def fixture_root() -> Path:
-    return repo_root() / "benchmarks" / "fixtures" / "workspace"
-
-
-def results_root() -> Path:
-    return repo_root() / "results" / ".local"
-
-
-def published_results_root() -> Path:
-    return repo_root() / "results"
+__all__ = [
+    "ACTIVE_HARNESS_NAMES",
+    "AGENTS",
+    "AgentConfig",
+    "DEFAULT_HARNESSES",
+    "Harness",
+]
