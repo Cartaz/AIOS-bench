@@ -16,6 +16,12 @@ class DoctorProfile:
 class DoctorService:
     """Application-facing Doctor API; keeps UI away from environment/filesystem details."""
 
+    def __init__(self, profile_path: Path | None = None) -> None:
+        self._profile_path = profile_path
+
+    def _profile(self) -> Path:
+        return self._profile_path or doctor.DEFAULT_PROFILE
+
     def inspect(self) -> dict:
         report = doctor.inspect()
         for item in report["harnesses"]:
@@ -31,7 +37,7 @@ class DoctorService:
         return report
 
     def load_profile(self) -> DoctorProfile:
-        value = doctor.load_profile()
+        value = doctor.load_profile(self._profile())
         return DoctorProfile(
             model=str(value.get("model") or ""),
             openai_url=str(value.get("openai_compatible_url") or ""),
@@ -43,6 +49,7 @@ class DoctorService:
             model=profile.model,
             openai_url=profile.openai_url,
             anthropic_url=profile.anthropic_url,
+            path=self._profile(),
         )
 
     def validate_install(self, name: str) -> None:
