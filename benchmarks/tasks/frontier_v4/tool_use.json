@@ -1,0 +1,15 @@
+[
+  {
+    "id": "tool_use_config_001",
+    "category": "tool_use",
+    "tier": 4,
+    "revision": 4,
+    "prompt": "Follow the generated reference chain starting from README.md to discover the effective runtime configuration. Report every effective setting, the complete reference chain, and the consumer path in reports/effective_config.md. Ignore historical or decoy configuration files and do not modify any source or reference file. Chain depth, distractor count, and the number of effective settings vary between benchmark variants, so derive all results from the workspace rather than fixture-specific constants.",
+    "mode": "cold",
+    "tags": ["tool_use", "frontier_v4", "parametric", "grounded"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/effective_config.md", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "config_traversal", "task_id": "tool_use_config_001", "weight": 9, "fatal": true}
+    ]
+  }
+]
