@@ -20,7 +20,7 @@ def test_doctor_service_rejects_automatic_remote_shell_install(monkeypatch):
     service = DoctorService()
     called = False
 
-    def fail_if_called(name):
+    def fail_if_called(name, **kwargs):
         nonlocal called
         called = True
         return True
@@ -38,17 +38,39 @@ def test_doctor_service_rejects_automatic_remote_shell_install(monkeypatch):
 def test_doctor_service_uses_public_install_contract(monkeypatch):
     service = DoctorService()
     called = []
-    monkeypatch.setattr(doctor, "install_harness", lambda name: called.append(name) or True)
+    monkeypatch.setattr(
+        doctor,
+        "install_harness",
+        lambda name, **kwargs: called.append((name, kwargs.get("cancellation_check"))) or True,
+    )
     monkeypatch.setattr(service, "inspect", lambda: {"ready": True})
+    cancellation = lambda: False
 
-    assert service.install_harness("piagent") == {"ready": True}
-    assert called == ["piagent"]
+    assert service.install_harness("piagent", cancellation) == {"ready": True}
+    assert called == [("piagent", cancellation)]
 
 
-def test_doctor_service_profile_round_trip(tmp_path):
+def test_doctor_service_profile_round_trip_and_runtime_environment(tmp_path, monkeypatch):
+    monkeypatch.delenv("AIOS_BENCH_ENDPOINT", raising=False)
+    monkeypatch.delenv("AIOS_BENCH_CLAUDE_BASE_URL", raising=False)
     service = DoctorService(SettingsStore(tmp_path / "settings.json"))
     service.save_profile(DoctorProfile("Ornith", "http://localhost:8080/v1", "http://localhost:8080"))
     loaded = service.load_profile()
     assert loaded.model == "Ornith"
     assert loaded.openai_url == "http://localhost:8080/v1"
     assert loaded.anthropic_url == "http://localhost:8080"
+    assert service.apply_runtime_environment() == {
+        "AIOS_BENCH_ENDPOINT": "http://localhost:8080/v1",
+        "AIOS_BENCH_CLAUDE_BASE_URL": "http://localhost:8080",
+    }
+
+
+def test_doctor_service_reports_cancelled_install(monkeypatch):
+    service = DoctorService()
+    monkeypatch.setattr(doctor, "install_harness", lambda name, **kwargs: False)
+    try:
+        service.install_harness("piagent", lambda: True)
+    except RuntimeError as exc:
+        assert "cancelled" in str(exc)
+    else:
+        raise AssertionError("Cancelled install must not be reported as a normal failure")
