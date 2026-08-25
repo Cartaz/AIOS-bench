@@ -98,6 +98,29 @@ class FrontierRunner(BenchmarkRunner):
         )
         self.landscape_execution_fingerprint = self._landscape_execution_fingerprint()
 
+    def latest_results(self) -> dict[str, dict]:
+        return self._latest_results()
+
+    def record_unsupported(self, task: Task, assessment) -> None:
+        self._write_unsupported(task, assessment)
+
+    def record_noncomparable(self, task: Task, status: str, reason: dict, assessment=None) -> None:
+        self._write_noncomparable(task, status, reason, assessment)
+
+    def finalize(self, tasks: list[Task], *, status: str, finished_at: str) -> dict[str, Any]:
+        cleanup = self.cleanup()
+        counts = self._run_counts(tasks)
+        self._write_metadata(finished_at, status=status, counts=counts)
+        if status == "completed":
+            self._update_latest_pointer()
+        else:
+            self._clear_latest_if_current()
+        return {
+            "cleanup": cleanup,
+            "counts": counts,
+            "latest": self._latest_results(),
+        }
+
     def _suite_name(self) -> str:
         return self.suite.name
 
