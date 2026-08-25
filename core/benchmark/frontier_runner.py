@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from .failures import classify_failure
 from .materialization import TaskMaterializer
@@ -41,7 +41,6 @@ NON_SEMANTIC_MODULES = frozenset({
 
 
 def semantic_source_paths(repo_root: Path) -> tuple[Path, ...]:
-    """Return execution/scoring sources; new engine modules are included automatically."""
     benchmark_root = repo_root / "core" / "benchmark"
     return tuple(
         path
@@ -70,17 +69,16 @@ class FrontierRunner(BenchmarkRunner):
         server_metrics_model: str | None = None,
         max_output_tokens: int = 65536,
         metrics_poll_interval: float = 1.0,
+        cancellation_check: Callable[[], bool] | None = None,
     ) -> None:
         self.suite = suite
         self.server_metrics = build_server_metrics_client(server_metrics_url, model=server_metrics_model)
         self.server_metrics_model = server_metrics_model
         self.max_output_tokens = max_output_tokens
         self.metrics_poll_interval = metrics_poll_interval
+        self.cancellation_check = cancellation_check
         if run_id is None:
-            run_id = (
-                datetime.now().astimezone().strftime("%Y-%m-%d_%H%M%S_%f")
-                + f"_{suite.name.replace('_', '-')}"
-            )
+            run_id = datetime.now().astimezone().strftime("%Y-%m-%d_%H%M%S_%f") + f"_{suite.name.replace('_', '-')}"
         super().__init__(
             repo_root,
             agent,
@@ -111,11 +109,7 @@ class FrontierRunner(BenchmarkRunner):
             self._update_latest_pointer()
         else:
             self._clear_latest_if_current()
-        return {
-            "cleanup": cleanup,
-            "counts": counts,
-            "latest": self._latest_results(),
-        }
+        return {"cleanup": cleanup, "counts": counts, "latest": self._latest_results()}
 
     def _suite_name(self) -> str:
         return self.suite.name
@@ -143,12 +137,7 @@ class FrontierRunner(BenchmarkRunner):
             parametric.pop("pressure_coordinates", None)
             parametric["pressure_coordinates_excluded_from_profile"] = True
         return hashlib.sha256(
-            json.dumps(
-                profile_manifest,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode("utf-8")
+            json.dumps(profile_manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         ).hexdigest()
 
     def _current_suite_revision(self) -> str:
@@ -218,11 +207,8 @@ class FrontierRunner(BenchmarkRunner):
     def _hash_files(self, digest, roots: Iterable[Path]) -> None:
         for root in roots:
             for path in sorted(
-                item
-                for item in root.rglob("*")
-                if item.is_file()
-                and "__pycache__" not in item.parts
-                and item.suffix != ".pyc"
+                item for item in root.rglob("*")
+                if item.is_file() and "__pycache__" not in item.parts and item.suffix != ".pyc"
             ):
                 self._hash_path(digest, path)
 
