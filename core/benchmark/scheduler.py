@@ -56,22 +56,17 @@ class MatchedInterleavedScheduler:
     def _finalize(self, aborted: set[str]) -> int:
         exit_code = 0
         for name, runner in self.runners.items():
-            cleanup = runner.cleanup()
-            counts = runner._run_counts(self.tasks)
             status = "aborted" if name in aborted else "completed"
-            runner._write_metadata(_utc_now(), status=status, counts=counts)
-            if status == "completed":
-                runner._update_latest_pointer()
-            else:
-                runner._clear_latest_if_current()
+            final = runner.finalize(self.tasks, status=status, finished_at=_utc_now())
+            counts = final["counts"]
+            cleanup = final["cleanup"]
             self._annotate(runner)
             if status == "aborted":
                 exit_code = max(exit_code, 2)
             elif counts["passed_task_count"] != counts["supported_task_count"]:
                 exit_code = max(exit_code, 1)
-            latest = runner._latest_results()
             comparable = [
-                item for item in latest.values()
+                item for item in final["latest"].values()
                 if item.get("status") != "unsupported" and item.get("score") is not None
             ]
             average = (
@@ -124,19 +119,19 @@ class MatchedInterleavedScheduler:
                         continue
                     assessment = runner.agent.adapter.assess_task(task)
                     if not assessment.is_supported:
-                        runner._write_unsupported(task, assessment)
+                        runner.record_unsupported(task, assessment)
                         print(
                             f"[{position}/{len(block.harness_order)}] {name}: UNSUPPORTED "
                             f"({', '.join(sorted(assessment.missing))})"
                         )
                         continue
-                    latest = runner._latest_results()
+                    latest = runner.latest_results()
                     missing_dependencies = [
                         dependency for dependency in task.depends_on
                         if not latest.get(dependency, {}).get("success", False)
                     ]
                     if missing_dependencies:
-                        runner._write_noncomparable(
+                        runner.record_noncomparable(
                             task,
                             "blocked",
                             {"missing_dependencies": missing_dependencies},
