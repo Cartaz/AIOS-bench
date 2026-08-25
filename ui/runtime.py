@@ -7,7 +7,7 @@ from collections.abc import Callable
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from core.app_controller import AppController
-from core.run_service import RunRequest
+from core.cancellation import CancellationToken
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ class DesktopRuntime(QObject):
         self._thread: QThread | None = None
         self._worker: BackgroundWorker | None = None
         self._operation: str | None = None
+        self._cancellation_token: CancellationToken | None = None
 
     @property
     def is_busy(self) -> bool:
@@ -58,10 +59,21 @@ class DesktopRuntime(QObject):
 
     def start_run(self, payload: str) -> None:
         request = self._controller.prepare_run(payload)
+        token = CancellationToken()
+        self._cancellation_token = token
         self._start(
             "benchmark",
-            lambda emit: self._controller.run_benchmark(request, emit),
+            lambda emit: self._controller.run_benchmark(request, emit, token),
         )
+
+    def cancel_run(self) -> bool:
+        if not self.is_running or self._cancellation_token is None:
+            return False
+        self._cancellation_token.cancel()
+        self.runStateChanged.emit(
+            json.dumps({"running": True, "busy": True, "operation": "benchmark", "cancelling": True})
+        )
+        return True
 
     def install_harness(self, name: str) -> None:
         harness = name.strip()
@@ -96,7 +108,9 @@ class DesktopRuntime(QObject):
         self._thread = thread
         self._worker = worker
         self._operation = operation
-        self.runStateChanged.emit(json.dumps({"running": operation == "benchmark", "busy": True, "operation": operation}))
+        self.runStateChanged.emit(
+            json.dumps({"running": operation == "benchmark", "busy": True, "operation": operation})
+        )
         thread.start()
 
     @Slot(object)
@@ -120,8 +134,14 @@ class DesktopRuntime(QObject):
         self._worker = None
         self._thread = None
         self._operation = None
-        self.runStateChanged.emit(json.dumps({"running": False, "busy": False, "operation": None}))
+        self._cancellation_token = None
+        self.runStateChanged.emit(
+            json.dumps({"running": False, "busy": False, "operation": None, "cancelling": False})
+        )
 
     def shutdown(self) -> None:
-        if self.is_busy:
-            logger.warning("Shutdown requested while a background operation is active")
+        if self.is_running:
+            self.cancel_run()
+            logger.info("Shutdown requested; benchmark cancellation signalled")
+        elif self.is_busy:
+            logger.warning("Shutdown requested while a non-benchmark operation is active")
