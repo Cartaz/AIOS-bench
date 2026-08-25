@@ -18,6 +18,7 @@ def terminate_owned(process: subprocess.Popen, *, grace_seconds: float = 2.0) ->
     if process.poll() is not None:
         return
 
+    process_group: int | None = None
     if os.name == "posix":
         try:
             process_group = os.getpgid(process.pid)
@@ -29,16 +30,19 @@ def terminate_owned(process: subprocess.Popen, *, grace_seconds: float = 2.0) ->
 
     try:
         process.wait(timeout=grace_seconds)
-        return
     except subprocess.TimeoutExpired:
         pass
 
-    if os.name == "posix":
+    if os.name == "posix" and process_group is not None:
+        # The direct child can exit while one of its descendants survives.
+        # Clear the original group before returning so the benchmark never
+        # abandons processes it started.
         try:
-            process_group = os.getpgid(process.pid)
             os.killpg(process_group, signal.SIGKILL)
         except ProcessLookupError:
-            return
-    else:
+            pass
+    elif process.poll() is None:
         process.kill()
-    process.wait(timeout=grace_seconds)
+
+    if process.poll() is None:
+        process.wait(timeout=grace_seconds)
