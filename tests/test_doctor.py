@@ -67,5 +67,9 @@ def test_check_mode_is_non_mutating(monkeypatch):
         "harnesses": [],
         "ready": False,
     })
-    monkeypatch.setattr(doctor, "_run_install", lambda recipe: (_ for _ in ()).throw(AssertionError("must not install")))
+    monkeypatch.setattr(
+        doctor,
+        "install_harness",
+        lambda name: (_ for _ in ()).throw(AssertionError("must not install")),
+    )
     assert doctor.run_wizard(setup=False, repair=False, check_only=True, input_fn=lambda _: "y") == 1
