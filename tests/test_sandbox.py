@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from core.benchmark.sandbox import _result_history_paths, workspace_sandbox
+from core.benchmark.sandbox import (
+    REPO_ROOT,
+    _benchmark_owned_paths,
+    _result_history_paths,
+    workspace_sandbox,
+)
 
 
 def _has_sequence(command: list[str], sequence: list[str]) -> bool:
@@ -10,29 +15,71 @@ def _has_sequence(command: list[str], sequence: list[str]) -> bool:
     return any(command[index:index + width] == sequence for index in range(len(command) - width + 1))
 
 
-def test_bubblewrap_confines_writes_to_workspace(monkeypatch, tmp_path: Path):
+def test_bubblewrap_hides_repository_and_rebinds_only_workspace(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    workspace = repo / "results" / ".local" / "piagent" / "model" / "runs" / "run" / "workspaces" / "task"
+    workspace.mkdir(parents=True)
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
     monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
-    monkeypatch.setattr("core.benchmark.sandbox._benchmark_owned_paths", lambda workspace: ([], []))
-    plan = workspace_sandbox("piagent", tmp_path, "required")
+
+    plan = workspace_sandbox("piagent", workspace, "required")
     command = plan.wrap(["pi", "--mode", "rpc"])
-    assert plan.strategy == "bubblewrap_readonly_root"
+
+    assert plan.strategy == "bubblewrap_repo_hidden_workspace_only"
+    assert plan.grader_hidden is True
     assert _has_sequence(command, ["--ro-bind", "/", "/"])
-    assert _has_sequence(command, ["--bind", str(tmp_path.resolve()), str(tmp_path.resolve())])
+    assert _has_sequence(command, ["--bind", str(workspace.resolve()), "/workspace"])
+    assert _has_sequence(command, ["--tmpfs", str(repo.resolve())])
+    assert _has_sequence(command, ["--bind", "/workspace", str(workspace.resolve())])
+    assert _has_sequence(command, ["--chdir", str(workspace.resolve())])
     assert command[-3:] == ["pi", "--mode", "rpc"]
 
 
-def test_bubblewrap_masks_benchmark_owned_grader_paths(monkeypatch, tmp_path: Path):
+def test_local_harness_does_not_use_grader_blacklist(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    workspace = repo / "results" / ".local" / "hermes" / "model" / "runs" / "run" / "workspaces" / "task"
+    workspace.mkdir(parents=True)
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
     monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
-    hidden_dir = tmp_path / "benchmarks"; hidden_dir.mkdir()
-    hidden_file = tmp_path / "reference_checks.py"; hidden_file.write_text("secret", encoding="utf-8")
-    monkeypatch.setattr("core.benchmark.sandbox._benchmark_owned_paths", lambda workspace: ([hidden_dir], [hidden_file]))
-    workspace = tmp_path / "workspace"; workspace.mkdir()
-    plan = workspace_sandbox("hermes", workspace, "required")
-    command = plan.wrap(["hermes"])
-    assert plan.strategy == "bubblewrap_readonly_root_grader_hidden"
-    assert plan.grader_hidden is True
-    assert _has_sequence(command, ["--tmpfs", str(hidden_dir.resolve())])
-    assert _has_sequence(command, ["--ro-bind", "/dev/null", str(hidden_file.resolve())])
+    monkeypatch.setattr(
+        "core.benchmark.sandbox._benchmark_owned_paths",
+        lambda workspace: (_ for _ in ()).throw(AssertionError("blacklist must not be consulted")),
+    )
+
+    command = workspace_sandbox("hermes", workspace, "required").wrap(["hermes"])
+
+    assert _has_sequence(command, ["--tmpfs", str(repo.resolve())])
+
+
+def test_agentzero_transport_masks_golden_and_benchmark_content(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    package = repo / "core" / "benchmark"
+    package.mkdir(parents=True)
+    workspace = repo / "results" / ".local" / "agentzero" / "model" / "runs" / "run" / "workspaces" / "task"
+    workspace.mkdir(parents=True)
+    (repo / "benchmarks").mkdir()
+    (repo / "tests").mkdir()
+    (repo / "docs").mkdir()
+    (repo / "results" / "summary.json").parent.mkdir(parents=True, exist_ok=True)
+    (repo / "results" / "summary.json").write_text("{}", encoding="utf-8")
+    (package / "golden_solutions.py").write_text("secret", encoding="utf-8")
+    (package / "parametric_goldens.py").write_text("secret", encoding="utf-8")
+    (package / "reference_checks.py").write_text("secret", encoding="utf-8")
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("core.benchmark.sandbox.BENCHMARK_PACKAGE_ROOT", package)
+    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+
+    plan = workspace_sandbox("agentzero", workspace, "required")
+    command = plan.wrap(["python", "-m", "core.benchmark.agentzero_client", "prompt"])
+
+    assert plan.strategy == "bubblewrap_remote_transport_grader_hidden"
+    assert _has_sequence(command, ["--tmpfs", str((repo / "benchmarks").resolve())])
+    assert _has_sequence(command, ["--tmpfs", str((repo / "tests").resolve())])
+    assert _has_sequence(command, ["--tmpfs", str((repo / "docs").resolve())])
+    assert _has_sequence(command, ["--tmpfs", str((repo / "results").resolve())])
+    assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "golden_solutions.py").resolve())])
+    assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "parametric_goldens.py").resolve())])
+    assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "reference_checks.py").resolve())])
 
 
 def test_historical_results_sibling_workspaces_and_oracles_are_hidden(tmp_path: Path):
@@ -59,35 +106,44 @@ def test_historical_results_sibling_workspaces_and_oracles_are_hidden(tmp_path: 
     assert workspace not in directories
 
 
-def test_bubblewrap_masks_current_parametric_oracle_directory(monkeypatch, tmp_path: Path):
-    local = tmp_path / "results" / ".local"
-    workspace = local / "piagent" / "ornith" / "runs" / "run-2" / "workspaces" / "task-2"
+def test_sensitive_path_registry_includes_golden_material(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    package = repo / "core" / "benchmark"
+    workspace = repo / "results" / ".local" / "agentzero" / "m" / "runs" / "r" / "workspaces" / "t"
     workspace.mkdir(parents=True)
-    oracles = workspace.parent.parent / "oracles"
-    oracles.mkdir()
-    (oracles / "task-2.json").write_text('{"secret": true}', encoding="utf-8")
-    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    package.mkdir(parents=True)
+    (package / "golden_solutions.py").write_text("secret", encoding="utf-8")
+    (package / "parametric_goldens.py").write_text("secret", encoding="utf-8")
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("core.benchmark.sandbox.BENCHMARK_PACKAGE_ROOT", package)
 
-    command = workspace_sandbox("hermes", workspace, "required").wrap(["hermes"])
+    _, files = _benchmark_owned_paths(workspace)
 
-    assert _has_sequence(command, ["--tmpfs", str(oracles.resolve())])
+    assert package / "golden_solutions.py" in files
+    assert package / "parametric_goldens.py" in files
 
 
 def test_pi_state_writes_use_an_ephemeral_overlay(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    workspace = repo / "results" / ".local" / "piagent" / "m" / "runs" / "r" / "workspaces" / "t"
+    workspace.mkdir(parents=True)
     pi_state = tmp_path / ".pi" / "agent"; pi_state.mkdir(parents=True)
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
     monkeypatch.setattr("core.benchmark.sandbox.Path.home", lambda: tmp_path)
     monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
-    monkeypatch.setattr("core.benchmark.sandbox._benchmark_owned_paths", lambda workspace: ([], []))
-    command = workspace_sandbox("piagent", tmp_path / "workspace", "required").wrap(["pi"])
+    command = workspace_sandbox("piagent", workspace, "required").wrap(["pi"])
     assert _has_sequence(command, ["--overlay-src", str(pi_state), "--tmp-overlay", str(pi_state)])
 
 
 def test_other_harnesses_do_not_expose_pi_state(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    workspace = repo / "results" / ".local" / "hermes" / "m" / "runs" / "r" / "workspaces" / "t"
+    workspace.mkdir(parents=True)
     pi_state = tmp_path / ".pi" / "agent"; pi_state.mkdir(parents=True)
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
     monkeypatch.setattr("core.benchmark.sandbox.Path.home", lambda: tmp_path)
     monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
-    monkeypatch.setattr("core.benchmark.sandbox._benchmark_owned_paths", lambda workspace: ([], []))
-    command = workspace_sandbox("hermes", tmp_path / "workspace", "required").wrap(["hermes"])
+    command = workspace_sandbox("hermes", workspace, "required").wrap(["hermes"])
     assert "--tmp-overlay" not in command
 
 
