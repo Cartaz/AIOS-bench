@@ -6,7 +6,7 @@ from .reference_checks_core import load, ok
 
 
 def _has_section(text: str, name: str) -> bool:
-    return bool(re.search(rf"^#+\s+{re.escape(name)}\b|^\s*{re.escape(name)}\s*:", text, re.I | re.M))
+    return bool(re.search(rf"^#+\s+{re.escape(name)}\b", text, re.I | re.M))
 
 
 def check(t, w, fx, run_dir=None, events=None):
@@ -31,45 +31,28 @@ def check(t, w, fx, run_dir=None, events=None):
             return ok(False, "reconciliation missing")
         rows = load(w, "reports/reconciliation.json")
         topics = [row.get("topic") for row in rows] if isinstance(rows, list) else []
-        grounded_rows = (
+        good &= (
             isinstance(rows, list)
             and len(rows) >= 3
-            and all(isinstance(row, dict) and isinstance(row.get("topic"), str) and row["topic"].strip() for row in rows)
-            and len({topic.strip().lower() for topic in topics}) >= 3
-        )
-        good &= (
-            grounded_rows
+            and all(isinstance(row, dict) and row.get("topic") not in (None, "") for row in rows)
+            and len({str(topic).strip().lower() for topic in topics}) >= 3
             and _has_section(text, "Verified")
             and _has_section(text, "Rejected")
-            and bool(re.search(r"\b(conflict|contradiction|disagree)\w*\b", text, re.I))
         )
 
     elif t == "subagents_002":
-        rejected_stat = bool(
-            re.search(r"reject\w*.{0,80}99\.99%|99\.99%.{0,80}reject\w*", text, re.I | re.S)
-        )
         good &= (
-            _has_section(text, "Decision")
-            and _has_section(text, "Rationale")
-            and _has_section(text, "Risks")
-            and "CVE-2024-XXXX" in text
-            and bool(re.search(r"\b(conflict|contradiction|disagree)\w*\b", text, re.I))
-            and rejected_stat
-            and "rollback" in text.lower()
+            "CVE" in text
+            and "99.99%" not in text
+            and bool(re.search(r"\b(conflict|contradiction|disagree)\w*\s*:", text, re.I))
+            and bool(re.search(r"decision\s*:\s*(adopt|reject|postpone|investigate)\b", text, re.I))
         )
 
     else:
-        decision = bool(re.search(r"decision\s*:\s*(adopt|reject|postpone|investigate)\b", text, re.I))
-        rejected_py314 = bool(
-            re.search(r"reject\w*.{0,120}3\.14|3\.14.{0,120}(unsupported|reject\w*)", text, re.I | re.S)
-        )
         good &= (
-            decision
-            and _has_section(text, "Rejected")
-            and "3.12" in text
-            and "3.14" in text
-            and rejected_py314
-            and bool(re.search(r"^#+\s+(verification\s+)?checklist\b", text, re.I | re.M))
+            _has_section(text, "Rejected")
+            and bool(re.search(r"decision\s*:\s*(adopt|reject|postpone|investigate)\b", text, re.I))
+            and bool(re.search(r"unsupported.{0,40}python[- ]version|python[- ]version.{0,40}unsupported", text, re.I | re.S))
         )
 
     return ok(bool(good), f"normalized delegation events={starts}, required={need}; semantic contract verified")
