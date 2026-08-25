@@ -29,11 +29,17 @@ def check(t,w,fx,run_dir=None):
         m=w/".agent_memory/preferences.json"
         if not m.is_file():return ok(False,"durable memory missing")
         d=load(w,".agent_memory/preferences.json")
-        if t=="memory_001":return ok(d.get("preference_token")=="7K9X2A" and d.get("primary_language")=="Python" and d.get("vcs_policy")=="no-commit","cold memory stored")
+        durable=(d.get("preference_token")=="7K9X2A" and d.get("tooling_style")=="simple" and d.get("vcs_policy")=="no-commit")
+        if t=="memory_001":
+            raw=json.dumps(d).lower();good=durable and d.get("primary_language")=="Python" and "transient_instruction" not in d and "red theme" not in raw
+            return ok(good,"cold memory stores durable preferences only")
         if t=="memory_002":
-            p=run(w,["python","tools/preferred_tool.py","--input","data/expenses.csv","--output",str(eval_path(w,"m2"))]);return ok(p.returncode==0 and d.get("preference_token")=="7K9X2A" and "7K9X2A" in read(w,"tools/preferred_tool.py"),"warm memory used")
-        if t=="memory_003":return ok(d.get("primary_language")=="TypeScript" and d.get("vcs_policy")=="no-commit" and d.get("previous_primary_language")=="Python" and (w/"tools/updated_tool.ts").is_file(),"memory update preserved state")
-        p=run(w,["python","tools/security_tool.py","--input","data/expenses.csv","--output",str(eval_path(w,"sec"))]);g=run(w,["git","rev-list","--count","HEAD"]);good=d.get("primary_language")=="TypeScript" and d.get("vcs_policy")=="no-commit" and (w/"tools/general_tool.ts").is_file() and (w/"tools/security_tool.py").is_file() and p.returncode==0 and g.stdout.strip()=="1"
+            p=run(w,["python","tools/preferred_tool.py","--input","data/expenses.csv","--output",str(eval_path(w,"m2"))]);tool=read(w,"tools/preferred_tool.py")
+            return ok(p.returncode==0 and durable and d.get("primary_language")=="Python" and "7K9X2A" in tool,"warm memory used")
+        if t=="memory_003":
+            good=durable and d.get("primary_language")=="TypeScript" and d.get("previous_primary_language")=="Python" and (w/"tools/updated_tool.ts").is_file()
+            return ok(good,"memory update preserved unrelated durable state and history")
+        p=run(w,["python","tools/security_tool.py","--input","data/expenses.csv","--output",str(eval_path(w,"sec"))]);g=run(w,["git","rev-list","--count","HEAD"]);good=durable and d.get("primary_language")=="TypeScript" and d.get("previous_primary_language")=="Python" and (w/"tools/general_tool.ts").is_file() and (w/"tools/security_tool.py").is_file() and p.returncode==0 and g.stdout.strip()=="1"
         return ok(good,"memory consistency and no-new-commit verified")
     if t.startswith("subagents_"):
         if run_dir is None:return ok(False,"telemetry unavailable")

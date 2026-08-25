@@ -72,7 +72,7 @@ def test_subagent_oracle_requires_normalized_events_not_reported_prose(tmp_path:
     reports = tmp_path / "reports"
     reports.mkdir()
     (reports / "decision_memo.md").write_text(
-        "CVE-2026-0001\n## Rejected\nDecision: reject\n",
+        "CVE-2026-0001\nconflict: sources disagree\nDecision: reject\n",
         encoding="utf-8",
     )
 

@@ -1,19 +1,58 @@
-from .reference_checks_core import read,load,ok
-def check(t,w,fx,run_dir=None,events=None):
-    if not t.startswith('subagents_'): return None
-    # Do not infer delegation from a model's prose.  Only normalized harness
-    # events count: otherwise an agent can pass by merely writing "delegated".
-    starts=sum(
-        event.get('type') == 'subagent_start'
-        and not (event.get('data') or {}).get('inferred', False)
+from __future__ import annotations
+
+import re
+
+from .reference_checks_core import load, ok
+
+
+def _has_section(text: str, name: str) -> bool:
+    return bool(re.search(rf"^#+\s+{re.escape(name)}\b", text, re.I | re.M))
+
+
+def check(t, w, fx, run_dir=None, events=None):
+    if not t.startswith("subagents_"):
+        return None
+
+    starts = sum(
+        event.get("type") == "subagent_start"
+        and not (event.get("data") or {}).get("inferred", False)
         for event in (events or [])
     )
-    need=1 if t=='subagents_001' else 2
-    report=w/'reports/subagent_comparison.md' if t=='subagents_001' else w/'reports/decision_memo.md'
-    if not report.is_file():return ok(False,'decision report missing')
-    x=report.read_text(encoding='utf-8',errors='replace')
-    good=starts>=need
-    if t=='subagents_001':good &= (w/'reports/reconciliation.json').is_file() and len(load(w,'reports/reconciliation.json'))>=3 and '## Verified' in x and '## Rejected' in x
-    elif t=='subagents_002':good &= 'CVE' in x and '99.99%' not in x
-    else:good &= '## Rejected' in x and any(k in x.lower() for k in ['decision: adopt','decision: reject','decision: postpone','decision: investigate'])
-    return ok(bool(good),f'normalized delegation events={starts}, required={need}')
+    need = 1 if t == "subagents_001" else 2
+    report = w / ("reports/subagent_comparison.md" if t == "subagents_001" else "reports/decision_memo.md")
+    if not report.is_file():
+        return ok(False, "decision report missing")
+    text = report.read_text(encoding="utf-8", errors="replace")
+    good = starts >= need
+
+    if t == "subagents_001":
+        reconciliation = w / "reports/reconciliation.json"
+        if not reconciliation.is_file():
+            return ok(False, "reconciliation missing")
+        rows = load(w, "reports/reconciliation.json")
+        topics = [row.get("topic") for row in rows] if isinstance(rows, list) else []
+        good &= (
+            isinstance(rows, list)
+            and len(rows) >= 3
+            and all(isinstance(row, dict) and row.get("topic") not in (None, "") for row in rows)
+            and len({str(topic).strip().lower() for topic in topics}) >= 3
+            and _has_section(text, "Verified")
+            and _has_section(text, "Rejected")
+        )
+
+    elif t == "subagents_002":
+        good &= (
+            "CVE" in text
+            and "99.99%" not in text
+            and bool(re.search(r"\b(conflict|contradiction|disagree)\w*\s*:", text, re.I))
+            and bool(re.search(r"decision\s*:\s*(adopt|reject|postpone|investigate)\b", text, re.I))
+        )
+
+    else:
+        good &= (
+            _has_section(text, "Rejected")
+            and bool(re.search(r"decision\s*:\s*(adopt|reject|postpone|investigate)\b", text, re.I))
+            and bool(re.search(r"unsupported.{0,40}python[- ]version|python[- ]version.{0,40}unsupported", text, re.I | re.S))
+        )
+
+    return ok(bool(good), f"normalized delegation events={starts}, required={need}; semantic contract verified")

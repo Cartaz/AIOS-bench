@@ -5,6 +5,8 @@ from pathlib import Path
 from aios_bench.reference_checks_data import check as check_data
 from aios_bench.reference_checks_knowledge import check as check_knowledge
 from aios_bench.reference_checks_long import check as check_long
+from aios_bench.reference_checks_subagents import check as check_subagents
+from aios_bench.reference_checks_system import check as check_system
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,9 +66,8 @@ def test_knowledge_003_rejects_missing_required_workflow_core(tmp_path: Path):
 
 def test_knowledge_001_rejects_unrelated_action_with_real_quote(tmp_path: Path):
     workspace = _workspace(tmp_path)
-    quote = "Francesco: review software subscriptions"
     entries = [
-        {"action": "Launch a rocket to Mars", "source_doc": "notes/meeting_notes.md", "evidence_quote": quote},
+        {"action": "Launch a rocket to Mars", "source_doc": "notes/meeting_notes.md", "evidence_quote": "Francesco: review software subscriptions"},
         {"action": "prepare the July sales summary", "source_doc": "notes/meeting_notes.md", "evidence_quote": "Marta: prepare the July sales summary"},
         {"action": "verify the July expense totals", "source_doc": "notes/meeting_notes.md", "evidence_quote": "Sara: verify the July expense totals"},
     ]
@@ -91,10 +92,7 @@ def test_autonomy_002_rejects_misaligned_or_duplicate_actions(tmp_path: Path):
 def test_learning_002_rejects_successful_but_wrong_shifted_schema_result(tmp_path: Path):
     workspace = _workspace(tmp_path)
     (workspace / "skills").mkdir(exist_ok=True)
-    (workspace / "skills/reporting_workflow.py").write_text(
-        "import argparse\nfrom pathlib import Path\np=argparse.ArgumentParser();p.add_argument('--input');p.add_argument('--output');a=p.parse_args();Path(a.output).write_text('Total revenue: 0.00\\n')\n",
-        encoding="utf-8",
-    )
+    (workspace / "skills/reporting_workflow.py").write_text("import argparse\nfrom pathlib import Path\np=argparse.ArgumentParser();p.add_argument('--input');p.add_argument('--output');a=p.parse_args();Path(a.output).write_text('Total revenue: 0.00\\n')\n", encoding="utf-8")
     (workspace / "reports/learning_transfer.md").write_text("transferred steps: parse\nadapted steps: gross_usd\nadaptation reason: schema shift\n", encoding="utf-8")
     passed, _ = check_data("learning_002", workspace, FIXTURE)
     assert passed is False
@@ -107,4 +105,46 @@ def test_long_horizon_003_rejects_requirement_ids_with_fake_evidence(tmp_path: P
     (workspace / "reports/final_audit.md").write_text("# Audit\n", encoding="utf-8")
     (workspace / "tools/investigation_helper.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
     passed, _ = check_long("long_horizon_003", workspace, FIXTURE)
+    assert passed is False
+
+
+def test_subagents_001_rejects_duplicate_placeholder_reconciliation(tmp_path: Path):
+    workspace = _workspace(tmp_path)
+    (workspace / "reports/subagent_comparison.md").write_text("## Verified\nok\n## Rejected\nbad\n", encoding="utf-8")
+    (workspace / "reports/reconciliation.json").write_text(json.dumps([{"topic": "same"}] * 3), encoding="utf-8")
+    events = [{"type": "subagent_start", "data": {"inferred": False}}]
+    passed, _ = check_subagents("subagents_001", workspace, FIXTURE, events=events)
+    assert passed is False
+
+
+def test_subagents_002_rejects_nominal_cve_without_conflict_or_decision(tmp_path: Path):
+    workspace = _workspace(tmp_path)
+    (workspace / "reports/decision_memo.md").write_text("CVE reviewed.\n", encoding="utf-8")
+    events = [{"type": "subagent_start", "data": {"inferred": False}} for _ in range(2)]
+    passed, _ = check_subagents("subagents_002", workspace, FIXTURE, events=events)
+    assert passed is False
+
+
+def test_subagents_003_requires_rejected_python_version_conclusion(tmp_path: Path):
+    workspace = _workspace(tmp_path)
+    (workspace / "reports/decision_memo.md").write_text("decision: adopt\n## Rejected\nunsupported conclusion\n", encoding="utf-8")
+    events = [{"type": "subagent_start", "data": {"inferred": False}} for _ in range(2)]
+    passed, _ = check_subagents("subagents_003", workspace, FIXTURE, events=events)
+    assert passed is False
+
+
+def test_memory_001_rejects_transient_instruction_in_durable_store(tmp_path: Path):
+    workspace = _workspace(tmp_path)
+    (workspace / ".agent_memory").mkdir()
+    (workspace / ".agent_memory/preferences.json").write_text(json.dumps({"preference_token":"7K9X2A","primary_language":"Python","tooling_style":"simple","vcs_policy":"no-commit","transient_instruction":"use a red theme today"}), encoding="utf-8")
+    passed, _ = check_system("memory_001", workspace, FIXTURE)
+    assert passed is False
+
+
+def test_memory_003_requires_unrelated_durable_preferences_to_survive(tmp_path: Path):
+    workspace = _workspace(tmp_path)
+    (workspace / ".agent_memory").mkdir()
+    (workspace / ".agent_memory/preferences.json").write_text(json.dumps({"primary_language":"TypeScript","previous_primary_language":"Python","vcs_policy":"no-commit"}), encoding="utf-8")
+    (workspace / "tools/updated_tool.ts").write_text("export {}\n", encoding="utf-8")
+    passed, _ = check_system("memory_003", workspace, FIXTURE)
     assert passed is False
