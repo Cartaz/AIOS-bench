@@ -16,10 +16,25 @@ if sys.version_info < (3, 12):
     raise SystemExit(f"[ERROR] Python 3.12+ required, found {sys.version.split()[0]}")
 PY
 
-if [[ ! -x .venv/bin/python ]]; then
+venv_is_compatible() {
+  [[ -x .venv/bin/python ]] || return 1
+  .venv/bin/python - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+}
+
+if ! venv_is_compatible; then
+  echo "[INFO] Creating or repairing .venv with Python 3.12+"
   rm -rf .venv
   "$PYTHON_BIN" -m venv .venv
 fi
+
+.venv/bin/python - <<'PY'
+import sys
+if sys.version_info < (3, 12):
+    raise SystemExit(f"[ERROR] .venv uses unsupported Python {sys.version.split()[0]}")
+PY
 
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
