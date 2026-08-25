@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 from core.app_controller import AppController
 from ui.bridge import Bridge
 from ui.main_window import MainWindow
+from ui.runtime import DesktopRuntime
 
 ROOT = Path(__file__).resolve().parent
 
@@ -20,9 +21,10 @@ def main() -> int:
     )
     app = QApplication(sys.argv)
     controller = AppController(ROOT)
-    bridge = Bridge(controller)
-    window = MainWindow(controller, bridge, ROOT / "ui" / "web")
-    app.aboutToQuit.connect(controller.shutdown)
+    runtime = DesktopRuntime(controller)
+    bridge = Bridge(controller, runtime)
+    window = MainWindow(runtime, bridge, ROOT / "ui" / "web")
+    app.aboutToQuit.connect(runtime.shutdown)
     window.show()
     return app.exec()
 
