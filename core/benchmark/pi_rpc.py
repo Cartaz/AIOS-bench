@@ -4,6 +4,7 @@ import json
 import os
 import selectors
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,6 +55,14 @@ class PiRPCClient:
         command += self.extra_args
         return command
 
+    @staticmethod
+    def _drain_stream(stream, chunks: list[str]) -> None:
+        try:
+            for chunk in iter(stream.readline, ""):
+                chunks.append(chunk)
+        finally:
+            stream.close()
+
     def run(self, prompt: str) -> PiRPCResult:
         env = os.environ.copy()
         env.update(self.environment)
@@ -70,15 +79,23 @@ class PiRPCClient:
         )
         started = time.monotonic()
         lines: list[str] = []
-        stderr_text = ""
+        stderr_chunks: list[str] = []
         timed_out = False
         runaway = False
         cancelled = False
         protocol_succeeded = False
         protocol_failed = False
         selector = selectors.DefaultSelector()
+        stderr_thread: threading.Thread | None = None
         try:
-            assert proc.stdin is not None and proc.stdout is not None
+            assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
+            stderr_thread = threading.Thread(
+                target=self._drain_stream,
+                args=(proc.stderr, stderr_chunks),
+                name="aios-bench-pi-stderr",
+                daemon=True,
+            )
+            stderr_thread.start()
             proc.stdin.write(
                 json.dumps({"id": "aios-bench", "type": "prompt", "message": prompt}) + "\n"
             )
@@ -127,8 +144,8 @@ class PiRPCClient:
             if proc.stdin and not proc.stdin.closed:
                 proc.stdin.close()
             terminate_owned(proc)
-            if proc.stderr:
-                stderr_text = proc.stderr.read()
+            if stderr_thread is not None:
+                stderr_thread.join(timeout=1.0)
         if timed_out or runaway or cancelled or protocol_failed:
             returncode = 1
         elif protocol_succeeded:
@@ -138,7 +155,7 @@ class PiRPCClient:
         return PiRPCResult(
             returncode,
             "".join(lines),
-            stderr_text,
+            "".join(stderr_chunks),
             timed_out,
             runaway,
             cancelled,
