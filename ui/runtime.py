@@ -10,6 +10,7 @@ from core.app_controller import AppController
 from core.cancellation import CancellationToken
 
 logger = logging.getLogger(__name__)
+SHUTDOWN_WAIT_MS = 5000
 
 
 class BackgroundWorker(QObject):
@@ -30,6 +31,10 @@ class BackgroundWorker(QObject):
             self.failed.emit("Operation failed. See application log for details.")
         else:
             self.finished.emit(result)
+        finally:
+            # Quit from the worker thread itself so shutdown does not depend on
+            # the GUI event loop delivering a queued thread.quit() invocation.
+            QThread.currentThread().quit()
 
 
 class DesktopRuntime(QObject):
@@ -98,8 +103,6 @@ class DesktopRuntime(QObject):
         worker.event.connect(self._on_event)
         worker.finished.connect(self._on_finished)
         worker.failed.connect(self._on_failed)
-        worker.finished.connect(thread.quit)
-        worker.failed.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         worker.failed.connect(worker.deleteLater)
         thread.finished.connect(self._thread_finished)
@@ -140,8 +143,17 @@ class DesktopRuntime(QObject):
         )
 
     def shutdown(self) -> None:
+        thread = self._thread
+        if thread is None or not thread.isRunning():
+            return
         if self.is_running:
             self.cancel_run()
             logger.info("Shutdown requested; benchmark cancellation signalled")
-        elif self.is_busy:
+        else:
             logger.warning("Shutdown requested while a non-benchmark operation is active")
+
+        if not thread.wait(SHUTDOWN_WAIT_MS):
+            logger.error(
+                "Background operation did not stop within %.1f seconds during shutdown",
+                SHUTDOWN_WAIT_MS / 1000,
+            )
