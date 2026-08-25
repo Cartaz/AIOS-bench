@@ -58,7 +58,6 @@ class DoctorService:
 
     def install_harness(self, name: str) -> dict:
         self.validate_install(name)
-        recipe = doctor.SPECS[name].install()
-        if not doctor._run_install(recipe):
+        if not doctor.install_harness(name):
             raise RuntimeError(f"Installation command failed for {name}")
         return self.inspect()
