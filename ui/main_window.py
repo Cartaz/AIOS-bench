@@ -9,8 +9,8 @@ from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QMainWindow, QMessageBox
 
-from core.app_controller import AppController
 from .bridge import Bridge
+from .runtime import DesktopRuntime
 
 
 class LocalPage(QWebEnginePage):
@@ -23,9 +23,9 @@ class LocalPage(QWebEnginePage):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, controller: AppController, bridge: Bridge, web_root: Path) -> None:
+    def __init__(self, runtime: DesktopRuntime, bridge: Bridge, web_root: Path) -> None:
         super().__init__()
-        self._controller = controller
+        self._runtime = runtime
         self.setWindowTitle("AIOS-Bench")
         self.setMinimumSize(1200, 800)
         self.resize(1440, 920)
@@ -51,11 +51,11 @@ class MainWindow(QMainWindow):
         self._channel = channel
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self._controller.is_running:
+        if self._runtime.is_busy:
             QMessageBox.information(
                 self,
-                "Benchmark in esecuzione",
-                "La finestra resterà aperta finché il task corrente non termina.",
+                "Operazione in esecuzione",
+                "La finestra resterà aperta finché l'operazione corrente non termina.",
             )
             event.ignore()
             return
