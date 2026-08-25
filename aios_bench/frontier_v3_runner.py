@@ -56,15 +56,16 @@ class FrontierV3Runner(BenchmarkRunner):
             ):
                 h.update(p.relative_to(self.repo_root).as_posix().encode())
                 h.update(p.read_bytes())
-        for p in sorted((self.repo_root/'aios_bench').glob('reference_checks*.py')):
+        benchmark_root=self.repo_root/'core'/'benchmark'
+        for p in sorted(benchmark_root.glob('reference_checks*.py')):
             h.update(p.name.encode())
             h.update(p.read_bytes())
         for name in SEMANTIC_FILES:
-            p=self.repo_root/'aios_bench'/name
+            p=benchmark_root/name
             h.update(p.name.encode())
             h.update(p.read_bytes())
         for directory in SEMANTIC_DIRS:
-            root=self.repo_root/'aios_bench'/directory
+            root=benchmark_root/directory
             for p in sorted(path for path in root.rglob('*.py') if '__pycache__' not in path.parts):
                 h.update(p.relative_to(self.repo_root).as_posix().encode())
                 h.update(p.read_bytes())
