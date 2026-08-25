@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 
 from aios_bench.experiments import derive_seed
-from aios_bench.frontier_v4_runner import FrontierV4Runner, SEMANTIC_DIRS, SEMANTIC_FILES
+from aios_bench.frontier_runner import semantic_source_paths
+from aios_bench.frontier_v4_runner import FrontierV4Runner
 from aios_bench.runner import AGENTS
 from aios_bench.tasks import load_tasks
 
@@ -133,6 +134,9 @@ def test_landscape_profile_excludes_only_pressure_coordinates(tmp_path: Path) ->
     )
 
 
-def test_frontier_v4_semantic_fingerprint_covers_generators() -> None:
-    assert "frontier_v4_runner.py" in SEMANTIC_FILES
-    assert "parametric" in SEMANTIC_DIRS
+def test_frontier_v4_semantic_fingerprint_auto_discovers_generators() -> None:
+    paths = semantic_source_paths(ROOT)
+    names = {path.name for path in paths}
+    assert "materialization.py" in names
+    assert "suites.py" in names
+    assert any("parametric" in path.parts for path in paths)
