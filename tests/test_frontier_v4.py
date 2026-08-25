@@ -39,9 +39,9 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
     v4 = load_tasks(TASK_ROOT, "frontier_v4")
 
     assert len(v3) == 28
-    assert [task.id for task in v4] == ["autonomy_expense_001"]
-    assert v4[0].revision == 4
-    assert any(check["type"] == "parametric_reference" for check in v4[0].acceptance)
+    assert [task.id for task in v4] == ["autonomy_expense_001", "tool_use_config_001"]
+    assert all(task.revision == 4 for task in v4)
+    assert all(any(check["type"] == "parametric_reference" for check in task.acceptance) for task in v4)
 
 
 def test_frontier_v4_uses_scheduler_compatible_task_seed(tmp_path: Path) -> None:
