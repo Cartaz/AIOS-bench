@@ -1,5 +1,5 @@
 from pathlib import Path
-import hashlib, json, re, subprocess
+import hashlib, json, re, subprocess, sys
 
 def read(w,p): return (w/p).read_text(encoding='utf-8',errors='replace')
 def load(w,p): return json.loads(read(w,p))
@@ -7,7 +7,11 @@ def eval_path(w,name):
     """Return a workspace-local oracle path, isolated across harness runs."""
     root=w/'.aios-bench-eval'; root.mkdir(parents=True,exist_ok=True)
     return root/name
-def run(w,args,timeout=30): return subprocess.run(args,cwd=w,text=True,capture_output=True,timeout=timeout,check=False)
+def run(w,args,timeout=30):
+    argv=list(args)
+    if argv and argv[0] in {'python','python3'}:
+        argv[0]=sys.executable
+    return subprocess.run(argv,cwd=w,text=True,capture_output=True,timeout=timeout,check=False)
 def same(w,f,fx):
  a,b=w/f,fx/f
  return a.is_file() and b.is_file() and hashlib.sha256(a.read_bytes()).digest()==hashlib.sha256(b.read_bytes()).digest()
