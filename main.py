@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
+from config.settings import SettingsStore
 from core.app_controller import AppController
 from ui.bridge import Bridge
 from ui.main_window import MainWindow
@@ -20,7 +21,8 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     app = QApplication(sys.argv)
-    controller = AppController(ROOT)
+    settings = SettingsStore()
+    controller = AppController(ROOT, settings)
     runtime = DesktopRuntime(controller)
     bridge = Bridge(controller, runtime)
     window = MainWindow(runtime, bridge, ROOT / "ui" / "web")
