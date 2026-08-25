@@ -17,6 +17,7 @@ from .hermes_telemetry import parse_hermes_usage_report
 from .letta_telemetry import parse_letta_stream_json
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
+from .processes import spawn_owned, terminate_owned
 from .sandbox import workspace_sandbox
 from .scoring import overall_score
 from .server_metrics import NullServerMetricsClient, OutputTokenGuard
@@ -41,7 +42,7 @@ def _run_process(
     runaway_check: Callable[[], bool] | None,
 ) -> ProcessOutcome:
     """Run a local harness while allowing timeout and token-cap polling."""
-    proc = subprocess.Popen(
+    proc = spawn_owned(
         command,
         cwd=cwd,
         env=env,
@@ -56,24 +57,16 @@ def _run_process(
         while proc.poll() is None:
             if time.monotonic() - started >= timeout:
                 timed_out = True
-                proc.kill()
                 break
             if runaway_check is not None and runaway_check():
                 runaway = True
-                proc.kill()
                 break
             try:
                 proc.wait(timeout=0.1)
             except subprocess.TimeoutExpired:
                 pass
     finally:
-        if proc.poll() is None:
-            proc.kill()
-        try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=2)
+        terminate_owned(proc)
     return ProcessOutcome(proc.returncode if proc.returncode is not None else 1, timed_out, runaway)
 
 
