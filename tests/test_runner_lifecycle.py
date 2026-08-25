@@ -29,6 +29,7 @@ class LifecycleRunner(BenchmarkRunner):
         return ["coding_001", "subagents_001"]
 
     def run_task(self, task: Task, timeout: float) -> Trajectory:
+        self.observed_timeouts = [*getattr(self, "observed_timeouts", []), timeout]
         trajectory = Trajectory(
             agent=self.agent.name,
             task_id=task.id,
@@ -77,6 +78,7 @@ def test_completed_lifecycle_records_unsupported_and_updates_latest(tmp_path: Pa
     initial = json.loads(runner.metadata_path.read_text())
     assert initial["status"] == "running"
     assert initial["manifest"]["configuration"]["runner_workspace_isolation"] == "disabled"
+    assert initial["manifest"]["configuration"]["total_timeout_semantics"] == "active_execution_budget_per_harness"
     assert len(initial["execution_fingerprint"]) == 64
     assert "git_dirty" in initial
     assert runner.run(TASKS) == 0
@@ -100,6 +102,19 @@ def test_completed_lifecycle_records_unsupported_and_updates_latest(tmp_path: Pa
     assert not (resumed.model_dir / "latest.txt").exists()
     assert resumed.run(TASKS) == 0
     assert len(resumed.checkpoint.read_text().splitlines()) == 2
+
+
+def test_total_timeout_is_active_execution_budget(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AIOS_BENCH_SANDBOX", "off")
+    runner = _runner(tmp_path, run_id="budget", total_timeout=0.015)
+    tasks = [
+        Task("coding_001", "coding", "First"),
+        Task("coding_002", "coding", "Second"),
+    ]
+
+    assert runner.run(tasks) == 0
+    assert runner.observed_timeouts[0] == pytest.approx(0.015)
+    assert runner.observed_timeouts[1] == pytest.approx(0.005)
 
 
 def test_aborted_run_never_becomes_latest(tmp_path: Path, monkeypatch):
