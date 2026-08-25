@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from aios_bench import doctor
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -48,7 +45,7 @@ class DoctorService:
             anthropic_url=profile.anthropic_url,
         )
 
-    def install_harness(self, name: str) -> dict:
+    def validate_install(self, name: str) -> None:
         if name not in doctor.SPECS:
             raise ValueError(f"Unknown harness: {name}")
         recipe = doctor.SPECS[name].install()
@@ -56,6 +53,10 @@ class DoctorService:
             raise ValueError(
                 "This harness requires guided manual installation; use the displayed official instructions."
             )
+
+    def install_harness(self, name: str) -> dict:
+        self.validate_install(name)
+        recipe = doctor.SPECS[name].install()
         if not doctor._run_install(recipe):
             raise RuntimeError(f"Installation command failed for {name}")
         return self.inspect()
