@@ -2,20 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .frontier_runner import BASE_SEMANTIC_DIRS, BASE_SEMANTIC_FILES, FrontierRunner, SuiteDefinition
-from .materialization import StaticTaskMaterializer
-
-SEMANTIC_FILES = BASE_SEMANTIC_FILES
-SEMANTIC_DIRS = BASE_SEMANTIC_DIRS
-
-
-def frontier_v3_suite() -> SuiteDefinition:
-    return SuiteDefinition(
-        name="frontier_v3",
-        catalog_dir="frontier_v3",
-        materializer=StaticTaskMaterializer(),
-        fixture_dirs=("benchmarks/fixtures",),
-    )
+from .frontier_runner import FrontierRunner
+from .suites import frontier_v3_suite
 
 
 class FrontierV3Runner(FrontierRunner):
