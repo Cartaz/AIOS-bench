@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core.benchmark.task_execution import _run_process
+from core.benchmark import task_execution
 from core.cancellation import CancellationToken, RunCancelled
 from core.run_service import BenchmarkService, RunRequest
 
@@ -34,10 +34,10 @@ def test_cancellation_token_is_thread_safe_signal() -> None:
 def test_process_polling_reports_cancel_and_always_cleans_owned_process(monkeypatch, tmp_path: Path) -> None:
     process = _Process()
     cleaned = []
-    monkeypatch.setattr("core.benchmark.task_execution.spawn_owned", lambda *args, **kwargs: process)
-    monkeypatch.setattr("core.benchmark.task_execution.terminate_owned", lambda proc: cleaned.append(proc))
+    monkeypatch.setattr(task_execution, "spawn_owned", lambda *args, **kwargs: process)
+    monkeypatch.setattr(task_execution, "terminate_owned", lambda proc: cleaned.append(proc))
 
-    outcome = _run_process(
+    outcome = task_execution._run_process(
         ["fake-harness"],
         cwd=tmp_path,
         env={},
