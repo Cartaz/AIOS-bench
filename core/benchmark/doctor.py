@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import platform
 import shutil
@@ -9,10 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from config.settings import AppSettings, SettingsStore
+
 from .config import AGENTS
 
-PROFILE_SCHEMA = "aios-bench/doctor-profile/v1"
-DEFAULT_PROFILE = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "aios-bench" / "profile.json"
+PROFILE_SCHEMA = "aios-bench/settings/v1"
+DEFAULT_PROFILE = SettingsStore().path
 
 
 @dataclass(frozen=True)
@@ -70,7 +71,7 @@ def _goose_recipe() -> InstallRecipe:
         None,
         "curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash",
         "https://block.github.io/goose/",
-        "Official Goose CLI installer.",
+        "Official Goose CLI installer; AIOS-Bench displays this command but never executes it automatically.",
     )
 
 
@@ -83,7 +84,7 @@ def _hermes_recipe() -> InstallRecipe:
         None,
         "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-browser",
         "https://hermes-agent.nousresearch.com/docs/",
-        "Uses the official installer and skips browser bootstrap; AIOS-bench enables only its pinned harness surface.",
+        "Official installer shown for manual use only; AIOS-Bench does not execute remote shell pipelines.",
     )
 
 
@@ -170,14 +171,25 @@ def inspect() -> dict:
     }
 
 
+def _profile_dict(settings: AppSettings) -> dict:
+    environment: dict[str, str] = {}
+    if settings.openai_url:
+        environment["AIOS_BENCH_ENDPOINT"] = settings.openai_url
+    if settings.anthropic_url:
+        environment["AIOS_BENCH_CLAUDE_BASE_URL"] = settings.anthropic_url
+    return {
+        "schema": PROFILE_SCHEMA,
+        "model": settings.model,
+        "openai_compatible_url": settings.openai_url,
+        "anthropic_compatible_url": settings.anthropic_url,
+        "environment": environment,
+    }
+
+
 def load_profile(path: Path = DEFAULT_PROFILE) -> dict:
     if not path.is_file():
         return {}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
+    return _profile_dict(SettingsStore(path).load())
 
 
 def apply_profile_environment(path: Path = DEFAULT_PROFILE) -> dict:
@@ -190,23 +202,13 @@ def apply_profile_environment(path: Path = DEFAULT_PROFILE) -> dict:
 
 
 def write_profile(*, model: str, openai_url: str, anthropic_url: str, path: Path = DEFAULT_PROFILE) -> Path:
-    environment: dict[str, str] = {}
-    if openai_url:
-        environment["AIOS_BENCH_ENDPOINT"] = openai_url.rstrip("/")
-    if anthropic_url:
-        environment["AIOS_BENCH_CLAUDE_BASE_URL"] = anthropic_url.rstrip("/")
-    value = {
-        "schema": PROFILE_SCHEMA,
-        "model": model.strip(),
-        "openai_compatible_url": openai_url.strip(),
-        "anthropic_compatible_url": anthropic_url.strip(),
-        "environment": environment,
-    }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-    temp.replace(path)
-    return path
+    return SettingsStore(path).save(
+        AppSettings(
+            model=model,
+            openai_url=openai_url,
+            anthropic_url=anthropic_url,
+        )
+    )
 
 
 def _yes_no(prompt: str, default: bool = True, input_fn=input) -> bool:
@@ -218,17 +220,12 @@ def _yes_no(prompt: str, default: bool = True, input_fn=input) -> bool:
 
 
 def _run_install(recipe: InstallRecipe) -> bool:
-    if recipe.command:
-        try:
-            return subprocess.run(list(recipe.command), check=False).returncode == 0
-        except OSError:
-            return False
-    if recipe.shell:
-        try:
-            return subprocess.run(recipe.shell, shell=True, executable="/bin/bash", check=False).returncode == 0
-        except OSError:
-            return False
-    return False
+    if recipe.command is None:
+        return False
+    try:
+        return subprocess.run(list(recipe.command), check=False).returncode == 0
+    except OSError:
+        return False
 
 
 def render_report(report: dict) -> str:
@@ -271,9 +268,8 @@ def run_wizard(*, setup: bool, repair: bool, check_only: bool, input_fn=input) -
                 if _yes_no("  Run this command now?", True, input_fn):
                     print("  Result:", "OK" if _run_install(recipe) else "FAILED")
             elif recipe.shell:
-                print(f"  Install: {recipe.shell}")
-                if _yes_no("  Run the official installer now?", False, input_fn):
-                    print("  Result:", "OK" if _run_install(recipe) else "FAILED")
+                print(f"  Manual install: {recipe.shell}")
+                print("  AIOS-Bench does not execute remote shell pipelines automatically.")
             else:
                 print("  Installation is intentionally manual for this service-backed harness.")
             print(f"  Configure: {spec.config_hint}")
@@ -293,5 +289,5 @@ def run_wizard(*, setup: bool, repair: bool, check_only: bool, input_fn=input) -
     print("\n" + render_report(final))
     profile = load_profile()
     model = profile.get("model") or "<model>"
-    print(f"\nNext: aiosbench --all --model {model} smoke")
+    print(f"\nNext: launch the GUI with .venv/bin/python main.py and run the smoke profile for {model}.")
     return 0 if final["ready"] else 1
