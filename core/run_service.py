@@ -7,15 +7,14 @@ from typing import Callable
 from core.benchmark.config import AGENTS
 from core.benchmark.experiments import make_experiment_id
 from core.benchmark.frontier_runner import FrontierRunner
-from core.benchmark.frontier_v3_runner import frontier_v3_suite
-from core.benchmark.frontier_v4_runner import frontier_v4_suite
 from core.benchmark.parametric import ConfigTraversalPressure, ExpensePressure
 from core.benchmark.report import write_summary
 from core.benchmark.scheduler import MatchedInterleavedScheduler
 from core.benchmark.statistics import augment_summary_file
+from core.benchmark.suites import SUITE_NAMES, frontier_v3_suite, frontier_v4_suite
 from core.benchmark.tasks import load_tasks
 
-SUITES = ("frontier_v3", "frontier_v4")
+SUITES = SUITE_NAMES
 EventCallback = Callable[[dict[str, object]], None]
 
 
