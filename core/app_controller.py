@@ -5,6 +5,8 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Callable
 
+from config.settings import SettingsStore
+
 from .doctor_service import DoctorProfile, DoctorService
 from .run_service import BenchmarkService, RunRequest
 
@@ -14,9 +16,9 @@ EventCallback = Callable[[dict[str, object]], None]
 class AppController:
     """Coordinates application services without owning Qt or presentation lifecycle."""
 
-    def __init__(self, repo_root: Path) -> None:
+    def __init__(self, repo_root: Path, settings: SettingsStore | None = None) -> None:
         self._benchmark = BenchmarkService(repo_root)
-        self._doctor = DoctorService()
+        self._doctor = DoctorService(settings or SettingsStore())
 
     def catalog_json(self, suite: str = "frontier_v3") -> str:
         return json.dumps(self._benchmark.catalog(suite), ensure_ascii=False)
