@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
@@ -17,6 +19,7 @@ from core.cancellation import CancellationToken, RunCancelled
 
 SUITES = SUITE_NAMES
 EventCallback = Callable[[dict[str, object]], None]
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -66,29 +69,58 @@ class BenchmarkService:
             ],
         }
 
+    @staticmethod
+    def _require_int(value: object, label: str, *, minimum: int | None = None) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{label} must be an integer")
+        if minimum is not None and value < minimum:
+            raise ValueError(f"{label} must be at least {minimum}")
+        return value
+
+    @staticmethod
+    def _require_positive_number(value: object, label: str) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{label} must be a number")
+        number = float(value)
+        if not math.isfinite(number) or number <= 0:
+            raise ValueError(f"{label} must be greater than 0")
+        return number
+
     def validate_request(self, request: RunRequest) -> list:
-        if request.suite not in SUITES:
+        if not isinstance(request.suite, str) or request.suite not in SUITES:
             raise ValueError(f"Unknown suite: {request.suite}")
         if not request.harnesses:
             raise ValueError("Select at least one harness")
+        if not all(isinstance(name, str) and name for name in request.harnesses):
+            raise ValueError("Harness ids must be non-empty strings")
         unknown_harnesses = sorted(set(request.harnesses) - set(AGENTS))
         if unknown_harnesses:
             raise ValueError(f"Unknown harnesses: {', '.join(unknown_harnesses)}")
-        if request.repeats < 1:
-            raise ValueError("Repeats must be at least 1")
-        if request.task_timeout <= 0:
-            raise ValueError("Task timeout must be greater than 0")
-        if request.total_timeout is not None and request.total_timeout <= 0:
-            raise ValueError("Total timeout must be greater than 0")
-        if request.max_output_tokens < 0:
-            raise ValueError("Max output tokens must be at least 0")
-        if request.metrics_poll_interval <= 0:
-            raise ValueError("Metrics poll interval must be greater than 0")
+
+        self._require_int(request.repeats, "Repeats", minimum=1)
+        self._require_int(request.seed, "Seed")
+        self._require_positive_number(request.task_timeout, "Task timeout")
+        if request.total_timeout is not None:
+            self._require_positive_number(request.total_timeout, "Total timeout")
+        self._require_int(request.max_output_tokens, "Max output tokens", minimum=0)
+        self._require_positive_number(request.metrics_poll_interval, "Metrics poll interval")
+        if not isinstance(request.keep_raw, bool):
+            raise ValueError("Keep raw must be a boolean")
+        if not isinstance(request.model, str):
+            raise ValueError("Model must be a string")
+        for value, label in (
+            (request.server_metrics_url, "Server metrics URL"),
+            (request.server_metrics_model, "Server metrics model"),
+        ):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"{label} must be a string or null")
 
         catalog = load_tasks(self.tasks_root, request.suite)
         by_id = {task.id: task for task in catalog}
         if not request.task_ids:
             raise ValueError("Select at least one task")
+        if not all(isinstance(task_id, str) and task_id for task_id in request.task_ids):
+            raise ValueError("Task ids must be non-empty strings")
         unknown_tasks = sorted(set(request.task_ids) - set(by_id))
         if unknown_tasks:
             raise ValueError(f"Unknown tasks: {', '.join(unknown_tasks)}")
@@ -101,6 +133,15 @@ class BenchmarkService:
                     f"Task {task_id} requires selected dependencies: {', '.join(missing)}"
                 )
         return [task for task in catalog if task.id in selected]
+
+    @staticmethod
+    def _abort_runners(runners: dict[str, "ObservableFrontierRunner"], tasks: list) -> None:
+        """Best-effort cleanup that never prevents another runner from being aborted."""
+        for name, runner in runners.items():
+            try:
+                runner.abort(tasks)
+            except Exception:
+                logger.exception("Failed to abort benchmark runner %s", name)
 
     def run(
         self,
@@ -155,11 +196,7 @@ class BenchmarkService:
                 token.raise_if_cancelled()
                 emit({"type": "repeat_finished", "repeat": repeat, "repeats": request.repeats})
         except RunCancelled:
-            for runner in active_runners.values():
-                try:
-                    runner.abort(tasks)
-                except OSError:
-                    pass
+            self._abort_runners(active_runners, tasks)
             result = {
                 "exit_code": 2,
                 "cancelled": True,
@@ -168,6 +205,9 @@ class BenchmarkService:
             }
             emit({"type": "run_cancelled", **result})
             return result
+        except BaseException:
+            self._abort_runners(active_runners, tasks)
+            raise
 
         summary = write_summary(self.results_root)
         augment_summary_file(summary, self.results_root)

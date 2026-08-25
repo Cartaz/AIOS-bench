@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,8 @@ from typing import Any
 from .experiments import TaskBlock, annotate_experiment, matched_schedule
 from .models import Task
 from .scoring import overall_score
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> str:
@@ -86,11 +89,16 @@ class MatchedInterleavedScheduler:
         return exit_code
 
     def abort_all(self) -> None:
-        for runner in self.runners.values():
+        """Attempt every runner cleanup even when an earlier cleanup fails."""
+        for name, runner in self.runners.items():
             try:
                 runner.abort(self.tasks)
-            finally:
+            except Exception:
+                logger.exception("Failed to abort interleaved runner %s", name)
+            try:
                 self._annotate(runner)
+            except Exception:
+                logger.exception("Failed to annotate aborted interleaved runner %s", name)
 
     def run(self) -> InterleavedResult:
         remaining_budget: dict[str, float | None] = {

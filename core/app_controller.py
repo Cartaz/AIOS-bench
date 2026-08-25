@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
-from typing import Callable
 
 from config.settings import SettingsStore
 
@@ -53,8 +53,12 @@ class AppController:
     def validate_install_harness(self, name: str) -> None:
         self._doctor.validate_install(name)
 
-    def install_harness(self, name: str) -> dict:
-        return self._doctor.install_harness(name)
+    def install_harness(
+        self,
+        name: str,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> dict:
+        return self._doctor.install_harness(name, cancellation_check)
 
     def prepare_run(self, payload: str) -> RunRequest:
         raw = self._json_object(payload, "Run configuration")
@@ -62,8 +66,8 @@ class AppController:
         unknown = sorted(set(raw) - allowed)
         if unknown:
             raise ValueError(f"Unknown run settings: {', '.join(unknown)}")
-        raw["harnesses"] = tuple(raw.get("harnesses") or ())
-        raw["task_ids"] = tuple(raw.get("task_ids") or ())
+        raw["harnesses"] = self._string_tuple(raw.get("harnesses"), "Harnesses")
+        raw["task_ids"] = self._string_tuple(raw.get("task_ids"), "Task ids")
         request = RunRequest(**raw)
         self._benchmark.validate_request(request)
         return request
@@ -74,6 +78,7 @@ class AppController:
         on_event: EventCallback,
         cancellation_token: CancellationToken | None = None,
     ) -> dict[str, object]:
+        self._doctor.apply_runtime_environment()
         return self._benchmark.run(request, on_event, cancellation_token)
 
     @staticmethod
@@ -93,3 +98,13 @@ class AppController:
         if not isinstance(value, str):
             raise ValueError("Profile values must be strings")
         return value.strip()
+
+    @staticmethod
+    def _string_tuple(value: object, label: str) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if not isinstance(value, list):
+            raise ValueError(f"{label} must be an array")
+        if not all(isinstance(item, str) and item for item in value):
+            raise ValueError(f"{label} must contain non-empty strings")
+        return tuple(value)

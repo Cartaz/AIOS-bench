@@ -3,7 +3,16 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
-from typing import Any
+import time
+from dataclasses import dataclass
+from typing import Any, Callable
+
+
+@dataclass(frozen=True)
+class OwnedProcessOutcome:
+    returncode: int
+    timed_out: bool = False
+    cancelled: bool = False
 
 
 def spawn_owned(command: list[str], **kwargs: Any) -> subprocess.Popen:
@@ -57,3 +66,42 @@ def terminate_owned(process: subprocess.Popen, *, grace_seconds: float = 2.0) ->
             process.wait(timeout=grace_seconds)
     finally:
         setattr(process, "_aios_cleanup_done", True)
+
+
+def run_owned(
+    command: list[str],
+    *,
+    timeout: float | None = None,
+    cancellation_check: Callable[[], bool] | None = None,
+    poll_interval: float = 0.1,
+    **kwargs: Any,
+) -> OwnedProcessOutcome:
+    """Run an owned process with bounded timeout/cancellation semantics.
+
+    This is the canonical primitive for application-owned external commands.
+    It never uses a shell, polls cancellation without blocking the caller
+    indefinitely and always performs process-group cleanup before returning.
+    """
+    process = spawn_owned(command, **kwargs)
+    started = time.monotonic()
+    timed_out = False
+    cancelled = False
+    try:
+        while process.poll() is None:
+            if cancellation_check is not None and cancellation_check():
+                cancelled = True
+                break
+            if timeout is not None and time.monotonic() - started >= timeout:
+                timed_out = True
+                break
+            try:
+                process.wait(timeout=poll_interval)
+            except subprocess.TimeoutExpired:
+                pass
+    finally:
+        terminate_owned(process)
+    return OwnedProcessOutcome(
+        process.returncode if process.returncode is not None else 1,
+        timed_out=timed_out,
+        cancelled=cancelled,
+    )

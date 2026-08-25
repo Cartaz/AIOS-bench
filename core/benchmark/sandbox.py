@@ -8,6 +8,9 @@ from pathlib import Path
 from .paths import BENCHMARK_PACKAGE_ROOT, REPO_ROOT
 
 
+_WORKSPACE_ALIAS = Path("/workspace")
+
+
 @dataclass(frozen=True)
 class SandboxPlan:
     strategy: str
@@ -52,56 +55,122 @@ def _result_history_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
 
 
 def _benchmark_owned_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
+    """Sensitive benchmark paths for transports that must retain package access."""
     candidates = (
         REPO_ROOT / ".git",
         REPO_ROOT / "benchmarks",
         REPO_ROOT / "tests",
+        REPO_ROOT / "docs",
+        REPO_ROOT / "results",
         BENCHMARK_PACKAGE_ROOT / "__pycache__",
     )
     hidden_directories = [path for path in candidates if path.exists()]
     hidden_files = sorted(BENCHMARK_PACKAGE_ROOT.glob("reference_checks*.py"))
+    for name in ("golden_solutions.py", "parametric_goldens.py"):
+        path = BENCHMARK_PACKAGE_ROOT / name
+        if path.is_file():
+            hidden_files.append(path)
+    for name in ("Report A.md", "Report B.md"):
+        path = REPO_ROOT / name
+        if path.is_file():
+            hidden_files.append(path)
     result_directories, result_files = _result_history_paths(workspace)
     hidden_directories.extend(result_directories)
     hidden_files.extend(result_files)
     return hidden_directories, hidden_files
 
 
+def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
+    """Hide the repository while preserving one writable canonical workspace."""
+    workspace = workspace.resolve()
+    repo = REPO_ROOT.resolve()
+    try:
+        relative = workspace.relative_to(repo)
+    except ValueError:
+        # Custom result roots and tests may live outside the repository. In that
+        # case hiding the repo cannot cover the workspace, so a direct bind is
+        # sufficient and avoids imposing a repository-layout requirement on the
+        # runner interface.
+        return (
+            "--tmpfs", str(repo),
+            "--bind", str(workspace), str(workspace),
+            "--chdir", str(workspace),
+        )
+
+    # When the workspace itself lives below the repository, preserve it through
+    # an alias before replacing the repository mount, then recreate only its
+    # parent path and bind the alias back at the original absolute location.
+    args: tuple[str, ...] = (
+        "--bind", str(workspace), str(_WORKSPACE_ALIAS),
+        "--tmpfs", str(repo),
+    )
+    current = repo
+    for part in relative.parts[:-1]:
+        current /= part
+        args += ("--dir", str(current))
+    args += (
+        "--bind", str(_WORKSPACE_ALIAS), str(workspace),
+        "--chdir", str(workspace),
+    )
+    return args
+
+
+def _remote_transport_args(workspace: Path) -> tuple[tuple[str, ...], bool]:
+    """Mask grader material while retaining package code for the Agent Zero client.
+
+    Agent Zero's model executes in a separately isolated service/project and
+    never receives host paths. The local subprocess is trusted transport code,
+    so it retains the package required for ``python -m`` while benchmark-owned
+    answers, fixtures, docs and result history remain masked.
+    """
+    prefix: tuple[str, ...] = ()
+    hidden_directories, hidden_files = _benchmark_owned_paths(workspace)
+    for path in hidden_directories:
+        prefix += ("--tmpfs", str(path.resolve()))
+    for path in hidden_files:
+        prefix += ("--ro-bind", "/dev/null", str(path.resolve()))
+    return prefix, bool(hidden_directories or hidden_files)
+
+
 def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = None) -> SandboxPlan:
     """Return a cross-harness confinement plan.
 
-    On Linux, local harnesses run below a read-only host root with only the task
-    workspace and /tmp writable. Benchmark-owned grader material, generated
-    parametric oracles, repository history and historical result workspaces are
-    masked from the child.
-
-    Agent Zero's benchmark client additionally needs write access to a dedicated
-    shared projects root used only as a filesystem transport into the separately
-    isolated Agent Zero service. The model never receives host benchmark paths;
-    each task is copied into a fresh Agent Zero project under that root.
+    Local harnesses receive a read-only host plus one writable task workspace;
+    the AIOS-bench repository itself is replaced by an empty tmpfs and therefore
+    cannot leak golden solutions, graders, docs or prior results. Agent Zero is
+    a special transport case: its model runs in a separately isolated service,
+    while the trusted local client retains only the package access it needs and
+    masks benchmark-owned answer material explicitly.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
         raise ValueError("AIOS_BENCH_SANDBOX must be auto, required or off")
     if selected == "off":
         return SandboxPlan("disabled", write_confined=False, grader_hidden=False)
+
     executable = shutil.which("bwrap")
     if executable:
-        root = str(workspace.resolve())
+        workspace = workspace.resolve()
         prefix: tuple[str, ...] = (
             executable, "--die-with-parent", "--new-session",
             "--ro-bind", "/", "/", "--tmpfs", "/tmp",
         )
-        hidden_directories, hidden_files = _benchmark_owned_paths(workspace)
-        for path in hidden_directories:
-            prefix += ("--tmpfs", str(path.resolve()))
-        for path in hidden_files:
-            prefix += ("--ro-bind", "/dev/null", str(path.resolve()))
-        grader_hidden = bool(hidden_directories or hidden_files)
+
+        if adapter_name == "agentzero":
+            masks, grader_hidden = _remote_transport_args(workspace)
+            prefix += masks
+            strategy = "bubblewrap_remote_transport_grader_hidden"
+        else:
+            prefix += _workspace_rebind_args(workspace)
+            grader_hidden = True
+            strategy = "bubblewrap_repo_hidden_workspace_only"
+
         if adapter_name == "piagent":
             pi_state = Path.home() / ".pi" / "agent"
             if pi_state.is_dir():
                 state = str(pi_state.resolve())
                 prefix += ("--overlay-src", state, "--tmp-overlay", state)
+
         agentzero_bridge = False
         if adapter_name == "agentzero":
             configured = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", "").strip()
@@ -111,18 +180,13 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
                     bridge = str(projects_root.resolve())
                     prefix += ("--bind", bridge, bridge)
                     agentzero_bridge = True
-        prefix += (
-            "--bind", root, root,
-            "--proc", "/proc", "--dev", "/dev",
-            "--chdir", root, "--",
-        )
-        strategy = (
-            "bubblewrap_readonly_root_grader_hidden"
-            if grader_hidden else "bubblewrap_readonly_root"
-        )
+            prefix += ("--chdir", str(workspace),)
+
+        prefix += ("--proc", "/proc", "--dev", "/dev", "--")
         if agentzero_bridge:
             strategy += "_agentzero_project_bridge"
         return SandboxPlan(strategy, prefix, write_confined=True, grader_hidden=grader_hidden)
+
     if selected == "required":
         raise RuntimeError("workspace sandbox required but bubblewrap is unavailable")
     return SandboxPlan("cwd_only_unconfined", write_confined=False, grader_hidden=False)

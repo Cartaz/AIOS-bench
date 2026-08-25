@@ -37,11 +37,13 @@ def test_profile_round_trip_and_environment_does_not_override_explicit_values(mo
     assert doctor.os.environ["AIOS_BENCH_CLAUDE_BASE_URL"] == "http://127.0.0.1:8082"
 
 
-def test_opencode_recipe_prefers_pacman_on_cachyos(monkeypatch):
+def test_opencode_recipe_keeps_privileged_pacman_install_manual_on_cachyos(monkeypatch):
     monkeypatch.setattr(doctor.platform, "system", lambda: "Linux")
     monkeypatch.setattr(doctor, "_linux_id", lambda: "cachyos")
     recipe = doctor._opencode_recipe()
-    assert recipe.command == ("sudo", "pacman", "-S", "--needed", "opencode")
+    assert recipe.command is None
+    assert recipe.shell == "sudo pacman -S --needed opencode"
+    assert "manual" in recipe.note.lower()
 
 
 def test_remote_shell_installers_are_never_executed(monkeypatch):

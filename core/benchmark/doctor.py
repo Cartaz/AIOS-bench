@@ -11,9 +11,11 @@ from typing import Callable
 from config.settings import AppSettings, SettingsStore
 
 from .config import AGENTS
+from .processes import run_owned
 
 PROFILE_SCHEMA = "aios-bench/settings/v1"
 DEFAULT_PROFILE = SettingsStore().path
+INSTALL_TIMEOUT_SECONDS = 600.0
 
 
 @dataclass(frozen=True)
@@ -58,10 +60,10 @@ def _pi_recipe() -> InstallRecipe:
 def _opencode_recipe() -> InstallRecipe:
     if platform.system() == "Linux" and _linux_id() in {"arch", "cachyos", "endeavouros", "manjaro"}:
         return InstallRecipe(
-            ("sudo", "pacman", "-S", "--needed", "opencode"),
             None,
+            "sudo pacman -S --needed opencode",
             "https://opencode.ai/docs/",
-            "Arch-family stable package; AUR users may prefer opencode-bin.",
+            "Arch-family installation is intentionally manual because the privileged sudo prompt must stay in the user's terminal.",
         )
     return _npm_recipe("opencode-ai", "https://opencode.ai/docs/")
 
@@ -219,22 +221,37 @@ def _yes_no(prompt: str, default: bool = True, input_fn=input) -> bool:
     return answer in {"y", "yes", "s", "si", "sì"}
 
 
-def install_recipe(recipe: InstallRecipe) -> bool:
-    """Execute one argv-only install recipe; remote shell pipelines remain non-executable."""
+def install_recipe(
+    recipe: InstallRecipe,
+    *,
+    cancellation_check: Callable[[], bool] | None = None,
+    timeout: float = INSTALL_TIMEOUT_SECONDS,
+) -> bool:
+    """Execute one argv-only install recipe through the shared process owner."""
     if recipe.command is None:
         return False
     try:
-        return subprocess.run(list(recipe.command), check=False).returncode == 0
+        outcome = run_owned(
+            list(recipe.command),
+            timeout=timeout,
+            cancellation_check=cancellation_check,
+            stdin=subprocess.DEVNULL,
+        )
     except OSError:
         return False
+    return not outcome.timed_out and not outcome.cancelled and outcome.returncode == 0
 
 
-def install_harness(name: str) -> bool:
+def install_harness(
+    name: str,
+    *,
+    cancellation_check: Callable[[], bool] | None = None,
+) -> bool:
     """Install a harness only when its recipe has an explicit argv command."""
     spec = SPECS.get(name)
     if spec is None:
         raise ValueError(f"Unknown harness: {name}")
-    return install_recipe(spec.install())
+    return install_recipe(spec.install(), cancellation_check=cancellation_check)
 
 
 def render_report(report: dict) -> str:
@@ -278,7 +295,7 @@ def run_wizard(*, setup: bool, repair: bool, check_only: bool, input_fn=input) -
                     print("  Result:", "OK" if install_recipe(recipe) else "FAILED")
             elif recipe.shell:
                 print(f"  Manual install: {recipe.shell}")
-                print("  AIOS-Bench does not execute remote shell pipelines automatically.")
+                print("  AIOS-Bench does not execute privileged or remote shell commands automatically.")
             else:
                 print("  Installation is intentionally manual for this service-backed harness.")
             print(f"  Configure: {spec.config_hint}")

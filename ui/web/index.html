@@ -23,7 +23,7 @@
           <label>Modello<input id="model" type="text" placeholder="Ornith"></label>
           <div class="section-head"><h2>Harness</h2><div class="actions"><button data-harness-action="all">Tutti</button><button data-harness-action="none">Nessuno</button></div></div>
           <div id="harnesses" class="toggle-list"></div>
-          <div class="two-col"><label>Repeat<input id="repeats" type="number" min="1" value="1"></label><label>Seed<input id="seed" type="number" value="42"></label><label>Timeout task<input id="timeout" type="number" min="1" value="900"></label><label>Timeout totale<input id="totalTimeout" type="number" min="1" placeholder="nessuno"></label></div>
+          <div class="two-col"><label>Repeat<input id="repeats" type="number" min="1" value="1"></label><label>Seed<input id="seed" type="number" value="42"></label><label>Timeout task<input id="timeout" type="number" min="1" value="900"></label><label>Budget harness<input id="totalTimeout" type="number" min="1" placeholder="nessuno" title="Budget massimo di esecuzione attiva per harness e repeat"></label></div>
           <div class="actions"><button id="start" class="primary">Avvia benchmark</button><button id="cancel" disabled>Annulla</button></div>
           <p id="error" class="error" role="alert"></p>
         </aside>
@@ -36,11 +36,11 @@
     <section id="doctorView" class="view hidden">
       <section class="doctor-grid">
         <section class="panel doctor-status"><div class="section-head"><div><p class="eyebrow">AMBIENTE</p><h2>Doctor</h2></div><button id="refreshDoctor">Verifica tutto</button></div><div id="systemStatus" class="muted"></div><div id="doctorHarnesses" class="doctor-list"></div></section>
-        <section class="panel profile-panel"><div class="section-head"><div><p class="eyebrow">PROFILO LOCALE</p><h2>Modello e gateway</h2></div></div><label>Model ID<input id="profileModel" type="text" placeholder="aios-llamacpp/Ornith"></label><label>OpenAI-compatible URL<input id="openaiUrl" type="text" placeholder="http://127.0.0.1:8080/v1"></label><label>Anthropic-compatible URL<input id="anthropicUrl" type="text" placeholder="http://127.0.0.1:8080"></label><button id="saveProfile" class="primary">Salva profilo</button><p class="muted">Il profilo viene scritto esclusivamente da Python. Gli installer remoti che richiedono shell restano guidati e manuali.</p></section>
+        <section class="panel profile-panel"><div class="section-head"><div><p class="eyebrow">PROFILO LOCALE</p><h2>Modello e gateway</h2></div></div><label>Model ID<input id="profileModel" type="text" placeholder="aios-llamacpp/Ornith"></label><label>OpenAI-compatible URL<input id="openaiUrl" type="text" placeholder="http://127.0.0.1:8080/v1"></label><label>Anthropic-compatible URL<input id="anthropicUrl" type="text" placeholder="http://127.0.0.1:8080"></label><button id="saveProfile" class="primary">Salva profilo</button><p class="muted">Il profilo viene scritto esclusivamente da Python. Gli installer privilegiati o remoti restano guidati e manuali.</p></section>
       </section>
       <p id="doctorError" class="error" role="alert"></p>
     </section>
   </main>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

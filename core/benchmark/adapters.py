@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shlex
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -354,7 +355,7 @@ class AgentZeroAdapter(Adapter):
     })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        command = ["python", "-m", "aios_bench.agentzero_client", prompt]
+        command = [sys.executable, "-m", "core.benchmark.agentzero_client", prompt]
         service_url = os.environ.get("AIOS_BENCH_AGENTZERO_URL", "http://127.0.0.1:80")
         template = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECT", "").strip()
         projects_root = os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", "").strip()

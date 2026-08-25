@@ -152,6 +152,7 @@ class BenchmarkRunner:
                 "remote_project_boundary": self.agent.name == "agentzero",
                 "task_timeout_seconds": self.task_timeout,
                 "total_timeout_seconds": self.total_timeout,
+                "total_timeout_semantics": "active_execution_budget_per_harness",
                 "custom_command_configured": bool(custom_command),
                 "custom_command_sha256": (
                     hashlib.sha256(custom_command.encode("utf-8")).hexdigest()
@@ -386,7 +387,7 @@ class BenchmarkRunner:
 
     def run(self, tasks: list[Task]) -> int:
         done = self.completed(tasks)
-        started = time.monotonic()
+        remaining_budget = self.total_timeout
         remaining = [task for task in tasks if task.id not in done]
         print(f"AIOS-bench | {self.agent.display_name} | model={self.model} | run={self.run_id}")
         print(f"Tasks: {len(remaining)} (resume={'on' if self.resume else 'off'})")
@@ -419,14 +420,17 @@ class BenchmarkRunner:
                     assessment,
                 )
                 continue
-            timeout = self.task_timeout
-            if self.total_timeout is not None:
-                timeout = min(timeout, self.total_timeout - (time.monotonic() - started))
-                if timeout <= 0:
-                    self.abort(tasks)
-                    return 2
+            timeout = self.task_timeout if remaining_budget is None else min(
+                self.task_timeout,
+                remaining_budget,
+            )
+            if timeout <= 0:
+                self.abort(tasks)
+                return 2
             print(f"[{index}/{len(remaining)}] {task.id} [T{task.tier}] ...", flush=True)
             trajectory = self.run_task(task, timeout)
+            if remaining_budget is not None:
+                remaining_budget = max(0.0, remaining_budget - trajectory.duration_seconds)
             score = overall_score(trajectory)
             print(
                 f"    {'PASS' if trajectory.success else 'FAIL'}  "
