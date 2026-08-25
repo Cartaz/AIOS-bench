@@ -65,33 +65,50 @@ class DesktopRuntime(QObject):
     def start_run(self, payload: str) -> None:
         request = self._controller.prepare_run(payload)
         token = CancellationToken()
-        self._cancellation_token = token
         self._start(
             "benchmark",
             lambda emit: self._controller.run_benchmark(request, emit, token),
+            cancellation_token=token,
         )
 
     def cancel_run(self) -> bool:
-        if not self.is_running or self._cancellation_token is None:
+        if not self.is_running:
             return False
-        self._cancellation_token.cancel()
-        self.runStateChanged.emit(
-            json.dumps({"running": True, "busy": True, "operation": "benchmark", "cancelling": True})
-        )
-        return True
+        return self._cancel_active()
 
     def install_harness(self, name: str) -> None:
         harness = name.strip()
         self._controller.validate_install_harness(harness)
+        token = CancellationToken()
         self._start(
             "doctor_install",
-            lambda _emit: self._controller.install_harness(harness),
+            lambda _emit: self._controller.install_harness(
+                harness,
+                lambda: token.is_cancelled,
+            ),
+            cancellation_token=token,
         )
+
+    def _cancel_active(self) -> bool:
+        if not self.is_busy or self._cancellation_token is None:
+            return False
+        self._cancellation_token.cancel()
+        self.runStateChanged.emit(
+            json.dumps({
+                "running": self._operation == "benchmark",
+                "busy": True,
+                "operation": self._operation,
+                "cancelling": True,
+            })
+        )
+        return True
 
     def _start(
         self,
         operation: str,
         callback: Callable[[Callable[[dict[str, object]], None]], object],
+        *,
+        cancellation_token: CancellationToken | None = None,
     ) -> None:
         if self.is_busy:
             raise RuntimeError("Another background operation is already active")
@@ -111,6 +128,7 @@ class DesktopRuntime(QObject):
         self._thread = thread
         self._worker = worker
         self._operation = operation
+        self._cancellation_token = cancellation_token
         self.runStateChanged.emit(
             json.dumps({"running": operation == "benchmark", "busy": True, "operation": operation})
         )
@@ -146,14 +164,16 @@ class DesktopRuntime(QObject):
         thread = self._thread
         if thread is None or not thread.isRunning():
             return
-        if self.is_running:
-            self.cancel_run()
-            logger.info("Shutdown requested; benchmark cancellation signalled")
+
+        operation = self._operation or "background operation"
+        if self._cancel_active():
+            logger.info("Shutdown requested; cancellation signalled for %s", operation)
         else:
-            logger.warning("Shutdown requested while a non-benchmark operation is active")
+            logger.warning("Shutdown requested while %s is active without cancellation", operation)
 
         if not thread.wait(SHUTDOWN_WAIT_MS):
             logger.error(
-                "Background operation did not stop within %.1f seconds during shutdown",
+                "%s did not stop within %.1f seconds during shutdown",
+                operation,
                 SHUTDOWN_WAIT_MS / 1000,
             )
