@@ -3,7 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from aios_bench.frontier_v3_runner import FrontierV3Runner, SEMANTIC_DIRS, SEMANTIC_FILES
+from aios_bench.frontier_runner import semantic_source_paths
+from aios_bench.frontier_v3_runner import FrontierV3Runner
 from aios_bench.reference_checks_long import check as check_long
 from aios_bench.runner import AGENTS
 from aios_bench.tasks import load_tasks
@@ -98,9 +99,13 @@ def test_frontier_v3_resume_rejects_results_from_another_suite_revision(tmp_path
     assert task.id in runner.completed(tasks)
 
 
-def test_suite_revision_covers_execution_and_scoring_semantics():
+def test_suite_revision_auto_discovers_execution_and_scoring_semantics():
+    paths = semantic_source_paths(ROOT)
+    names = {path.name for path in paths}
     assert {
         "runner.py", "adapters.py", "sandbox.py", "scoring.py", "telemetry.py",
         "experiments.py", "scheduler.py", "failures.py", "task_execution.py",
-    } <= set(SEMANTIC_FILES)
-    assert "server_metrics" in SEMANTIC_DIRS
+        "materialization.py", "suites.py", "processes.py",
+    } <= names
+    assert any("server_metrics" in path.parts for path in paths)
+    assert "doctor.py" not in names
