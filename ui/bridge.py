@@ -67,3 +67,7 @@ class Bridge(QObject):
             self.errorOccurred.emit(str(exc))
             return False
         return True
+
+    @Slot(result=bool)
+    def cancelRun(self) -> bool:
+        return self._runtime.cancel_run()
