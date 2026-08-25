@@ -219,13 +219,22 @@ def _yes_no(prompt: str, default: bool = True, input_fn=input) -> bool:
     return answer in {"y", "yes", "s", "si", "sì"}
 
 
-def _run_install(recipe: InstallRecipe) -> bool:
+def install_recipe(recipe: InstallRecipe) -> bool:
+    """Execute one argv-only install recipe; remote shell pipelines remain non-executable."""
     if recipe.command is None:
         return False
     try:
         return subprocess.run(list(recipe.command), check=False).returncode == 0
     except OSError:
         return False
+
+
+def install_harness(name: str) -> bool:
+    """Install a harness only when its recipe has an explicit argv command."""
+    spec = SPECS.get(name)
+    if spec is None:
+        raise ValueError(f"Unknown harness: {name}")
+    return install_recipe(spec.install())
 
 
 def render_report(report: dict) -> str:
@@ -266,7 +275,7 @@ def run_wizard(*, setup: bool, repair: bool, check_only: bool, input_fn=input) -
                 printable = " ".join(recipe.command)
                 print(f"  Install: {printable}")
                 if _yes_no("  Run this command now?", True, input_fn):
-                    print("  Result:", "OK" if _run_install(recipe) else "FAILED")
+                    print("  Result:", "OK" if install_recipe(recipe) else "FAILED")
             elif recipe.shell:
                 print(f"  Manual install: {recipe.shell}")
                 print("  AIOS-Bench does not execute remote shell pipelines automatically.")
