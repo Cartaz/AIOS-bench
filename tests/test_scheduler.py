@@ -28,13 +28,13 @@ class _Runner:
     def completed(self, tasks):
         return set()
 
-    def _latest_results(self):
+    def latest_results(self):
         return dict(self.results)
 
-    def _write_unsupported(self, task, assessment):
+    def record_unsupported(self, task, assessment):
         raise AssertionError("unexpected unsupported task")
 
-    def _write_noncomparable(self, task, status, reason, assessment):
+    def record_noncomparable(self, task, status, reason, assessment):
         raise AssertionError(f"unexpected {status}: {reason}")
 
     def run_task(self, task, timeout):
@@ -62,11 +62,8 @@ class _Runner:
             handle.write(json.dumps(row) + "\n")
         return trajectory
 
-    def cleanup(self):
-        return {"files_removed": 0, "dirs_removed": 0}
-
-    def _run_counts(self, tasks):
-        return {
+    def finalize(self, tasks, *, status, finished_at):
+        counts = {
             "supported_task_count": len(tasks),
             "unsupported_task_count": 0,
             "completed_task_count": len(self.results),
@@ -74,23 +71,20 @@ class _Runner:
             "passed_task_count": len(self.results),
             "blocked_task_count": 0,
         }
-
-    def _write_metadata(self, finished_at=None, *, status=None, counts=None):
         path = self.run_dir / "run.json"
         metadata = json.loads(path.read_text(encoding="utf-8"))
-        metadata.update(counts or {})
+        metadata.update(counts)
         metadata["status"] = status
         metadata["finished_at"] = finished_at
         path.write_text(json.dumps(metadata), encoding="utf-8")
-
-    def _update_latest_pointer(self):
-        pass
-
-    def _clear_latest_if_current(self):
-        pass
+        return {
+            "cleanup": {"files_removed": 0, "dirs_removed": 0},
+            "counts": counts,
+            "latest": self.latest_results(),
+        }
 
     def abort(self, tasks):
-        self._write_metadata(status="aborted", counts=self._run_counts(tasks))
+        self.finalize(tasks, status="aborted", finished_at="")
 
 
 def test_scheduler_executes_every_task_as_a_matched_block(tmp_path):
