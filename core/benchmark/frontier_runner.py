@@ -21,37 +21,33 @@ class SuiteDefinition:
     catalog_dir: str
     materializer: TaskMaterializer
     fixture_dirs: tuple[str, ...] = ()
-    semantic_files: tuple[str, ...] = ()
-    semantic_dirs: tuple[str, ...] = ()
     parametric: dict[str, Any] | None = None
 
 
-BASE_SEMANTIC_FILES = (
-    "adapters.py",
-    "agentzero_client.py",
-    "agentzero_workspace.py",
-    "evaluators.py",
-    "experiments.py",
-    "failures.py",
-    "fixtures.py",
-    "frontier_runner.py",
-    "goose_telemetry.py",
-    "hermes_telemetry.py",
-    "letta_telemetry.py",
-    "manifest.py",
-    "materialization.py",
-    "models.py",
-    "pi_rpc.py",
-    "processes.py",
-    "runner.py",
-    "sandbox.py",
-    "scheduler.py",
-    "scoring.py",
-    "task_execution.py",
-    "tasks.py",
-    "telemetry.py",
-)
-BASE_SEMANTIC_DIRS = ("server_metrics",)
+NON_SEMANTIC_MODULES = frozenset({
+    "cli.py",
+    "config.py",
+    "dashboard.py",
+    "doctor.py",
+    "frontier_v3_runner.py",
+    "frontier_v4_runner.py",
+    "paths.py",
+    "publication.py",
+    "report.py",
+    "smoke.py",
+    "statistics.py",
+    "validation.py",
+})
+
+
+def semantic_source_paths(repo_root: Path) -> tuple[Path, ...]:
+    """Return execution/scoring sources; new engine modules are included automatically."""
+    benchmark_root = repo_root / "core" / "benchmark"
+    return tuple(
+        path
+        for path in sorted(benchmark_root.rglob("*.py"))
+        if "__pycache__" not in path.parts and path.name not in NON_SEMANTIC_MODULES
+    )
 
 
 class FrontierRunner(BenchmarkRunner):
@@ -163,18 +159,8 @@ class FrontierRunner(BenchmarkRunner):
         roots = [self.repo_root / "benchmarks" / "tasks" / self.suite.catalog_dir]
         roots.extend(self.repo_root / path for path in self.suite.fixture_dirs)
         self._hash_files(digest, roots)
-
-        benchmark_root = self.repo_root / "core" / "benchmark"
-        for path in sorted(benchmark_root.glob("reference_checks*.py")):
+        for path in semantic_source_paths(self.repo_root):
             self._hash_path(digest, path)
-
-        semantic_files = tuple(dict.fromkeys((*BASE_SEMANTIC_FILES, *self.suite.semantic_files)))
-        for name in semantic_files:
-            self._hash_path(digest, benchmark_root / name)
-
-        semantic_dirs = tuple(dict.fromkeys((*BASE_SEMANTIC_DIRS, *self.suite.semantic_dirs)))
-        for directory in semantic_dirs:
-            self._hash_files(digest, [benchmark_root / directory], suffix=".py")
         return digest.hexdigest()
 
     def _catalog_task_count(self) -> list[str]:
@@ -229,13 +215,7 @@ class FrontierRunner(BenchmarkRunner):
         self.suite.materializer.after_task(self, task)
         return trajectory
 
-    def _hash_files(
-        self,
-        digest,
-        roots: Iterable[Path],
-        *,
-        suffix: str | None = None,
-    ) -> None:
+    def _hash_files(self, digest, roots: Iterable[Path]) -> None:
         for root in roots:
             for path in sorted(
                 item
@@ -243,7 +223,6 @@ class FrontierRunner(BenchmarkRunner):
                 if item.is_file()
                 and "__pycache__" not in item.parts
                 and item.suffix != ".pyc"
-                and (suffix is None or item.suffix == suffix)
             ):
                 self._hash_path(digest, path)
 
