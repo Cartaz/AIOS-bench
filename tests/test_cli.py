@@ -28,7 +28,7 @@ def test_frontier_v4_list_is_explicit_opt_in(monkeypatch, capsys):
     cli.main()
     output = capsys.readouterr().out
     ids = {line.split("\t", 1)[0] for line in output.splitlines() if line.strip()}
-    assert ids == {"autonomy_expense_001"}
+    assert ids == {"autonomy_expense_001", "tool_use_config_001"}
 
 
 def test_frontier_v4_rejects_invalid_pressure_coordinates(monkeypatch):
