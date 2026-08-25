@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.app_controller import AppController
+from .runtime import DesktopRuntime
 
 
 class Bridge(QObject):
@@ -13,15 +14,15 @@ class Bridge(QObject):
     errorOccurred = Signal(str)
     runFinished = Signal(str)
 
-    def __init__(self, controller: AppController) -> None:
+    def __init__(self, controller: AppController, runtime: DesktopRuntime) -> None:
         super().__init__()
         self._controller = controller
-        controller.catalog_changed.connect(self.catalogChanged)
-        controller.doctor_changed.connect(self.doctorChanged)
-        controller.run_state_changed.connect(self.runStateChanged)
-        controller.progress_changed.connect(self.progressChanged)
-        controller.error_occurred.connect(self.errorOccurred)
-        controller.run_finished.connect(self.runFinished)
+        self._runtime = runtime
+        runtime.doctorChanged.connect(self.doctorChanged)
+        runtime.runStateChanged.connect(self.runStateChanged)
+        runtime.progressChanged.connect(self.progressChanged)
+        runtime.errorOccurred.connect(self.errorOccurred)
+        runtime.runFinished.connect(self.runFinished)
 
     @Slot(str, result=str)
     def getCatalog(self, suite: str) -> str:
@@ -43,6 +44,7 @@ class Bridge(QObject):
     def saveDoctorProfile(self, payload: str) -> bool:
         try:
             self._controller.save_doctor_profile(payload)
+            self.doctorChanged.emit(self._controller.doctor_json())
         except (TypeError, ValueError, OSError) as exc:
             self.errorOccurred.emit(str(exc))
             return False
@@ -51,7 +53,7 @@ class Bridge(QObject):
     @Slot(str, result=bool)
     def installHarness(self, name: str) -> bool:
         try:
-            self._controller.install_harness(name)
+            self._runtime.install_harness(name)
         except (ValueError, RuntimeError, OSError) as exc:
             self.errorOccurred.emit(str(exc))
             return False
@@ -60,7 +62,7 @@ class Bridge(QObject):
     @Slot(str, result=bool)
     def startRun(self, payload: str) -> bool:
         try:
-            self._controller.start_run(payload)
+            self._runtime.start_run(payload)
         except (TypeError, ValueError, RuntimeError) as exc:
             self.errorOccurred.emit(str(exc))
             return False
