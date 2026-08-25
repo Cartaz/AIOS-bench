@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -77,8 +78,14 @@ class DoctorService:
                 "This harness requires guided manual installation; use the displayed official instructions."
             )
 
-    def install_harness(self, name: str) -> dict:
+    def install_harness(
+        self,
+        name: str,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> dict:
         self.validate_install(name)
-        if not doctor.install_harness(name):
+        if not doctor.install_harness(name, cancellation_check=cancellation_check):
+            if cancellation_check is not None and cancellation_check():
+                raise RuntimeError(f"Installation cancelled for {name}")
             raise RuntimeError(f"Installation command failed for {name}")
         return self.inspect()
