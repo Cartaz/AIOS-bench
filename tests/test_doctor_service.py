@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from config.settings import SettingsStore
 from core.doctor_service import DoctorProfile, DoctorService
 from aios_bench import doctor
 
@@ -35,7 +36,7 @@ def test_doctor_service_rejects_automatic_remote_shell_install(monkeypatch):
 
 
 def test_doctor_service_profile_round_trip(tmp_path):
-    service = DoctorService(tmp_path / "profile.json")
+    service = DoctorService(SettingsStore(tmp_path / "settings.json"))
     service.save_profile(DoctorProfile("Ornith", "http://localhost:8080/v1", "http://localhost:8080"))
     loaded = service.load_profile()
     assert loaded.model == "Ornith"
