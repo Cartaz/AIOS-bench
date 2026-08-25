@@ -13,6 +13,7 @@ from core.benchmark.scheduler import MatchedInterleavedScheduler
 from core.benchmark.statistics import augment_summary_file
 from core.benchmark.suites import SUITE_NAMES, frontier_v3_suite, frontier_v4_suite
 from core.benchmark.tasks import load_tasks
+from core.cancellation import CancellationToken, RunCancelled
 
 SUITES = SUITE_NAMES
 EventCallback = Callable[[dict[str, object]], None]
@@ -101,11 +102,18 @@ class BenchmarkService:
                 )
         return [task for task in catalog if task.id in selected]
 
-    def run(self, request: RunRequest, on_event: EventCallback | None = None) -> dict[str, object]:
+    def run(
+        self,
+        request: RunRequest,
+        on_event: EventCallback | None = None,
+        cancellation_token: CancellationToken | None = None,
+    ) -> dict[str, object]:
         tasks = self.validate_request(request)
         callback = on_event or (lambda event: None)
+        token = cancellation_token or CancellationToken()
         total_units = len(tasks) * len(request.harnesses) * request.repeats
         completed_units = 0
+        active_runners: dict[str, ObservableFrontierRunner] = {}
 
         def emit(event: dict[str, object]) -> None:
             nonlocal completed_units
@@ -115,32 +123,57 @@ class BenchmarkService:
 
         exit_code = 0
         experiment_id = make_experiment_id(request.suite)
-        for repeat in range(1, request.repeats + 1):
-            orchestration_seed = request.seed + repeat - 1
-            run_id = experiment_id if request.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
-            runners = {
-                name: self._build_runner(request, name, run_id, orchestration_seed, emit)
-                for name in request.harnesses
+        try:
+            for repeat in range(1, request.repeats + 1):
+                token.raise_if_cancelled()
+                orchestration_seed = request.seed + repeat - 1
+                run_id = experiment_id if request.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
+                active_runners = {
+                    name: self._build_runner(
+                        request,
+                        name,
+                        run_id,
+                        orchestration_seed,
+                        emit,
+                        token,
+                    )
+                    for name in request.harnesses
+                }
+                emit({"type": "repeat_started", "repeat": repeat, "repeats": request.repeats})
+                if len(active_runners) == 1:
+                    runner = next(iter(active_runners.values()))
+                    exit_code = max(exit_code, runner.run(tasks))
+                else:
+                    scheduler = MatchedInterleavedScheduler(
+                        active_runners,
+                        tasks,
+                        experiment_id=experiment_id,
+                        repeat=repeat,
+                        orchestration_seed=orchestration_seed,
+                    )
+                    exit_code = max(exit_code, scheduler.run().exit_code)
+                token.raise_if_cancelled()
+                emit({"type": "repeat_finished", "repeat": repeat, "repeats": request.repeats})
+        except RunCancelled:
+            for runner in active_runners.values():
+                try:
+                    runner.abort(tasks)
+                except OSError:
+                    pass
+            result = {
+                "exit_code": 2,
+                "cancelled": True,
+                "summary": None,
+                "request": asdict(request),
             }
-            emit({"type": "repeat_started", "repeat": repeat, "repeats": request.repeats})
-            if len(runners) == 1:
-                runner = next(iter(runners.values()))
-                exit_code = max(exit_code, runner.run(tasks))
-            else:
-                scheduler = MatchedInterleavedScheduler(
-                    runners,
-                    tasks,
-                    experiment_id=experiment_id,
-                    repeat=repeat,
-                    orchestration_seed=orchestration_seed,
-                )
-                exit_code = max(exit_code, scheduler.run().exit_code)
-            emit({"type": "repeat_finished", "repeat": repeat, "repeats": request.repeats})
+            emit({"type": "run_cancelled", **result})
+            return result
 
         summary = write_summary(self.results_root)
         augment_summary_file(summary, self.results_root)
         result = {
             "exit_code": exit_code,
+            "cancelled": False,
             "summary": str(summary),
             "request": asdict(request),
         }
@@ -154,6 +187,7 @@ class BenchmarkService:
         run_id: str,
         orchestration_seed: int,
         callback: EventCallback,
+        cancellation_token: CancellationToken | None = None,
     ) -> "ObservableFrontierRunner":
         if request.suite == "frontier_v4":
             suite = frontier_v4_suite(
@@ -180,6 +214,11 @@ class BenchmarkService:
             server_metrics_model=request.server_metrics_model,
             max_output_tokens=request.max_output_tokens,
             metrics_poll_interval=request.metrics_poll_interval,
+            cancellation_check=(
+                (lambda: cancellation_token.is_cancelled)
+                if cancellation_token is not None
+                else None
+            ),
             event_callback=callback,
         )
 
