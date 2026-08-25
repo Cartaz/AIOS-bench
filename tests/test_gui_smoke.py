@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from core.app_controller import AppController
@@ -22,6 +21,26 @@ def _javascript(view, expression: str, timeout_ms: int = 3000):
     return result[-1] if result else None
 
 
+def _wait_for_web_content(view, timeout_ms: int = 5000) -> bool:
+    if _javascript(view, "document.readyState") == "complete":
+        return True
+    loop = QEventLoop()
+    loaded: list[bool] = []
+
+    def on_loaded(ok: bool) -> None:
+        loaded.append(bool(ok))
+        loop.quit()
+
+    view.loadFinished.connect(on_loaded)
+    QTimer.singleShot(timeout_ms, loop.quit)
+    loop.exec()
+    try:
+        view.loadFinished.disconnect(on_loaded)
+    except (RuntimeError, TypeError):
+        pass
+    return bool(loaded and loaded[-1]) and _javascript(view, "document.readyState") == "complete"
+
+
 def test_desktop_shell_constructs_with_loaded_local_web_content():
     app = QApplication.instance() or QApplication([])
     controller = AppController(ROOT)
@@ -37,8 +56,7 @@ def test_desktop_shell_constructs_with_loaded_local_web_content():
 
     # Exercise the actual Chromium/QWebChannel path rather than only checking
     # that a local URL was assigned to the view.
-    QTest.qWait(500)
-    assert _javascript(view, "document.readyState") == "complete"
+    assert _wait_for_web_content(view)
     assert _javascript(view, "document.documentElement.dataset.appReady || ''") == "true"
     assert _javascript(view, "document.querySelectorAll('[data-harness]').length") > 0
     assert _javascript(view, "document.querySelectorAll('[data-task]').length") > 0
