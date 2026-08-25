@@ -34,10 +34,8 @@ def test_doctor_service_rejects_automatic_remote_shell_install(monkeypatch):
     assert called is False
 
 
-def test_doctor_service_profile_round_trip(monkeypatch, tmp_path):
-    path = tmp_path / "profile.json"
-    monkeypatch.setattr(doctor, "DEFAULT_PROFILE", path)
-    service = DoctorService()
+def test_doctor_service_profile_round_trip(tmp_path):
+    service = DoctorService(tmp_path / "profile.json")
     service.save_profile(DoctorProfile("Ornith", "http://localhost:8080/v1", "http://localhost:8080"))
     loaded = service.load_profile()
     assert loaded.model == "Ornith"
