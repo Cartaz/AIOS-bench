@@ -58,14 +58,26 @@ def check(t, w, fx):
         data = load(w, "reports/unresolved_actions.json")
         if not isinstance(data, list) or len(data) != 3:
             return ok(False, "expected three actions")
-        good = all(
-            (w / entry.get("source_doc", "")).is_file()
-            and entry.get("evidence_quote", "") in read(w, entry["source_doc"])
-            for entry in data
-        )
+        good = True
+        for entry in data:
+            source = entry.get("source_doc", "")
+            evidence = entry.get("evidence_quote", "")
+            action = entry.get("action", "")
+            source_path = w / source
+            if (
+                not isinstance(source, str)
+                or not source_path.is_file()
+                or not isinstance(evidence, str)
+                or not evidence
+                or evidence not in read(w, source)
+                or not isinstance(action, str)
+                or not _claim_matches_evidence(action, evidence)
+            ):
+                good = False
+                break
         return ok(
             good and not any("Q3 budget" in json.dumps(entry) for entry in data),
-            "three grounded unresolved actions",
+            "three grounded unresolved actions with aligned evidence",
         )
 
     if t == "knowledge_002":
@@ -82,9 +94,6 @@ def check(t, w, fx):
             for name in ("additions", "removals", "changed", "unchanged")
         )
         citations = _valid_procedure_citations(w, markdown)
-        # The canonical witness predates the stricter semantic schema, so this
-        # contract deliberately targets the two core changed-rule concepts it
-        # already expresses while rejecting purely structural filler.
         semantic_core = "validation" in combined and "review" in combined
         good = categories and citations == {"previous", "current", "next_draft"} and semantic_core
         return ok(good, "procedure diff has semantic core and three-source provenance")

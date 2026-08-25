@@ -24,7 +24,16 @@ def check(t,w,fx):
         summary.unlink(missing_ok=True); d=run(w,['python','tools/step2_chart.py','--input',str(summary),'--output',str(fail)])
         return ok(a.returncode==b.returncode==c.returncode==0 and d.returncode!=0,'pipeline dependency chain verified')
     if t=='long_horizon_003':
-        d=load(w,'reports/audit_matrix.json'); p=run(w,['python','tools/investigation_helper.py','--audit','reports/audit_matrix.json','--output',str(eval_path(w,'lh3'))])
-        good=isinstance(d,list) and len(d)==5 and all(any(e.get('requirement_id')==f'R{i}' for e in d) for i in range(1,6)) and p.returncode==0
-        return ok(good,'five requirement audit verified')
+        d=load(w,'reports/audit_matrix.json')
+        if not isinstance(d,list) or len(d)!=5:return ok(False,'expected five requirement rows')
+        requirements=read(w,'notes/requirements.md')
+        seen=set()
+        for e in d:
+            rid=e.get('requirement_id');quote=e.get('evidence_quote','')
+            if rid not in {f'R{i}' for i in range(1,6)} or rid in seen:return ok(False,'missing or duplicate requirement id')
+            if not isinstance(quote,str) or not quote or quote not in requirements or rid not in quote:return ok(False,'requirement evidence is not grounded')
+            seen.add(rid)
+        if not (w/'reports/final_audit.md').is_file():return ok(False,'final audit missing')
+        p=run(w,['python','tools/investigation_helper.py','--audit','reports/audit_matrix.json','--output',str(eval_path(w,'lh3'))])
+        return ok(p.returncode==0 and seen=={f'R{i}' for i in range(1,6)},'five grounded requirement rows and helper output verified')
     return None
