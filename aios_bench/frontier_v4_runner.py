@@ -17,12 +17,7 @@ SEMANTIC_DIRS = tuple(dict.fromkeys((*V3_SEMANTIC_DIRS, "parametric")))
 
 
 class FrontierV4Runner(FrontierV3Runner):
-    """Runner for generated Frontier v4 task families.
-
-    Frontier v3 remains a frozen static baseline. V4 materializes a fresh task
-    workspace from an orchestration-derived task seed for every repeat and keeps
-    the generated oracle outside the workspace under a sandbox-masked run path.
-    """
+    """Runner for generated Frontier v4 task families."""
 
     def __init__(
         self,
@@ -67,10 +62,6 @@ class FrontierV4Runner(FrontierV3Runner):
             max_output_tokens=max_output_tokens,
             metrics_poll_interval=metrics_poll_interval,
         )
-        # The normal execution fingerprint intentionally includes pressure
-        # coordinates, so different cells cannot share it. Landscapes need a
-        # second identity that removes only those coordinates while preserving
-        # every other runner/adapter/server setting for within-harness grouping.
         profile_manifest = json.loads(json.dumps(self.execution_manifest))
         parametric = profile_manifest.get("parametric")
         if isinstance(parametric, dict):
@@ -94,8 +85,6 @@ class FrontierV4Runner(FrontierV3Runner):
             "schema": "aios-bench/parametric/v1",
             "suite": "frontier_v4",
             "pressure_coordinates": self.parametric_parameters,
-            # The observation seed is intentionally not part of the execution
-            # fingerprint. It is recorded on each result row instead.
             "seeded_variants": True,
         }
         return manifest
@@ -109,12 +98,13 @@ class FrontierV4Runner(FrontierV3Runner):
         ):
             digest.update(path.relative_to(self.repo_root).as_posix().encode("utf-8"))
             digest.update(path.read_bytes())
+        benchmark_root = self.repo_root / "core" / "benchmark"
         for name in SEMANTIC_FILES:
-            path = self.repo_root / "aios_bench" / name
+            path = benchmark_root / name
             digest.update(path.name.encode("utf-8"))
             digest.update(path.read_bytes())
         for directory in SEMANTIC_DIRS:
-            root = self.repo_root / "aios_bench" / directory
+            root = benchmark_root / directory
             for path in sorted(
                 item for item in root.rglob("*.py") if "__pycache__" not in item.parts
             ):
