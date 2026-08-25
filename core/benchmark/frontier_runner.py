@@ -143,14 +143,11 @@ class FrontierRunner(BenchmarkRunner):
 
         benchmark_root = self.repo_root / "core" / "benchmark"
         for path in sorted(benchmark_root.glob("reference_checks*.py")):
-            digest.update(path.name.encode("utf-8"))
-            digest.update(path.read_bytes())
+            self._hash_path(digest, path)
 
         semantic_files = tuple(dict.fromkeys((*BASE_SEMANTIC_FILES, *self.suite.semantic_files)))
         for name in semantic_files:
-            path = benchmark_root / name
-            digest.update(path.name.encode("utf-8"))
-            digest.update(path.read_bytes())
+            self._hash_path(digest, benchmark_root / name)
 
         semantic_dirs = tuple(dict.fromkeys((*BASE_SEMANTIC_DIRS, *self.suite.semantic_dirs)))
         for directory in semantic_dirs:
@@ -209,9 +206,9 @@ class FrontierRunner(BenchmarkRunner):
         self.suite.materializer.after_task(self, task)
         return trajectory
 
-    @staticmethod
     def _hash_files(
-        digest: "hashlib._Hash",
+        self,
+        digest,
         roots: Iterable[Path],
         *,
         suffix: str | None = None,
@@ -225,5 +222,8 @@ class FrontierRunner(BenchmarkRunner):
                 and item.suffix != ".pyc"
                 and (suffix is None or item.suffix == suffix)
             ):
-                digest.update(path.as_posix().encode("utf-8"))
-                digest.update(path.read_bytes())
+                self._hash_path(digest, path)
+
+    def _hash_path(self, digest, path: Path) -> None:
+        digest.update(path.relative_to(self.repo_root).as_posix().encode("utf-8"))
+        digest.update(path.read_bytes())
