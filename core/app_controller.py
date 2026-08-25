@@ -62,8 +62,8 @@ class AppController:
         unknown = sorted(set(raw) - allowed)
         if unknown:
             raise ValueError(f"Unknown run settings: {', '.join(unknown)}")
-        raw["harnesses"] = tuple(raw.get("harnesses") or ())
-        raw["task_ids"] = tuple(raw.get("task_ids") or ())
+        raw["harnesses"] = self._string_tuple(raw.get("harnesses"), "Harnesses")
+        raw["task_ids"] = self._string_tuple(raw.get("task_ids"), "Task ids")
         request = RunRequest(**raw)
         self._benchmark.validate_request(request)
         return request
@@ -74,6 +74,7 @@ class AppController:
         on_event: EventCallback,
         cancellation_token: CancellationToken | None = None,
     ) -> dict[str, object]:
+        self._doctor.apply_runtime_environment()
         return self._benchmark.run(request, on_event, cancellation_token)
 
     @staticmethod
@@ -93,3 +94,13 @@ class AppController:
         if not isinstance(value, str):
             raise ValueError("Profile values must be strings")
         return value.strip()
+
+    @staticmethod
+    def _string_tuple(value: object, label: str) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if not isinstance(value, list):
+            raise ValueError(f"{label} must be an array")
+        if not all(isinstance(item, str) and item for item in value):
+            raise ValueError(f"{label} must contain non-empty strings")
+        return tuple(value)
