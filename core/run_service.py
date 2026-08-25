@@ -6,8 +6,9 @@ from typing import Callable
 
 from core.benchmark.config import AGENTS
 from core.benchmark.experiments import make_experiment_id
-from core.benchmark.frontier_v3_runner import FrontierV3Runner
-from core.benchmark.frontier_v4_runner import FrontierV4Runner
+from core.benchmark.frontier_runner import FrontierRunner
+from core.benchmark.frontier_v3_runner import frontier_v3_suite
+from core.benchmark.frontier_v4_runner import frontier_v4_suite
 from core.benchmark.parametric import ConfigTraversalPressure, ExpensePressure
 from core.benchmark.report import write_summary
 from core.benchmark.scheduler import MatchedInterleavedScheduler
@@ -154,14 +155,24 @@ class BenchmarkService:
         run_id: str,
         orchestration_seed: int,
         callback: EventCallback,
-    ):
-        runner_type = ObservableFrontierV4Runner if request.suite == "frontier_v4" else ObservableFrontierV3Runner
-        common = dict(
+    ) -> "ObservableFrontierRunner":
+        if request.suite == "frontier_v4":
+            suite = frontier_v4_suite(
+                variant_base_seed=orchestration_seed,
+                parametric_parameters={
+                    "expense_report": ExpensePressure().to_dict(),
+                    "config_traversal": ConfigTraversalPressure().to_dict(),
+                },
+            )
+        else:
+            suite = frontier_v3_suite()
+        return ObservableFrontierRunner(
             repo_root=self.repo_root,
             agent=AGENTS[harness],
             results_dir=self.results_root,
             task_timeout=request.task_timeout,
             total_timeout=request.total_timeout,
+            suite=suite,
             resume=False,
             model=request.model or "unknown",
             keep_raw=request.keep_raw,
@@ -172,16 +183,6 @@ class BenchmarkService:
             metrics_poll_interval=request.metrics_poll_interval,
             event_callback=callback,
         )
-        if request.suite == "frontier_v4":
-            return runner_type(
-                **common,
-                variant_base_seed=orchestration_seed,
-                parametric_parameters={
-                    "expense_report": ExpensePressure().to_dict(),
-                    "config_traversal": ConfigTraversalPressure().to_dict(),
-                },
-            )
-        return runner_type(**common)
 
 
 class _ObservableRunnerMixin:
@@ -221,9 +222,5 @@ class _ObservableRunnerMixin:
         })
 
 
-class ObservableFrontierV3Runner(_ObservableRunnerMixin, FrontierV3Runner):
-    pass
-
-
-class ObservableFrontierV4Runner(_ObservableRunnerMixin, FrontierV4Runner):
+class ObservableFrontierRunner(_ObservableRunnerMixin, FrontierRunner):
     pass
