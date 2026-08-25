@@ -4,15 +4,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
-from aios_bench.config import AGENTS
-from aios_bench.experiments import make_experiment_id
-from aios_bench.frontier_v3_runner import FrontierV3Runner
-from aios_bench.frontier_v4_runner import FrontierV4Runner
-from aios_bench.parametric import ConfigTraversalPressure, ExpensePressure
-from aios_bench.report import write_summary
-from aios_bench.scheduler import MatchedInterleavedScheduler
-from aios_bench.statistics import augment_summary_file
-from aios_bench.tasks import load_tasks
+from core.benchmark.config import AGENTS
+from core.benchmark.experiments import make_experiment_id
+from core.benchmark.frontier_v3_runner import FrontierV3Runner
+from core.benchmark.frontier_v4_runner import FrontierV4Runner
+from core.benchmark.parametric import ConfigTraversalPressure, ExpensePressure
+from core.benchmark.report import write_summary
+from core.benchmark.scheduler import MatchedInterleavedScheduler
+from core.benchmark.statistics import augment_summary_file
+from core.benchmark.tasks import load_tasks
 
 SUITES = ("frontier_v3", "frontier_v4")
 EventCallback = Callable[[dict[str, object]], None]
