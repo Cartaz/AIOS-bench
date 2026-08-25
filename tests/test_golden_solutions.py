@@ -19,7 +19,7 @@ def test_every_frontier_v3_grader_rejects_untouched_and_accepts_golden():
     assert all(item["positive_acceptance_score"] == 1.0 for item in result["observations"])
 
 
-def test_frontier_v4_grader_rejects_generated_baseline_and_accepts_golden():
+def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
     result = validate_parametric_baseline(
         ROOT,
         load_tasks(TASKS, "frontier_v4"),
@@ -30,16 +30,25 @@ def test_frontier_v4_grader_rejects_generated_baseline_and_accepts_golden():
                 "malformed_rows": 2,
                 "distractor_files": 3,
                 "months": 6,
-            }
+            },
+            "config_traversal": {
+                "chain_depth": 3,
+                "distractor_files": 3,
+                "extra_settings": 2,
+            },
         },
     )
 
     assert result["schema"] == "aios-bench/parametric-validation/v2"
-    assert result["checked_tasks"] == 1
+    assert result["checked_tasks"] == 2
     assert result["ok"] is True, result["failures"]
-    observation = result["observations"][0]
-    assert observation["same_seed_deterministic"] is True
-    assert observation["different_seed_changes_variant"] is True
-    assert observation["untouched_variant_fails"] is True
-    assert observation["golden_variant_passes"] is True
-    assert observation["positive_acceptance_score"] == 1.0
+    assert {item["family"] for item in result["observations"]} == {
+        "expense_report",
+        "config_traversal",
+    }
+    for observation in result["observations"]:
+        assert observation["same_seed_deterministic"] is True
+        assert observation["different_seed_changes_variant"] is True
+        assert observation["untouched_variant_fails"] is True
+        assert observation["golden_variant_passes"] is True
+        assert observation["positive_acceptance_score"] == 1.0
