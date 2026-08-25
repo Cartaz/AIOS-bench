@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from core.cancellation import RunCancelled
+
 from .adapters import PiAgentAdapter
 from .evaluators import evaluate_artifacts
 from .failures import classify_failure
@@ -29,6 +31,7 @@ class ProcessOutcome:
     returncode: int
     timed_out: bool = False
     runaway: bool = False
+    cancelled: bool = False
 
 
 def _run_process(
@@ -40,8 +43,9 @@ def _run_process(
     stderr: Any,
     timeout: float,
     runaway_check: Callable[[], bool] | None,
+    cancellation_check: Callable[[], bool] | None = None,
 ) -> ProcessOutcome:
-    """Run a local harness while allowing timeout and token-cap polling."""
+    """Run a local harness while polling timeout, token cap and cancellation."""
     proc = spawn_owned(
         command,
         cwd=cwd,
@@ -53,8 +57,12 @@ def _run_process(
     started = time.monotonic()
     timed_out = False
     runaway = False
+    cancelled = False
     try:
         while proc.poll() is None:
+            if cancellation_check is not None and cancellation_check():
+                cancelled = True
+                break
             if time.monotonic() - started >= timeout:
                 timed_out = True
                 break
@@ -67,7 +75,12 @@ def _run_process(
                 pass
     finally:
         terminate_owned(proc)
-    return ProcessOutcome(proc.returncode if proc.returncode is not None else 1, timed_out, runaway)
+    return ProcessOutcome(
+        proc.returncode if proc.returncode is not None else 1,
+        timed_out,
+        runaway,
+        cancelled,
+    )
 
 
 def _usage_source(trajectory: Trajectory, server_usage: dict[str, Any]) -> str:
@@ -87,18 +100,11 @@ def _parse_harness_output(
 ) -> list[dict[str, Any]]:
     if source == "goose":
         events = parse_goose_stream_json(stdout, source=source)
-        # Goose stream-json owns stdout. Stderr remains a best-effort diagnostic
-        # surface and uses the existing conservative text normalizer.
         events.extend(parse_output("", stderr, source=source))
     elif source == "letta":
         events = parse_letta_stream_json(stdout, source=source)
-        # Letta stream-json likewise owns stdout. Never apply prose heuristics to
-        # it; only stderr is admitted as inferred diagnostics.
         events.extend(parse_output("", stderr, source=source))
     elif source == "hermes":
-        # Hermes one-shot stdout is the model's final answer, not telemetry.
-        # Only the structured --usage-file sidecar and stderr diagnostics are
-        # normalized; prose can never manufacture tool/subagent evidence.
         events = parse_hermes_usage_report(hermes_usage, source=source)
         events.extend(parse_output("", stderr, source=source))
     else:
@@ -108,6 +114,10 @@ def _parse_harness_output(
 
 def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
     """Execute one Frontier task with optional server-verified telemetry."""
+    cancellation_check = getattr(runner, "cancellation_check", None)
+    if cancellation_check is not None and cancellation_check():
+        raise RunCancelled("Benchmark run cancelled")
+
     workspace = runner._workspace(task)
     logs = runner.run_dir / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -165,9 +175,12 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
                 environment=env,
                 command=command,
                 runaway_check=guard.check if guard.enabled else None,
+                cancellation_check=cancellation_check,
             ).run(prompt)
             stdout_path.write_text(result.stdout, encoding="utf-8")
             stderr_path.write_text(result.stderr, encoding="utf-8")
+            if result.cancelled:
+                raise RunCancelled("Benchmark run cancelled")
             if result.runaway:
                 status = "runaway"
                 trajectory.errors = 1
@@ -190,7 +203,9 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
                     status = "failed"
                     trajectory.errors = 1
         else:
-            with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open("w", encoding="utf-8") as err:
+            with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open(
+                "w", encoding="utf-8"
+            ) as err:
                 process = _run_process(
                     command,
                     cwd=workspace,
@@ -199,7 +214,10 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
                     stderr=err,
                     timeout=timeout,
                     runaway_check=guard.check if guard.enabled else None,
+                    cancellation_check=cancellation_check,
                 )
+            if process.cancelled:
+                raise RunCancelled("Benchmark run cancelled")
             if process.runaway:
                 status = "runaway"
                 trajectory.errors = 1
@@ -221,6 +239,8 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
                 if process.returncode != 0:
                     status = "failed"
                     trajectory.errors = 1
+    except RunCancelled:
+        raise
     except FileNotFoundError as exc:
         status = "error"
         trajectory.errors = 1
@@ -238,6 +258,9 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
             "data": {"kind": "runner_error", "error": repr(exc)},
         })
     trajectory.duration_seconds = time.monotonic() - started
+
+    if cancellation_check is not None and cancellation_check():
+        raise RunCancelled("Benchmark run cancelled")
 
     metrics_after = (
         guard.last_snapshot
@@ -265,8 +288,6 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
                 if usage_path.is_file():
                     hermes_usage = usage_path.read_text(encoding="utf-8", errors="replace")
             finally:
-                # The sidecar is benchmark telemetry, not a task artifact. It
-                # must be absent before deterministic grading and warm-state copy.
                 usage_path.unlink(missing_ok=True)
 
     runner_events = list(trajectory.events)
@@ -282,8 +303,6 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         trajectory.success = False
     execution_success = bool(trajectory.success)
 
-    # Server diagnostics are appended after apply_events so their presence does
-    # not make harness telemetry look available when the harness reported none.
     trajectory.events.append({
         "type": "server_metrics",
         "source": "runner",
