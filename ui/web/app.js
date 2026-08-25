@@ -1,10 +1,17 @@
 (() => {
-  const state = { backend: null, catalog: null, doctor: null, harnesses: new Set(), tasks: new Set(), running: false };
+  const state = { backend: null, catalog: null, doctor: null, harnesses: new Set(), tasks: new Set(), running: false, cancelling: false };
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   function toggleSet(set, value, enabled) { enabled ? set.add(value) : set.delete(value); }
-  function setRunning(running) { state.running = running; $('start').disabled = running; $('runBadge').textContent = running ? 'In esecuzione' : 'Pronto'; $('runBadge').classList.toggle('running', running); }
+  function setRunState(value) {
+    state.running = Boolean(value.running);
+    state.cancelling = Boolean(value.cancelling);
+    $('start').disabled = state.running;
+    $('cancel').disabled = !state.running || state.cancelling;
+    $('runBadge').textContent = state.cancelling ? 'Annullamento…' : (state.running ? 'In esecuzione' : 'Pronto');
+    $('runBadge').classList.toggle('running', state.running);
+  }
   function showView(name) { $('benchmarkView').classList.toggle('hidden', name !== 'benchmark'); $('doctorView').classList.toggle('hidden', name !== 'doctor'); document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('selected', button.dataset.view === name)); if (name === 'doctor') loadDoctor(); }
 
   function renderHarnesses() {
@@ -55,15 +62,16 @@
   $('suite').addEventListener('change', loadCatalog);
   $('refreshDoctor').addEventListener('click', loadDoctor);
   $('saveProfile').addEventListener('click', () => { $('doctorError').textContent = ''; const payload = { model: $('profileModel').value, openai_url: $('openaiUrl').value, anthropic_url: $('anthropicUrl').value }; state.backend.saveDoctorProfile(JSON.stringify(payload), ok => { if (ok) { $('model').value = payload.model.trim(); loadDoctor(); } }); });
-  $('start').addEventListener('click', () => { $('error').textContent = ''; const totalTimeout = $('totalTimeout').value.trim(); const payload = { suite: $('suite').value, harnesses: [...state.harnesses], task_ids: [...state.tasks], model: $('model').value.trim() || 'unknown', repeats: Number($('repeats').value), seed: Number($('seed').value), task_timeout: Number($('timeout').value), total_timeout: totalTimeout ? Number(totalTimeout) : null }; state.backend.startRun(JSON.stringify(payload), ok => { if (ok) setRunning(true); }); });
+  $('start').addEventListener('click', () => { $('error').textContent = ''; const totalTimeout = $('totalTimeout').value.trim(); const payload = { suite: $('suite').value, harnesses: [...state.harnesses], task_ids: [...state.tasks], model: $('model').value.trim() || 'unknown', repeats: Number($('repeats').value), seed: Number($('seed').value), task_timeout: Number($('timeout').value), total_timeout: totalTimeout ? Number(totalTimeout) : null }; state.backend.startRun(JSON.stringify(payload), ok => { if (ok) setRunState({running: true}); }); });
+  $('cancel').addEventListener('click', () => { if (!state.running || state.cancelling) return; state.backend.cancelRun(ok => { if (ok) setRunState({running: true, cancelling: true}); }); });
 
   new QWebChannel(qt.webChannelTransport, channel => {
     state.backend = channel.objects.backend;
     state.backend.errorOccurred.connect(message => { const target = $('doctorView').classList.contains('hidden') ? $('error') : $('doctorError'); target.textContent = message; });
     state.backend.doctorChanged.connect(raw => { const value = JSON.parse(raw || '{}'); if (value.report) { state.doctor = value; renderDoctor(); } });
-    state.backend.runStateChanged.connect(raw => setRunning(Boolean(JSON.parse(raw).running)));
-    state.backend.progressChanged.connect(raw => { const event = JSON.parse(raw); const done = event.completed_units || 0, total = event.total_units || 0; $('counter').textContent = `${done} / ${total}`; $('progressBar').style.width = total ? `${Math.min(100, done / total * 100)}%` : '0%'; if (event.type === 'task_started') $('current').textContent = `${event.harness} · ${event.task_id}`; if (event.type === 'task_finished') { const line = document.createElement('div'); line.textContent = `${event.harness} · ${event.task_id} · ${event.status || (event.success ? 'PASS' : 'FAIL')}`; $('events').prepend(line); } });
-    state.backend.runFinished.connect(() => { $('current').textContent = 'Run completata.'; });
+    state.backend.runStateChanged.connect(raw => setRunState(JSON.parse(raw)));
+    state.backend.progressChanged.connect(raw => { const event = JSON.parse(raw); const done = event.completed_units || 0, total = event.total_units || 0; $('counter').textContent = `${done} / ${total}`; $('progressBar').style.width = total ? `${Math.min(100, done / total * 100)}%` : '0%'; if (event.type === 'task_started') $('current').textContent = `${event.harness} · ${event.task_id}`; if (event.type === 'task_finished') { const line = document.createElement('div'); line.textContent = `${event.harness} · ${event.task_id} · ${event.status || (event.success ? 'PASS' : 'FAIL')}`; $('events').prepend(line); } if (event.type === 'run_cancelled') $('current').textContent = 'Run annullata.'; });
+    state.backend.runFinished.connect(raw => { const result = JSON.parse(raw || '{}'); $('current').textContent = result.cancelled ? 'Run annullata.' : 'Run completata.'; });
     loadCatalog(); loadDoctor();
   });
 })();
