@@ -13,17 +13,6 @@ from ui.runtime import DesktopRuntime
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _wait_for_load(view, timeout_ms: int = 5000) -> bool:
-    if not view.url().isEmpty() and view.page().isLoading() is False:
-        return True
-    loop = QEventLoop()
-    result: list[bool] = []
-    view.loadFinished.connect(lambda ok: (result.append(bool(ok)), loop.quit()))
-    QTimer.singleShot(timeout_ms, loop.quit)
-    loop.exec()
-    return bool(result and result[-1])
-
-
 def _javascript(view, expression: str, timeout_ms: int = 3000):
     loop = QEventLoop()
     result: list[object] = []
@@ -45,11 +34,11 @@ def test_desktop_shell_constructs_with_loaded_local_web_content():
     assert window.minimumWidth() == 1200
     assert window.minimumHeight() == 800
     assert view.url().isLocalFile()
-    assert _wait_for_load(view) is True
 
-    # Give the QWebChannel callback and initial catalog/Doctor requests a short
-    # event-loop window, then assert that the real module frontend initialized.
-    QTest.qWait(300)
+    # Exercise the actual Chromium/QWebChannel path rather than only checking
+    # that a local URL was assigned to the view.
+    QTest.qWait(500)
+    assert _javascript(view, "document.readyState") == "complete"
     assert _javascript(view, "document.documentElement.dataset.appReady || ''") == "true"
     assert _javascript(view, "document.querySelectorAll('[data-harness]').length") > 0
     assert _javascript(view, "document.querySelectorAll('[data-task]').length") > 0
