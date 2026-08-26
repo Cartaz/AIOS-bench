@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .report import build_summary, load_results, summarize_rows
+from .resource_reporting import resource_efficiency_groups
 from .statistics import (
     aggregate_repeat_rows,
     failure_distributions,
@@ -42,6 +43,20 @@ def _percent(value: Any) -> str:
     except (TypeError, ValueError):
         return "n/a"
     return f"{number:.1f}%" if math.isfinite(number) else "n/a"
+
+
+def _bytes(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if not math.isfinite(number):
+        return "n/a"
+    gib = 1024 ** 3
+    mib = 1024 ** 2
+    if abs(number) >= gib:
+        return f"{number / gib:.2f} GiB"
+    return f"{number / mib:.1f} MiB"
 
 
 def _interval(value: Any, *, percent: bool = False) -> str:
@@ -155,6 +170,32 @@ def _efficiency_rows(groups: list[dict[str, Any]]) -> str:
     )
 
 
+def _resource_rows(groups: list[dict[str, Any]], side: str) -> str:
+    rows: list[str] = []
+    for item in groups:
+        metrics = item.get(side)
+        if not isinstance(metrics, dict):
+            continue
+        rows.append(
+            '<tr>'
+            f'<td>{_display(item.get("harness"))}</td>'
+            f'<td>{_display(item.get("model"))}</td>'
+            f'<td>{int(metrics.get("measured_tasks", 0))}</td>'
+            f'<td>{_bytes(metrics.get("rss_peak_task_mean_bytes"))}</td>'
+            f'<td>{_bytes(metrics.get("rss_peak_max_bytes"))}</td>'
+            f'<td>{_bytes(metrics.get("rss_peak_delta_task_mean_bytes"))}</td>'
+            f'<td>{_score(metrics.get("cpu_task_mean_percent"))}%</td>'
+            f'<td>{int(metrics.get("vram_attributed_tasks", 0))}</td>'
+            f'<td>{_bytes(metrics.get("vram_baseline_task_mean_bytes"))}</td>'
+            f'<td>{_bytes(metrics.get("vram_peak_task_mean_bytes"))}</td>'
+            f'<td>{_bytes(metrics.get("vram_peak_max_bytes"))}</td>'
+            f'<td>{_bytes(metrics.get("vram_peak_delta_task_mean_bytes"))}</td>'
+            f'<td>{_score(metrics.get("gpu_engine_time_task_mean_percent"))}%</td>'
+            '</tr>'
+        )
+    return "".join(rows)
+
+
 def _failure_text(value: Any) -> str:
     counts = value if isinstance(value, dict) else {}
     return " · ".join(
@@ -266,6 +307,7 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     paired = paired_comparisons(raw_rows, **filters)
     failures = failure_distributions(raw_rows, **filters)
     efficiency = server_efficiency_groups(raw_rows, **filters)
+    resources = resource_efficiency_groups(raw_rows, **filters)
     landscapes = summary.get("pressure_landscapes") if isinstance(summary.get("pressure_landscapes"), list) else []
     pressure_pairs = summary.get("pressure_paired_comparisons") if isinstance(summary.get("pressure_paired_comparisons"), list) else []
     selected = (
@@ -324,14 +366,23 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     paired_table = _paired_rows(paired)
     failure_table = _failure_rows(failures)
     efficiency_table = _efficiency_rows(efficiency)
+    client_resource_table = _resource_rows(resources, "client")
+    server_resource_table = _resource_rows(resources, "server")
     pressure_axis_table = _pressure_axis_rows(landscapes)
     pressure_cell_table = _pressure_cell_rows(landscapes)
     pressure_pair_table = _pressure_pair_rows(pressure_pairs)
 
+    resource_headers = (
+        '<th>Harness</th><th>Model</th><th>Tasks</th><th>Mean task RSS peak</th>'
+        '<th>Max RSS peak</th><th>Mean RSS Δ</th><th>Mean CPU</th>'
+        '<th>VRAM tasks</th><th>Mean VRAM baseline</th><th>Mean VRAM peak</th>'
+        '<th>Max VRAM peak</th><th>Mean VRAM Δ</th><th>Mean GPU engine</th>'
+    )
+
     html = f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIOS-bench Dashboard</title>
-<style>:root{{color-scheme:dark}}body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}}h1{{margin-bottom:4px}}.meta{{color:#999;margin-bottom:24px}}table{{border-collapse:collapse;width:100%;max-width:1400px}}th,td{{padding:12px;border-bottom:1px solid #333;text-align:left;vertical-align:top}}th{{color:#aaa}}code{{font-size:.9em}}.panel{{margin-top:28px;max-width:1400px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}}.card{{border:1px solid #333;border-radius:12px;padding:16px}}.bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}}.fill{{height:100%;background:#aaa}}small{{color:#999}}</style></head><body><h1>AIOS-bench</h1>
+<style>:root{{color-scheme:dark}}body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}}h1{{margin-bottom:4px}}.meta{{color:#999;margin-bottom:24px}}table{{border-collapse:collapse;width:100%;max-width:1400px}}th,td{{padding:12px;border-bottom:1px solid #333;text-align:left;vertical-align:top;white-space:nowrap}}th{{color:#aaa}}code{{font-size:.9em}}.panel{{margin-top:28px;max-width:1400px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}}.card{{border:1px solid #333;border-radius:12px;padding:16px}}.bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}}.fill{{height:100%;background:#aaa}}small{{color:#999}}</style></head><body><h1>AIOS-bench</h1>
 <div class="meta">Harness × model comparison — newest observed suite revision: {selected}. Capability, reliability, pressure response and efficiency are reported separately.</div>
 <div class="panel"><h2>Latest capability leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Suite</th><th>Revision</th><th>Profile</th><th>Run</th><th>Score</th><th>Passed</th><th>Unsupported</th><th>Blocked</th><th>Success</th><th>Runtime</th></tr></thead><tbody>{cards or '<tr><td colspan="12">No eligible benchmark results yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Reliability across repeats</h2><p><small>Attempt-level pass rate and Wilson 95% interval. Score range is descriptive; capability scoring is unchanged.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Repeats</th><th>Passed attempts</th><th>Pass rate</th><th>Wilson 95%</th><th>Median score</th><th>Score range</th></tr></thead><tbody>{reliability_table or '<tr><td colspan="8">No repeated observations yet.</td></tr>'}</tbody></table></div>
@@ -341,6 +392,8 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
 <div class="panel"><h2>Matched harness deltas by pressure cell</h2><p><small>Strict same-model comparisons only. A pair is matched on experiment, repeat, task, task seed and variant digest. Δ = score(A) − score(B); these cell deltas are descriptive.</small></p><table><thead><tr><th>A</th><th>B</th><th>Family</th><th>Pressure vector</th><th>Matched</th><th>Mean Δ</th><th>Median Δ</th><th>W/L/T</th><th>A-only pass / B-only pass</th></tr></thead><tbody>{pressure_pair_table or '<tr><td colspan="9">No strict matched pressure-cell comparisons yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Failure taxonomy</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Observations</th><th>Counts</th></tr></thead><tbody>{failure_table or '<tr><td colspan="4">No classified observations yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Server-verified efficiency</h2><p><small>Only llama.cpp server-verified rows are included. Endpoint counters require an exclusive benchmark server for clean attribution.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Verified tasks</th><th>Prompt tokens</th><th>Output tokens</th><th>Prompt tok/s</th><th>Generation tok/s</th></tr></thead><tbody>{efficiency_table or '<tr><td colspan="7">No server-verified efficiency data yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Client resource cost</h2><p><small>AIOS-bench + harness process-tree cost. Memory peaks are reported as the mean per-task peak plus the maximum observed peak; memory is never summed across tasks. GPU/VRAM values are DRM client-attributed when available.</small></p><table><thead><tr>{resource_headers}</tr></thead><tbody>{client_resource_table or '<tr><td colspan="13">No client resource telemetry yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Inference server / model resource cost</h2><p><small>Inference-server process-tree cost from the optional remote resource agent. VRAM baseline represents the loaded server/model footprint; VRAM Δ highlights additional task-time pressure such as context/KV growth.</small></p><table><thead><tr>{resource_headers}</tr></thead><tbody>{server_resource_table or '<tr><td colspan="13">No inference-server resource telemetry yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Run history</h2><table><thead><tr><th>Run</th><th>Harness</th><th>Model</th><th>Suite</th><th>Revision</th><th>Profile</th><th>Status</th><th>Score</th><th>Passed</th><th>Unsupported</th><th>Blocked</th><th>Eligibility</th><th>Git commit</th></tr></thead><tbody>{history or '<tr><td colspan="13">No benchmark runs yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Difficulty tiers</h2><p><small>T3 = advanced, T4 = expert, T5 = frontier.</small></p><div id="tiers" class="grid">{tiers}</div></div>
 <div class="panel"><h2>Capability breakdown</h2><div id="capabilities" class="grid">{capabilities}</div></div>
