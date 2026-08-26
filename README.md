@@ -49,6 +49,33 @@ Frontier v3 and v4 remain separate scientific catalogs so historical results and
 
 Materialization is a task/suite concern; harness execution, lifecycle, telemetry, scoring, persistence and scheduling are shared. A future catalog therefore does not require a new execution engine merely because its task materialization strategy changes.
 
+### Resource telemetry
+
+Resource telemetry is observational and never changes deterministic task scoring.
+
+Every task automatically samples the AIOS-Bench process tree and the client host at a one-second interval by default. Results keep process-attributed CPU/RAM separate from host totals. On Linux DRM systems, AIOS-Bench also attempts per-client GPU/VRAM attribution from DRM `fdinfo`, while retaining host-total GPU/VRAM counters as separate context. Unsupported GPU telemetry remains explicitly unavailable rather than being reported as zero.
+
+The sampling interval can be changed from the CLI with `--resource-poll-interval`.
+
+Inference-server resource telemetry is optional and uses a small read-only HTTP agent rather than SSH or arbitrary remote command execution. Run the agent on the inference-server host against the already-running server PID:
+
+```bash
+AIOS_BENCH_RESOURCE_TOKEN='<token>' \
+  .venv/bin/python -m core.benchmark.resource_agent \
+  --pid <INFERENCE_SERVER_PID> \
+  --bind 0.0.0.0 \
+  --port 8766
+```
+
+Then point AIOS-Bench at it from the client:
+
+```bash
+export AIOS_BENCH_SERVER_RESOURCE_URL='http://SERVER_IP:8766'
+export AIOS_BENCH_RESOURCE_TOKEN='<token>'
+```
+
+The bearer token is optional on loopback but recommended whenever the resource agent is reachable over the LAN. The server channel records the inference-server process-tree RSS and, where DRM attribution is available, its VRAM and GPU engine usage. Baseline, mean, p95, peak and peak delta are kept separately from server-host totals. This resource channel is independent of llama.cpp `/metrics`, which remains the source for verified token counts and inference throughput.
+
 ## Validation
 
 ```bash
