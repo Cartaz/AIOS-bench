@@ -78,7 +78,9 @@ def test_summary_keeps_process_tree_and_host_cost_separate():
     assert summary["process_tree"]["rss_peak_delta_bytes"] == 150
     assert summary["process_tree"]["process_count_peak"] == 3
     assert summary["process_tree"]["gpu_scope"] == "drm_client_attributed"
+    assert summary["process_tree"]["vram_baseline_bytes"] == 40
     assert summary["process_tree"]["vram_peak_bytes"] == 120
+    assert summary["process_tree"]["vram_peak_delta_bytes"] == 80
     assert summary["process_tree"]["gpu_client_count_peak"] == 2
     assert summary["host"]["ram_peak_delta_bytes"] == 400
     assert summary["gpu"]["scope"] == "host_total"
