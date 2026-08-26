@@ -10,6 +10,7 @@ from typing import Any, Callable, Iterable
 from .failures import classify_failure
 from .materialization import TaskMaterializer
 from .models import Task
+from .remote_resources import build_remote_resource_client
 from .runner import BenchmarkRunner
 from .server_metrics import build_server_metrics_client
 from .task_execution import run_frontier_task
@@ -67,6 +68,7 @@ class FrontierRunner(BenchmarkRunner):
         run_id: str | None = None,
         server_metrics_url: str | None = None,
         server_metrics_model: str | None = None,
+        server_resource_url: str | None = None,
         max_output_tokens: int = 65536,
         metrics_poll_interval: float = 1.0,
         resource_poll_interval: float = 1.0,
@@ -75,6 +77,7 @@ class FrontierRunner(BenchmarkRunner):
         self.suite = suite
         self.server_metrics = build_server_metrics_client(server_metrics_url, model=server_metrics_model)
         self.server_metrics_model = server_metrics_model
+        self.server_resources = build_remote_resource_client(server_resource_url)
         self.max_output_tokens = max_output_tokens
         self.metrics_poll_interval = metrics_poll_interval
         self.resource_poll_interval = resource_poll_interval
@@ -132,9 +135,21 @@ class FrontierRunner(BenchmarkRunner):
             "enabled": True,
             "poll_interval_seconds": self.resource_poll_interval,
             "process_scope": "aios_bench_process_tree",
+            "process_gpu_scope": "drm_client_attributed_or_unavailable",
             "host_scope": "client_host",
-            "gpu_scope": "host_total",
-            "gpu_provider": "linux_drm_sysfs_or_unavailable",
+            "host_gpu_scope": "host_total",
+            "providers": ["psutil", "linux_drm_fdinfo", "linux_drm_sysfs"],
+        }
+        manifest["server_resources"] = {
+            "source": self.server_resources.source,
+            "enabled": bool(self.server_resources.enabled),
+            "endpoint": self.server_resources.public_endpoint,
+            "poll_interval_seconds": self.resource_poll_interval,
+            "process_scope": "inference_server_process_tree",
+            "process_gpu_scope": "drm_client_attributed_or_unavailable",
+            "host_scope": "inference_server_host",
+            "host_gpu_scope": "host_total",
+            "requires_exclusive_resource_agent": True,
         }
         if self.suite.parametric is not None:
             manifest["parametric"] = self.suite.parametric
@@ -204,6 +219,7 @@ class FrontierRunner(BenchmarkRunner):
             "efficiency_comparable": False,
             "server_usage": None,
             "client_resources": None,
+            "server_resources": None,
         }
         if assessment is not None:
             item["capability_assessment"] = assessment.to_dict()
