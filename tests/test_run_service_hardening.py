@@ -30,6 +30,7 @@ def _request(**overrides) -> RunRequest:
         ("max_output_tokens", 1.2, "Max output tokens must be an integer"),
         ("metrics_poll_interval", 0, "Metrics poll interval must be greater than 0"),
         ("resource_poll_interval", 0, "Resource poll interval must be greater than 0"),
+        ("server_resource_url", 123, "Server resource URL must be a string or null"),
     ],
 )
 def test_run_request_rejects_invalid_runtime_types(field: str, value: object, message: str) -> None:
