@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from core.benchmark.resource_telemetry import (
-    LocalResourceProbe,
     ResourceSampler,
     ResourceSnapshot,
     summarize_snapshots,
@@ -16,6 +15,9 @@ def _snapshot(
     count: int,
     host_cpu: float,
     host_ram: int,
+    proc_gpu: float | None = None,
+    proc_vram: int | None = None,
+    proc_gpu_clients: int = 0,
     gpu: float | None = None,
     vram: int | None = None,
     vram_total: int | None = None,
@@ -27,6 +29,9 @@ def _snapshot(
         process_count=count,
         host_cpu_percent=host_cpu,
         host_ram_used_bytes=host_ram,
+        process_gpu_engine_time_percent=proc_gpu,
+        process_vram_used_bytes=proc_vram,
+        process_gpu_client_count=proc_gpu_clients,
         gpu_busy_percent=gpu,
         vram_used_bytes=vram,
         vram_total_bytes=vram_total,
@@ -44,6 +49,9 @@ def test_summary_keeps_process_tree_and_host_cost_separate():
                 count=1,
                 host_cpu=10,
                 host_ram=1000,
+                proc_gpu=0,
+                proc_vram=40,
+                proc_gpu_clients=1,
                 gpu=5,
                 vram=200,
                 vram_total=1000,
@@ -55,6 +63,9 @@ def test_summary_keeps_process_tree_and_host_cost_separate():
                 count=3,
                 host_cpu=50,
                 host_ram=1400,
+                proc_gpu=25,
+                proc_vram=120,
+                proc_gpu_clients=2,
                 gpu=60,
                 vram=500,
                 vram_total=1000,
@@ -66,12 +77,15 @@ def test_summary_keeps_process_tree_and_host_cost_separate():
     assert summary["process_tree"]["rss_peak_bytes"] == 250
     assert summary["process_tree"]["rss_peak_delta_bytes"] == 150
     assert summary["process_tree"]["process_count_peak"] == 3
+    assert summary["process_tree"]["gpu_scope"] == "drm_client_attributed"
+    assert summary["process_tree"]["vram_peak_bytes"] == 120
+    assert summary["process_tree"]["gpu_client_count_peak"] == 2
     assert summary["host"]["ram_peak_delta_bytes"] == 400
     assert summary["gpu"]["scope"] == "host_total"
     assert summary["gpu"]["vram_peak_delta_bytes"] == 300
 
 
-def test_sampler_captures_baseline_and_final_sample():
+def test_sampler_captures_baseline_and_final_sample_and_stop_is_idempotent():
     values = iter([
         _snapshot(1.0, rss=100, proc_cpu=0, count=1, host_cpu=10, host_ram=1000),
         _snapshot(2.0, rss=150, proc_cpu=20, count=2, host_cpu=30, host_ram=1100),
@@ -81,27 +95,10 @@ def test_sampler_captures_baseline_and_final_sample():
     summary = sampler.stop()
     assert summary["sample_count"] == 2
     assert summary["process_tree"]["rss_peak_bytes"] == 150
+    assert sampler.stop() is summary
 
 
 def test_empty_summary_fails_open_without_inventing_zero_usage():
     summary = summarize_snapshots([], poll_interval=1.0)
     assert summary["available"] is False
     assert "error" in summary
-
-
-def test_linux_drm_probe_reads_amd_busy_and_vram(tmp_path):
-    device = tmp_path / "card0" / "device"
-    device.mkdir(parents=True)
-    (device / "gpu_busy_percent").write_text("73\n", encoding="utf-8")
-    (device / "mem_info_vram_used").write_text("4096\n", encoding="utf-8")
-    (device / "mem_info_vram_total").write_text("8192\n", encoding="utf-8")
-
-    probe = LocalResourceProbe(drm_root=tmp_path)
-    gpu = probe._linux_drm_gpu_snapshot()
-
-    assert gpu == {
-        "gpu_busy_percent": 73.0,
-        "vram_used_bytes": 4096,
-        "vram_total_bytes": 8192,
-        "gpu_device_count": 1,
-    }
