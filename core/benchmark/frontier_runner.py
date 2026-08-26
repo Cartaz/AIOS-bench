@@ -69,6 +69,7 @@ class FrontierRunner(BenchmarkRunner):
         server_metrics_model: str | None = None,
         max_output_tokens: int = 65536,
         metrics_poll_interval: float = 1.0,
+        resource_poll_interval: float = 1.0,
         cancellation_check: Callable[[], bool] | None = None,
     ) -> None:
         self.suite = suite
@@ -76,6 +77,7 @@ class FrontierRunner(BenchmarkRunner):
         self.server_metrics_model = server_metrics_model
         self.max_output_tokens = max_output_tokens
         self.metrics_poll_interval = metrics_poll_interval
+        self.resource_poll_interval = resource_poll_interval
         self.cancellation_check = cancellation_check
         if run_id is None:
             run_id = datetime.now().astimezone().strftime("%Y-%m-%d_%H%M%S_%f") + f"_{suite.name.replace('_', '-')}"
@@ -125,6 +127,14 @@ class FrontierRunner(BenchmarkRunner):
             "poll_interval_seconds": self.metrics_poll_interval,
             "scope": "endpoint_aggregate",
             "requires_exclusive_server": True,
+        }
+        manifest["client_resources"] = {
+            "enabled": True,
+            "poll_interval_seconds": self.resource_poll_interval,
+            "process_scope": "aios_bench_process_tree",
+            "host_scope": "client_host",
+            "gpu_scope": "host_total",
+            "gpu_provider": "linux_drm_sysfs_or_unavailable",
         }
         if self.suite.parametric is not None:
             manifest["parametric"] = self.suite.parametric
@@ -193,6 +203,7 @@ class FrontierRunner(BenchmarkRunner):
             "usage_source": "unavailable",
             "efficiency_comparable": False,
             "server_usage": None,
+            "client_resources": None,
         }
         if assessment is not None:
             item["capability_assessment"] = assessment.to_dict()
