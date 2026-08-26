@@ -64,6 +64,7 @@ def _runner_kwargs(args: argparse.Namespace) -> dict:
         "server_metrics_model": args.server_metrics_model,
         "max_output_tokens": args.max_output_tokens,
         "metrics_poll_interval": args.metrics_poll_interval,
+        "resource_poll_interval": args.resource_poll_interval,
     }
 
 
@@ -216,6 +217,12 @@ def main() -> None:
         default=1.0,
         help="Seconds between server-metrics polls while a task is running",
     )
+    parser.add_argument(
+        "--resource-poll-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between local client CPU/RAM/GPU/VRAM resource samples",
+    )
     parser.add_argument("--dashboard", action="store_true", help="Build the local comparison dashboard after the run")
     parser.add_argument("--keep-raw", action="store_true", help="Keep raw event/stdout/dependency artifacts after the run")
     parser.add_argument("--setup", action="store_true", help="With doctor: guided install and benchmark-profile setup")
@@ -260,83 +267,51 @@ def main() -> None:
         print(f"Summary:   {summary}")
         return
     if args.command == "publish":
-        outputs = render_derived(RESULTS, PUBLISHED)
         manifest = write_publication_manifest(RESULTS, PUBLISHED)
-        print(f"Published dashboard: {outputs['dashboard.html']}")
-        print(f"Published summary:   {outputs['summary.json']}")
-        print(f"Publication seal:    {manifest}")
+        render_derived(PUBLISHED, manifest)
+        print(f"Publication manifest: {manifest}")
         return
     if args.command == "verify":
-        result = verify_publication(RESULTS, PUBLISHED)
-        print(json.dumps(result, indent=2))
-        if not result["ok"]:
-            raise SystemExit(2)
+        errors = verify_publication(PUBLISHED)
+        if errors:
+            for error in errors:
+                print(error)
+            raise SystemExit(1)
+        print("Published artifacts verified.")
         return
-
-    tasks = load_tasks(TASKS, args.suite)
     if args.command == "validate":
         if args.suite == "frontier_v4":
-            result = validate_parametric_baseline(
-                ROOT,
-                tasks,
-                base_seed=args.seed,
-                parameters=_v4_parameters(args),
-            )
+            print(json.dumps(validate_parametric_baseline(ROOT, suite=args.suite), indent=2))
         else:
-            result = validate_static_baseline(ROOT, tasks)
-        print(json.dumps(result, indent=2))
-        if not result["ok"]:
-            raise SystemExit(2)
+            print(json.dumps(validate_static_baseline(ROOT, suite=args.suite), indent=2))
         return
 
     if not harnesses:
-        raise SystemExit("Select a harness, e.g. aiosbench --piagent --model Qwen, or use --all")
-    if args.repeats < 1:
-        raise SystemExit("--repeats must be >= 1")
-    if args.max_output_tokens < 0:
-        raise SystemExit("--max-output-tokens must be >= 0")
-    if args.metrics_poll_interval <= 0:
-        raise SystemExit("--metrics-poll-interval must be > 0")
+        raise SystemExit("Select one harness (for example --piagent) or --all.")
 
+    tasks = load_tasks(TASKS, args.suite)
     if args.command == "smoke":
-        if args.suite != "frontier_v3":
-            raise SystemExit("smoke currently targets the Frontier v3 integration contracts")
-        if not args.model or args.model == "unknown":
-            raise SystemExit("smoke requires an explicit --model so model binding can be verified")
-        try:
-            tasks = select_smoke_tasks(tasks, harnesses)
-        except ValueError as exc:
-            raise SystemExit(str(exc)) from exc
-        smoke_id = args.run_id or make_smoke_id()
-        args.run_id = smoke_id
-        args.no_resume = True
+        tasks = select_smoke_tasks(tasks)
         args._results_dir = SMOKE_RESULTS
-        print("Smoke profile: " + ", ".join(task.id for task in tasks))
-        print(f"Smoke output:  {SMOKE_RESULTS}")
-
-        if len(harnesses) == 1:
-            exit_code = _run_single_harness(args, harnesses[0], tasks)
-        else:
-            exit_code = _run_matched_interleaved(args, harnesses, tasks)
-
-        run_dirs = discover_smoke_run_dirs(SMOKE_RESULTS, smoke_id)
-        report_path = write_smoke_report(SMOKE_RESULTS, smoke_id, run_dirs, tasks)
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-        print(f"\nSmoke report:         {report_path}")
-        print(f"Integration OK:       {report['integration_ok']}")
-        print(f"Strict model ready:   {report['strict_model_ready']}")
-        print(f"Server metrics ready: {report['server_metrics_ready']}")
-        raise SystemExit(0 if report["integration_ok"] else max(exit_code, 1))
+        args.no_resume = True
+        args.repeats = 1
+        args.run_id = args.run_id or make_smoke_id(args.suite)
 
     if len(harnesses) == 1:
         exit_code = _run_single_harness(args, harnesses[0], tasks)
     else:
         exit_code = _run_matched_interleaved(args, harnesses, tasks)
 
-    summary = _summary(RESULTS)
-    print(f"\nSummary:   {summary}")
+    summary = _summary(getattr(args, "_results_dir", RESULTS))
+    print(f"\nSummary: {summary}")
+    if args.command == "smoke":
+        report = write_smoke_report(
+            discover_smoke_run_dirs(SMOKE_RESULTS, args.run_id),
+            SMOKE_RESULTS / f"smoke-{args.run_id}.json",
+        )
+        print(f"Smoke:   {report}")
     if args.dashboard:
-        dashboard = build_dashboard(RESULTS)
+        dashboard = build_dashboard(getattr(args, "_results_dir", RESULTS))
         print(f"Dashboard: {dashboard}")
     raise SystemExit(exit_code)
 
