@@ -1,4 +1,5 @@
-from core.benchmark.behavior_reporting import behavior_efficiency_groups, task_behavior
+from core.benchmark.behavior_metrics import behavior_efficiency_groups, task_behavior
+from core.benchmark.models import Trajectory
 
 
 def _event(kind: str, **data: object) -> dict[str, object]:
@@ -50,6 +51,20 @@ def test_task_behavior_uses_only_canonical_non_inferred_events() -> None:
     assert behavior["retries"] == 1
     assert behavior["tool_calls_per_minute"] == 1.5
     assert behavior["output_tokens_per_tool_call"] == 200.0
+    assert behavior["affects_score"] is False
+
+
+def test_trajectory_persists_agent_behavior_without_changing_score_fields() -> None:
+    trajectory = Trajectory(agent="piagent", task_id="task-1", duration_seconds=120.0)
+    trajectory.output_tokens = 600
+    trajectory.apply_events(list(_row()["events"]))
+
+    result = trajectory.to_dict()
+
+    assert result["agent_behavior"]["tool_calls"] == 3
+    assert result["agent_behavior"]["tool_errors"] == 1
+    assert result["agent_behavior"]["affects_score"] is False
+    assert result["tool_calls"] == 3
 
 
 def test_behavior_groups_keep_execution_profiles_separate() -> None:
