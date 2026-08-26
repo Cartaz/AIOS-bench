@@ -10,6 +10,8 @@ from typing import Callable
 
 import psutil
 
+from .linux_drm import read_host_drm_usage, read_process_drm_usage
+
 
 @dataclass(frozen=True)
 class ResourceSnapshot:
@@ -19,6 +21,9 @@ class ResourceSnapshot:
     process_count: int
     host_cpu_percent: float
     host_ram_used_bytes: int
+    process_gpu_engine_time_percent: float | None = None
+    process_vram_used_bytes: int | None = None
+    process_gpu_client_count: int = 0
     gpu_busy_percent: float | None = None
     vram_used_bytes: int | None = None
     vram_total_bytes: int | None = None
@@ -31,13 +36,27 @@ class _ProcessCpuState:
     cpu_seconds: dict[tuple[int, float], float] = field(default_factory=dict)
 
 
+@dataclass
+class _ProcessGpuState:
+    captured_at: float | None = None
+    engine_ns: dict[str, int] = field(default_factory=dict)
+
+
 class LocalResourceProbe:
     """Capture client host and AIOS-bench process-tree resource usage."""
 
-    def __init__(self, root_pid: int | None = None, *, drm_root: Path = Path("/sys/class/drm")) -> None:
+    def __init__(
+        self,
+        root_pid: int | None = None,
+        *,
+        drm_root: Path = Path("/sys/class/drm"),
+        proc_root: Path = Path("/proc"),
+    ) -> None:
         self.root_pid = int(root_pid or os.getpid())
         self.drm_root = drm_root
+        self.proc_root = proc_root
         self._cpu_state = _ProcessCpuState()
+        self._gpu_state = _ProcessGpuState()
         psutil.cpu_percent(interval=None)
 
     def snapshot(self) -> ResourceSnapshot:
@@ -45,17 +64,25 @@ class LocalResourceProbe:
         processes = self._process_tree()
         rss_bytes = 0
         cpu_seconds: dict[tuple[int, float], float] = {}
+        pids: list[int] = []
         for process in processes:
             try:
                 rss_bytes += int(process.memory_info().rss)
                 times = process.cpu_times()
                 cpu_seconds[(process.pid, process.create_time())] = float(times.user + times.system)
+                pids.append(process.pid)
             except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
                 continue
 
         process_cpu_percent = self._process_cpu_percent(captured_at, cpu_seconds)
+        process_gpu = read_process_drm_usage(pids, proc_root=self.proc_root)
+        process_gpu_percent = self._process_gpu_percent(
+            captured_at,
+            process_gpu.engine_ns,
+            available=process_gpu.available,
+        )
         virtual_memory = psutil.virtual_memory()
-        gpu = self._linux_drm_gpu_snapshot()
+        host_gpu = read_host_drm_usage(self.drm_root)
         return ResourceSnapshot(
             captured_at=captured_at,
             process_rss_bytes=rss_bytes,
@@ -63,10 +90,13 @@ class LocalResourceProbe:
             process_count=len(cpu_seconds),
             host_cpu_percent=float(psutil.cpu_percent(interval=None)),
             host_ram_used_bytes=int(virtual_memory.used),
-            gpu_busy_percent=gpu["gpu_busy_percent"],
-            vram_used_bytes=gpu["vram_used_bytes"],
-            vram_total_bytes=gpu["vram_total_bytes"],
-            gpu_device_count=int(gpu["gpu_device_count"]),
+            process_gpu_engine_time_percent=process_gpu_percent,
+            process_vram_used_bytes=process_gpu.vram_used_bytes,
+            process_gpu_client_count=process_gpu.client_count,
+            gpu_busy_percent=host_gpu.gpu_busy_percent,
+            vram_used_bytes=host_gpu.vram_used_bytes,
+            vram_total_bytes=host_gpu.vram_total_bytes,
+            gpu_device_count=host_gpu.device_count,
         )
 
     def _process_tree(self) -> list[psutil.Process]:
@@ -95,49 +125,37 @@ class LocalResourceProbe:
         )
         return (cpu_delta / elapsed) * 100.0
 
-    def _linux_drm_gpu_snapshot(self) -> dict[str, int | float | None]:
-        if os.name != "posix" or not self.drm_root.is_dir():
-            return self._empty_gpu_snapshot()
-
-        devices: list[tuple[float | None, int | None, int | None]] = []
-        for card in sorted(self.drm_root.glob("card[0-9]*")):
-            device = card / "device"
-            if not device.is_dir():
-                continue
-            busy = self._read_number(device / "gpu_busy_percent", float)
-            used = self._read_number(device / "mem_info_vram_used", int)
-            total = self._read_number(device / "mem_info_vram_total", int)
-            if busy is None and used is None and total is None:
-                continue
-            devices.append((busy, used, total))
-
-        if not devices:
-            return self._empty_gpu_snapshot()
-        busy_values = [value for value, _, _ in devices if value is not None]
-        used_values = [value for _, value, _ in devices if value is not None]
-        total_values = [value for _, _, value in devices if value is not None]
-        return {
-            "gpu_busy_percent": max(busy_values) if busy_values else None,
-            "vram_used_bytes": sum(used_values) if used_values else None,
-            "vram_total_bytes": sum(total_values) if total_values else None,
-            "gpu_device_count": len(devices),
-        }
-
-    @staticmethod
-    def _read_number(path: Path, converter: Callable[[str], int | float]) -> int | float | None:
-        try:
-            return converter(path.read_text(encoding="utf-8").strip())
-        except (OSError, ValueError):
+    def _process_gpu_percent(
+        self,
+        captured_at: float,
+        current: dict[str, int],
+        *,
+        available: bool,
+    ) -> float | None:
+        previous_at = self._gpu_state.captured_at
+        previous = self._gpu_state.engine_ns
+        if not available:
+            self._gpu_state = _ProcessGpuState(captured_at, {})
             return None
 
-    @staticmethod
-    def _empty_gpu_snapshot() -> dict[str, int | float | None]:
-        return {
-            "gpu_busy_percent": None,
-            "vram_used_bytes": None,
-            "vram_total_bytes": None,
-            "gpu_device_count": 0,
-        }
+        retained: dict[str, int] = {}
+        busy_delta_ns = 0
+        for key, value in current.items():
+            prior = previous.get(key)
+            if prior is None:
+                retained[key] = value
+            elif value < prior:
+                # DRM counters may temporarily appear non-monotonic. Kernel
+                # guidance says to retain the larger value until they catch up.
+                retained[key] = prior
+            else:
+                retained[key] = value
+                busy_delta_ns += value - prior
+        self._gpu_state = _ProcessGpuState(captured_at, retained)
+        if previous_at is None or captured_at <= previous_at:
+            return 0.0
+        elapsed_ns = (captured_at - previous_at) * 1_000_000_000.0
+        return (busy_delta_ns / elapsed_ns) * 100.0
 
 
 def _p95(values: list[float]) -> float | None:
@@ -173,14 +191,26 @@ def summarize_snapshots(
     baseline = snapshots[0]
     process_rss = [float(item.process_rss_bytes) for item in snapshots]
     process_cpu = [item.process_cpu_percent for item in snapshots]
+    process_gpu = [
+        item.process_gpu_engine_time_percent
+        for item in snapshots
+        if item.process_gpu_engine_time_percent is not None
+    ]
+    process_vram = [
+        float(item.process_vram_used_bytes)
+        for item in snapshots
+        if item.process_vram_used_bytes is not None
+    ]
     host_ram = [float(item.host_ram_used_bytes) for item in snapshots]
     host_cpu = [item.host_cpu_percent for item in snapshots]
     gpu_busy = [item.gpu_busy_percent for item in snapshots if item.gpu_busy_percent is not None]
-    gpu_available = any(item.gpu_device_count > 0 for item in snapshots)
+    host_gpu_available = any(item.gpu_device_count > 0 for item in snapshots)
     vram_used = [float(item.vram_used_bytes) for item in snapshots if item.vram_used_bytes is not None]
     vram_totals = [int(item.vram_total_bytes) for item in snapshots if item.vram_total_bytes is not None]
 
     process_rss_summary = _series(process_rss)
+    process_gpu_summary = _series([float(value) for value in process_gpu])
+    process_vram_summary = _series(process_vram)
     host_ram_summary = _series(host_ram)
     vram_summary = _series(vram_used)
     return {
@@ -202,6 +232,17 @@ def summarize_snapshots(
             "cpu_p95_percent": _series(process_cpu)["p95"],
             "cpu_peak_percent": _series(process_cpu)["peak"],
             "process_count_peak": max(item.process_count for item in snapshots),
+            "gpu_attribution_available": bool(process_gpu or process_vram),
+            "gpu_provider": "linux_drm_fdinfo" if process_gpu or process_vram else "unavailable",
+            "gpu_scope": "drm_client_attributed",
+            "gpu_engine_time_mean_percent": process_gpu_summary["mean"],
+            "gpu_engine_time_p95_percent": process_gpu_summary["p95"],
+            "gpu_engine_time_peak_percent": process_gpu_summary["peak"],
+            "gpu_engine_time_semantics": "summed_drm_engine_busy_time",
+            "vram_mean_bytes": process_vram_summary["mean"],
+            "vram_p95_bytes": process_vram_summary["p95"],
+            "vram_peak_bytes": process_vram_summary["peak"],
+            "gpu_client_count_peak": max(item.process_gpu_client_count for item in snapshots),
         },
         "host": {
             "ram_baseline_bytes": baseline.host_ram_used_bytes,
@@ -217,8 +258,8 @@ def summarize_snapshots(
             "cpu_peak_percent": _series(host_cpu)["peak"],
         },
         "gpu": {
-            "available": gpu_available,
-            "provider": "linux_drm_sysfs" if gpu_available else "unavailable",
+            "available": host_gpu_available,
+            "provider": "linux_drm_sysfs" if host_gpu_available else "unavailable",
             "scope": "host_total",
             "device_count": max(item.gpu_device_count for item in snapshots),
             "busy_mean_percent": _series([float(value) for value in gpu_busy])["mean"],
@@ -253,28 +294,34 @@ class ResourceSampler:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._summary: dict[str, object] | None = None
 
     def start(self) -> None:
-        if self._thread is not None:
+        if self._thread is not None or self._summary is not None:
             raise RuntimeError("resource sampler already started")
         self._capture()
-        self._thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run,
             name="aios-bench-resource-sampler",
             daemon=True,
         )
-        self._thread.start()
+        thread.start()
+        self._thread = thread
 
     def stop(self) -> dict[str, object]:
+        if self._summary is not None:
+            return self._summary
         thread = self._thread
         if thread is None:
-            return summarize_snapshots([], poll_interval=self.poll_interval)
+            self._summary = summarize_snapshots([], poll_interval=self.poll_interval)
+            return self._summary
         self._stop.set()
         thread.join(timeout=max(1.0, self.poll_interval * 2.0))
         self._capture()
         with self._lock:
             samples = list(self._samples)
-        return summarize_snapshots(samples, poll_interval=self.poll_interval)
+        self._summary = summarize_snapshots(samples, poll_interval=self.poll_interval)
+        return self._summary
 
     def _run(self) -> None:
         while not self._stop.wait(self.poll_interval):
