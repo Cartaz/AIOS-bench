@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import urllib.error
 import urllib.request
@@ -28,6 +29,48 @@ def normalize_resource_url(value: str) -> str:
     elif not path.endswith("/v1/snapshot"):
         path += "/v1/snapshot"
     return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
+
+
+def _valid_number(value: object, *, integer: bool = False, optional: bool = False) -> bool:
+    if value is None:
+        return optional
+    if isinstance(value, bool):
+        return False
+    if integer:
+        return isinstance(value, int) and value >= 0
+    return isinstance(value, (int, float)) and math.isfinite(float(value))
+
+
+def _validate_snapshot_values(values: dict[str, object]) -> None:
+    required_ints = (
+        "process_rss_bytes",
+        "process_count",
+        "host_ram_used_bytes",
+    )
+    required_numbers = (
+        "captured_at",
+        "process_cpu_percent",
+        "host_cpu_percent",
+    )
+    optional_ints = (
+        "process_vram_used_bytes",
+        "process_gpu_client_count",
+        "vram_used_bytes",
+        "vram_total_bytes",
+        "gpu_device_count",
+    )
+    optional_numbers = (
+        "process_gpu_engine_time_percent",
+        "gpu_busy_percent",
+    )
+    if any(not _valid_number(values.get(key), integer=True) for key in required_ints):
+        raise RuntimeError("server resource telemetry snapshot has invalid integer fields")
+    if any(not _valid_number(values.get(key)) for key in required_numbers):
+        raise RuntimeError("server resource telemetry snapshot has invalid numeric fields")
+    if any(not _valid_number(values.get(key), integer=True, optional=True) for key in optional_ints):
+        raise RuntimeError("server resource telemetry snapshot has invalid optional integer fields")
+    if any(not _valid_number(values.get(key), optional=True) for key in optional_numbers):
+        raise RuntimeError("server resource telemetry snapshot has invalid optional numeric fields")
 
 
 class RemoteResourceClient:
@@ -64,6 +107,7 @@ class RemoteResourceClient:
             raise RuntimeError("server resource telemetry returned an invalid snapshot")
         allowed = {field.name for field in fields(ResourceSnapshot)}
         values = {key: value for key, value in raw.items() if key in allowed}
+        _validate_snapshot_values(values)
         try:
             return ResourceSnapshot(**values)
         except (TypeError, ValueError) as exc:
