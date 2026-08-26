@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .behavior_metrics import task_behavior
+
 
 @dataclass(frozen=True)
 class Task:
@@ -68,7 +70,7 @@ class Trajectory:
         self.skills_created = counts.get("skill_create", 0) + counts.get("skill_update", 0)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "agent": self.agent,
             "task_id": self.task_id,
             "success": self.success,
@@ -88,3 +90,5 @@ class Trajectory:
             "evaluation_score": self.evaluation_score,
             "events": self.events,
         }
+        result["agent_behavior"] = task_behavior(result)
+        return result
