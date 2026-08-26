@@ -36,6 +36,7 @@ class RunRequest:
     server_metrics_model: str | None = None
     max_output_tokens: int = 65536
     metrics_poll_interval: float = 1.0
+    resource_poll_interval: float = 1.0
     keep_raw: bool = False
 
 
@@ -104,6 +105,7 @@ class BenchmarkService:
             self._require_positive_number(request.total_timeout, "Total timeout")
         self._require_int(request.max_output_tokens, "Max output tokens", minimum=0)
         self._require_positive_number(request.metrics_poll_interval, "Metrics poll interval")
+        self._require_positive_number(request.resource_poll_interval, "Resource poll interval")
         if not isinstance(request.keep_raw, bool):
             raise ValueError("Keep raw must be a boolean")
         if not isinstance(request.model, str):
@@ -254,6 +256,7 @@ class BenchmarkService:
             server_metrics_model=request.server_metrics_model,
             max_output_tokens=request.max_output_tokens,
             metrics_poll_interval=request.metrics_poll_interval,
+            resource_poll_interval=request.resource_poll_interval,
             cancellation_check=(
                 (lambda: cancellation_token.is_cancelled)
                 if cancellation_token is not None
