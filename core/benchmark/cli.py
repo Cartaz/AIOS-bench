@@ -267,51 +267,85 @@ def main() -> None:
         print(f"Summary:   {summary}")
         return
     if args.command == "publish":
+        outputs = render_derived(RESULTS, PUBLISHED)
         manifest = write_publication_manifest(RESULTS, PUBLISHED)
-        render_derived(PUBLISHED, manifest)
-        print(f"Publication manifest: {manifest}")
+        print(f"Published dashboard: {outputs['dashboard.html']}")
+        print(f"Published summary:   {outputs['summary.json']}")
+        print(f"Publication seal:    {manifest}")
         return
     if args.command == "verify":
-        errors = verify_publication(PUBLISHED)
-        if errors:
-            for error in errors:
-                print(error)
-            raise SystemExit(1)
-        print("Published artifacts verified.")
+        result = verify_publication(RESULTS, PUBLISHED)
+        print(json.dumps(result, indent=2))
+        if not result["ok"]:
+            raise SystemExit(2)
         return
+
+    tasks = load_tasks(TASKS, args.suite)
     if args.command == "validate":
         if args.suite == "frontier_v4":
-            print(json.dumps(validate_parametric_baseline(ROOT, suite=args.suite), indent=2))
+            result = validate_parametric_baseline(
+                ROOT,
+                tasks,
+                base_seed=args.seed,
+                parameters=_v4_parameters(args),
+            )
         else:
-            print(json.dumps(validate_static_baseline(ROOT, suite=args.suite), indent=2))
+            result = validate_static_baseline(ROOT, tasks)
+        print(json.dumps(result, indent=2))
+        if not result["ok"]:
+            raise SystemExit(2)
         return
 
     if not harnesses:
-        raise SystemExit("Select one harness (for example --piagent) or --all.")
+        raise SystemExit("Select a harness, e.g. aiosbench --piagent --model Qwen, or use --all")
+    if args.repeats < 1:
+        raise SystemExit("--repeats must be >= 1")
+    if args.max_output_tokens < 0:
+        raise SystemExit("--max-output-tokens must be >= 0")
+    if args.metrics_poll_interval <= 0:
+        raise SystemExit("--metrics-poll-interval must be > 0")
+    if args.resource_poll_interval <= 0:
+        raise SystemExit("--resource-poll-interval must be > 0")
 
-    tasks = load_tasks(TASKS, args.suite)
     if args.command == "smoke":
-        tasks = select_smoke_tasks(tasks)
-        args._results_dir = SMOKE_RESULTS
+        if args.suite != "frontier_v3":
+            raise SystemExit("smoke currently targets the Frontier v3 integration contracts")
+        if not args.model or args.model == "unknown":
+            raise SystemExit("smoke requires an explicit --model so model binding can be verified")
+        try:
+            tasks = select_smoke_tasks(tasks, harnesses)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        smoke_id = args.run_id or make_smoke_id()
+        args.run_id = smoke_id
         args.no_resume = True
-        args.repeats = 1
-        args.run_id = args.run_id or make_smoke_id(args.suite)
+        args._results_dir = SMOKE_RESULTS
+        print("Smoke profile: " + ", ".join(task.id for task in tasks))
+        print(f"Smoke output:  {SMOKE_RESULTS}")
+
+        if len(harnesses) == 1:
+            exit_code = _run_single_harness(args, harnesses[0], tasks)
+        else:
+            exit_code = _run_matched_interleaved(args, harnesses, tasks)
+
+        run_dirs = discover_smoke_run_dirs(SMOKE_RESULTS, smoke_id)
+        report_path = write_smoke_report(SMOKE_RESULTS, smoke_id, run_dirs, tasks)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        print(f"\nSmoke report:         {report_path}")
+        print(f"Integration OK:       {report['integration_ok']}")
+        print(f"Strict model ready:   {report['strict_model_ready']}")
+        print(f"Server metrics ready: {report['server_metrics_ready']}")
+        raise SystemExit(0 if report["integration_ok"] else max(exit_code, 1))
 
     if len(harnesses) == 1:
         exit_code = _run_single_harness(args, harnesses[0], tasks)
     else:
         exit_code = _run_matched_interleaved(args, harnesses, tasks)
 
-    summary = _summary(getattr(args, "_results_dir", RESULTS))
-    print(f"\nSummary: {summary}")
-    if args.command == "smoke":
-        report = write_smoke_report(
-            discover_smoke_run_dirs(SMOKE_RESULTS, args.run_id),
-            SMOKE_RESULTS / f"smoke-{args.run_id}.json",
-        )
-        print(f"Smoke:   {report}")
+    summary = _summary(RESULTS)
+    print(f"\nSummary:   {summary}")
     if args.dashboard:
-        dashboard = build_dashboard(getattr(args, "_results_dir", RESULTS))
+        dashboard = build_dashboard(RESULTS)
         print(f"Dashboard: {dashboard}")
     raise SystemExit(exit_code)
 
