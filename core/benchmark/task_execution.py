@@ -113,6 +113,56 @@ def _parse_harness_output(
     return [event.to_dict() for event in events]
 
 
+def _start_resource_sampler(sampler: ResourceSampler) -> str | None:
+    try:
+        sampler.start()
+    except Exception as exc:
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+
+def _finish_resource_sampler(
+    sampler: ResourceSampler | None,
+    *,
+    source: str,
+    scope: str,
+    endpoint: str | None = None,
+    start_error: str | None = None,
+) -> dict[str, object]:
+    if sampler is None:
+        return {
+            "available": False,
+            "source": source,
+            "scope": scope,
+            "endpoint": endpoint,
+            "error": "resource telemetry disabled",
+        }
+    if start_error is not None:
+        return {
+            "available": False,
+            "source": source,
+            "scope": scope,
+            "endpoint": endpoint,
+            "error": f"resource sampler failed to start: {start_error}",
+        }
+    try:
+        summary = sampler.stop()
+    except Exception as exc:
+        return {
+            "available": False,
+            "source": source,
+            "scope": scope,
+            "endpoint": endpoint,
+            "error": f"resource sampler failed to stop: {type(exc).__name__}: {exc}",
+        }
+    return {
+        **summary,
+        "source": source,
+        "scope": scope,
+        "endpoint": endpoint,
+    }
+
+
 def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
     """Execute one Frontier task with server and client-side resource telemetry."""
     cancellation_check = getattr(runner, "cancellation_check", None)
@@ -154,25 +204,35 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         getattr(runner, "max_output_tokens", None),
         poll_interval=getattr(runner, "metrics_poll_interval", 1.0),
     )
-    resource_sampler = ResourceSampler(
-        poll_interval=getattr(runner, "resource_poll_interval", 1.0),
-    )
-    resource_sampler.start()
+    resource_poll_interval = getattr(runner, "resource_poll_interval", 1.0)
+    client_sampler = ResourceSampler(poll_interval=resource_poll_interval)
+    client_sampler_error = _start_resource_sampler(client_sampler)
 
-    runner._log({
-        "event": "task_started",
-        "task_id": task.id,
-        "command": command,
-        "model": runner.model,
-        "tier": task.tier,
-        "task_revision": task.revision,
-        "server_metrics_available": metrics_before.available,
-        "client_resource_telemetry": True,
-    })
+    server_resource_client = getattr(runner, "server_resources", None)
+    server_sampler: ResourceSampler | None = None
+    server_sampler_error: str | None = None
+    if server_resource_client is not None and bool(getattr(server_resource_client, "enabled", False)):
+        server_sampler = ResourceSampler(
+            poll_interval=resource_poll_interval,
+            snapshotter=server_resource_client.snapshot,
+        )
+        server_sampler_error = _start_resource_sampler(server_sampler)
+
     started = time.monotonic()
     trajectory = Trajectory(agent=runner.agent.name, task_id=task.id)
     status = "completed"
     try:
+        runner._log({
+            "event": "task_started",
+            "task_id": task.id,
+            "command": command,
+            "model": runner.model,
+            "tier": task.tier,
+            "task_revision": task.revision,
+            "server_metrics_available": metrics_before.available,
+            "client_resource_telemetry": client_sampler_error is None,
+            "server_resource_telemetry": server_sampler is not None and server_sampler_error is None,
+        })
         if isinstance(runner.agent.adapter, PiAgentAdapter):
             result = PiRPCClient(
                 runner.model,
@@ -265,7 +325,19 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         })
     finally:
         trajectory.duration_seconds = time.monotonic() - started
-        client_resources = resource_sampler.stop()
+        client_resources = _finish_resource_sampler(
+            client_sampler,
+            source="local_process_tree",
+            scope="aios_bench_process_tree_and_host",
+            start_error=client_sampler_error,
+        )
+        server_resources = _finish_resource_sampler(
+            server_sampler,
+            source=getattr(server_resource_client, "source", "unavailable"),
+            scope="inference_server_process_tree_and_host",
+            endpoint=getattr(server_resource_client, "public_endpoint", None),
+            start_error=server_sampler_error,
+        )
 
     if cancellation_check is not None and cancellation_check():
         raise RunCancelled("Benchmark run cancelled")
@@ -321,6 +393,11 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "source": "runner",
         "data": client_resources,
     })
+    trajectory.events.append({
+        "type": "server_resource_metrics",
+        "source": "runner",
+        "data": server_resources,
+    })
 
     evaluation = None
     evaluation_passed: bool | None = None
@@ -365,6 +442,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "efficiency_comparable": bool(server_usage.get("trusted_for_efficiency")),
         "server_usage": server_usage,
         "client_resources": client_resources,
+        "server_resources": server_resources,
     })
     runner._write_result(result)
     runner._log({
@@ -378,6 +456,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "usage_source": result["usage_source"],
         "telemetry_available": trajectory.telemetry_available,
         "client_resource_telemetry_available": bool(client_resources.get("available")),
+        "server_resource_telemetry_available": bool(server_resources.get("available")),
         "tier": task.tier,
     })
     return trajectory
