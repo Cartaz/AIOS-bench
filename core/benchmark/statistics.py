@@ -8,6 +8,8 @@ import statistics as _statistics
 from collections import defaultdict
 from typing import Any, Iterable
 
+from .resource_reporting import resource_efficiency_groups
+
 
 def _number(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
@@ -386,7 +388,7 @@ def server_efficiency_groups(
 
 
 def augment_summary_file(summary_path: Any, results_root: Any) -> None:
-    """Add derived reliability, paired, failure, and efficiency statistics."""
+    """Add derived reliability, paired, failure, token, and resource statistics."""
     import json
     from pathlib import Path
     from .report import load_results
@@ -402,6 +404,7 @@ def augment_summary_file(summary_path: Any, results_root: Any) -> None:
     summary["paired_comparisons"] = paired_comparisons(rows, **filters)
     summary["failure_distributions"] = failure_distributions(rows, **filters)
     summary["server_efficiency"] = server_efficiency_groups(rows, **filters)
+    summary["resource_efficiency"] = resource_efficiency_groups(rows, **filters)
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     temporary.replace(path)
