@@ -176,6 +176,12 @@ def _series(values: list[float]) -> dict[str, float | None]:
     }
 
 
+def _peak_delta(peak: float | None, baseline: int | None) -> float | None:
+    if peak is None or baseline is None:
+        return None
+    return max(0.0, float(peak) - baseline)
+
+
 def summarize_snapshots(
     snapshots: list[ResourceSnapshot],
     *,
@@ -224,9 +230,8 @@ def summarize_snapshots(
             "rss_mean_bytes": process_rss_summary["mean"],
             "rss_p95_bytes": process_rss_summary["p95"],
             "rss_peak_bytes": process_rss_summary["peak"],
-            "rss_peak_delta_bytes": max(
-                0.0,
-                float(process_rss_summary["peak"] or 0.0) - baseline.process_rss_bytes,
+            "rss_peak_delta_bytes": _peak_delta(
+                process_rss_summary["peak"], baseline.process_rss_bytes
             ),
             "cpu_mean_percent": _series(process_cpu)["mean"],
             "cpu_p95_percent": _series(process_cpu)["p95"],
@@ -239,9 +244,13 @@ def summarize_snapshots(
             "gpu_engine_time_p95_percent": process_gpu_summary["p95"],
             "gpu_engine_time_peak_percent": process_gpu_summary["peak"],
             "gpu_engine_time_semantics": "summed_drm_engine_busy_time",
+            "vram_baseline_bytes": baseline.process_vram_used_bytes,
             "vram_mean_bytes": process_vram_summary["mean"],
             "vram_p95_bytes": process_vram_summary["p95"],
             "vram_peak_bytes": process_vram_summary["peak"],
+            "vram_peak_delta_bytes": _peak_delta(
+                process_vram_summary["peak"], baseline.process_vram_used_bytes
+            ),
             "gpu_client_count_peak": max(item.process_gpu_client_count for item in snapshots),
         },
         "host": {
@@ -249,9 +258,8 @@ def summarize_snapshots(
             "ram_mean_bytes": host_ram_summary["mean"],
             "ram_p95_bytes": host_ram_summary["p95"],
             "ram_peak_bytes": host_ram_summary["peak"],
-            "ram_peak_delta_bytes": max(
-                0.0,
-                float(host_ram_summary["peak"] or 0.0) - baseline.host_ram_used_bytes,
+            "ram_peak_delta_bytes": _peak_delta(
+                host_ram_summary["peak"], baseline.host_ram_used_bytes
             ),
             "cpu_mean_percent": _series(host_cpu)["mean"],
             "cpu_p95_percent": _series(host_cpu)["p95"],
@@ -269,11 +277,7 @@ def summarize_snapshots(
             "vram_mean_bytes": vram_summary["mean"],
             "vram_p95_bytes": vram_summary["p95"],
             "vram_peak_bytes": vram_summary["peak"],
-            "vram_peak_delta_bytes": (
-                max(0.0, float(vram_summary["peak"] or 0.0) - baseline.vram_used_bytes)
-                if baseline.vram_used_bytes is not None and vram_used
-                else None
-            ),
+            "vram_peak_delta_bytes": _peak_delta(vram_summary["peak"], baseline.vram_used_bytes),
             "vram_total_bytes": max(vram_totals) if vram_totals else None,
         },
     }
