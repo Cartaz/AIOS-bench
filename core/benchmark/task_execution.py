@@ -20,6 +20,7 @@ from .letta_telemetry import parse_letta_stream_json
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
 from .processes import spawn_owned, terminate_owned
+from .resource_telemetry import ResourceSampler
 from .sandbox import workspace_sandbox
 from .scoring import overall_score
 from .server_metrics import NullServerMetricsClient, OutputTokenGuard
@@ -113,7 +114,7 @@ def _parse_harness_output(
 
 
 def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
-    """Execute one Frontier task with optional server-verified telemetry."""
+    """Execute one Frontier task with server and client-side resource telemetry."""
     cancellation_check = getattr(runner, "cancellation_check", None)
     if cancellation_check is not None and cancellation_check():
         raise RunCancelled("Benchmark run cancelled")
@@ -153,6 +154,10 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         getattr(runner, "max_output_tokens", None),
         poll_interval=getattr(runner, "metrics_poll_interval", 1.0),
     )
+    resource_sampler = ResourceSampler(
+        poll_interval=getattr(runner, "resource_poll_interval", 1.0),
+    )
+    resource_sampler.start()
 
     runner._log({
         "event": "task_started",
@@ -162,6 +167,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "tier": task.tier,
         "task_revision": task.revision,
         "server_metrics_available": metrics_before.available,
+        "client_resource_telemetry": True,
     })
     started = time.monotonic()
     trajectory = Trajectory(agent=runner.agent.name, task_id=task.id)
@@ -257,7 +263,9 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
             "source": "runner",
             "data": {"kind": "runner_error", "error": repr(exc)},
         })
-    trajectory.duration_seconds = time.monotonic() - started
+    finally:
+        trajectory.duration_seconds = time.monotonic() - started
+        client_resources = resource_sampler.stop()
 
     if cancellation_check is not None and cancellation_check():
         raise RunCancelled("Benchmark run cancelled")
@@ -308,6 +316,11 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "source": "runner",
         "data": server_usage,
     })
+    trajectory.events.append({
+        "type": "client_resource_metrics",
+        "source": "runner",
+        "data": client_resources,
+    })
 
     evaluation = None
     evaluation_passed: bool | None = None
@@ -351,6 +364,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "usage_source": _usage_source(trajectory, server_usage),
         "efficiency_comparable": bool(server_usage.get("trusted_for_efficiency")),
         "server_usage": server_usage,
+        "client_resources": client_resources,
     })
     runner._write_result(result)
     runner._log({
@@ -363,6 +377,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "score": result["score"],
         "usage_source": result["usage_source"],
         "telemetry_available": trajectory.telemetry_available,
+        "client_resource_telemetry_available": bool(client_resources.get("available")),
         "tier": task.tier,
     })
     return trajectory
