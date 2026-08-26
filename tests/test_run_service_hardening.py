@@ -29,6 +29,7 @@ def _request(**overrides) -> RunRequest:
         ("total_timeout", float("inf"), "Total timeout must be greater than 0"),
         ("max_output_tokens", 1.2, "Max output tokens must be an integer"),
         ("metrics_poll_interval", 0, "Metrics poll interval must be greater than 0"),
+        ("resource_poll_interval", 0, "Resource poll interval must be greater than 0"),
     ],
 )
 def test_run_request_rejects_invalid_runtime_types(field: str, value: object, message: str) -> None:
