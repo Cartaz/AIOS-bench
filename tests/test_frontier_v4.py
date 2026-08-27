@@ -55,6 +55,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "autonomy_runtime_investigation_001",
         "tool_use_config_001",
         "tool_use_branching_001",
+        "tool_use_coverage_001",
     ]
     assert all(task.revision == 4 for task in v4)
     assert all(any(check["type"] == "parametric_reference" for check in task.acceptance) for task in v4)
