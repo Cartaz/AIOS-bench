@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-from collections import defaultdict
 from pathlib import Path
 from statistics import median
 from typing import Any, Iterable, Mapping
@@ -11,7 +10,6 @@ from .raw import load_attempts
 
 
 EMPIRICAL_QA_SCHEMA = "aios-bench/qa-empirical-evidence/v1"
-EMPIRICAL_QA_PLAN_SCHEMA = "aios-bench/qa-empirical-plan/v1"
 COLLECTION_AXES = (
     "current_revision_attempt",
     "second_profile",
@@ -145,9 +143,10 @@ def build_empirical_qa_evidence(
 ) -> dict[str, Any]:
     """Describe current-revision Frontier v4 pilot evidence without judging adequacy.
 
-    This report intentionally avoids arbitrary promotion/saturation thresholds.
-    It exposes the empirical coverage needed for a human QA decision while
-    keeping task lifecycle state owned by the QA registry.
+    Collection gaps identify missing contrasting observations only. They are not
+    promotion thresholds and never automatically pass multi-agent or saturation
+    review. Lifecycle decisions remain owned by the QA registry and documented
+    review evidence.
     """
     task_list = list(tasks)
     attempts = load_attempts(raw_root)
@@ -174,50 +173,12 @@ def build_empirical_qa_evidence(
             row["both_success_and_failure_observed"] for row in rows
         ),
         "collection_gap_counts": gap_counts,
+        "interpretation": (
+            "Collection gaps identify missing contrasting evidence only; they do not "
+            "automatically pass multi-agent or saturation review."
+        ),
         "tasks": rows,
     }
 
 
-def build_empirical_qa_plan(raw_root: Path, tasks: Iterable[object]) -> dict[str, Any]:
-    """Return missing evidence axes without deciding whether a task is saturated.
-
-    Each axis is a minimum diversity observation, not a promotion threshold.
-    Saturation remains a human QA conclusion informed by the observed outcome
-    distribution once enough contrasting evidence has actually been collected.
-    """
-    evidence = build_empirical_qa_evidence(raw_root, tasks)
-    planned_tasks = []
-    for row in evidence["tasks"]:
-        gaps = list(row["collection_gaps"])
-        planned_tasks.append({
-            "task_id": row["task_id"],
-            "task_revision": row["task_revision"],
-            "eligible_attempts": row["eligible_attempts"],
-            "outcome_distribution": row["outcome_distribution"],
-            "collection_gaps": gaps,
-            "next_collection_targets": gaps,
-            "additional_collection_needed": bool(gaps),
-        })
-    return {
-        "schema": EMPIRICAL_QA_PLAN_SCHEMA,
-        "raw_root": raw_root.as_posix(),
-        "task_count": evidence["task_count"],
-        "tasks_needing_additional_collection": sum(
-            row["additional_collection_needed"] for row in planned_tasks
-        ),
-        "collection_gap_counts": dict(evidence["collection_gap_counts"]),
-        "tasks": planned_tasks,
-        "interpretation": (
-            "Collection axes identify missing contrasting evidence only; they do not "
-            "automatically pass multi-agent or saturation review."
-        ),
-    }
-
-
-__all__ = [
-    "COLLECTION_AXES",
-    "EMPIRICAL_QA_PLAN_SCHEMA",
-    "EMPIRICAL_QA_SCHEMA",
-    "build_empirical_qa_evidence",
-    "build_empirical_qa_plan",
-]
+__all__ = ["COLLECTION_AXES", "EMPIRICAL_QA_SCHEMA", "build_empirical_qa_evidence"]
