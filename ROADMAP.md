@@ -195,11 +195,12 @@ Later evaluate reusable skill acquisition across related levels while explicitly
 - Completed scoped adversarial/cheat review across all eight tasks. The scope is task/grader-level bypass resistance; it explicitly does not claim that an unconfined process cannot escape the workspace and inspect public benchmark internals.
 - Contamination risk is derived from canonical exposure (`private` low, `limited` medium, `public_repository` high) and remains descriptive rather than becoming a second score.
 - Completed public-repository contamination review across all eight current tasks. The suite is explicitly classified as high-risk public/open rather than contamination-free; seeded variants protect concrete instance values but cannot restore novelty of public family semantics.
-- Added `qa-evidence` for empirical M12 evidence collection from local raw results. It accepts only comparable current-revision Frontier v4 attempts and reports profile/harness/model diversity, outcome distribution, score range, pressure-coordinate diversity and canonical generated-variant identity.
-- `qa-evidence` now also exposes per-task `collection_state`, ordered `collection_gaps` and aggregate gap counts for four minimum contrast axes: at least one current-revision attempt, a second harness, a second model and a second generated variant identity. Cross-profile diversity remains separately visible but is not duplicated as an independent collection requirement. These are collection gaps only, not promotion or saturation thresholds, and they never mutate QA lifecycle state.
+- Added `qa-evidence` for empirical M12 evidence collection from local raw results. It accepts only comparable current-revision Frontier v4 attempts and reports profile/harness/model diversity, outcome distribution, score range, canonical `status`/`failure_kind` counts, pressure-coordinate diversity and canonical generated-variant identity.
+- `qa-evidence` exposes per-task `collection_state`, ordered `collection_gaps` and aggregate gap counts for four minimum contrast axes: at least one current-revision attempt, a second harness, a second model and a second generated variant identity. Cross-profile diversity remains separately visible but is not duplicated as an independent collection requirement. These are collection gaps only, not promotion or saturation thresholds, and they never mutate QA lifecycle state.
 - Added a shared pristine-verifier execution boundary for M8/M9. Strong mode uses Bubblewrap with minimal read-only runtime/system bindings, writable pristine workspace, ephemeral `/tmp` and separated network/process namespaces.
 - Bubblewrap availability is capability-tested rather than inferred from executable presence. `auto` records an explicit fallback reason when namespaces are denied; `required` fails closed. Harness workspace sandboxing uses the same capability principle.
 - Verifier/run metadata persist isolation strategy, filesystem/network confinement flags and fallback reason, so results cannot silently claim a stronger trust boundary than the host supplied.
+- Added `qa_isolation.py`, a fail-closed strong-isolation self-check executable as `.venv/bin/python -m core.benchmark.qa_isolation`. It requests the real verifier in `required` mode and emits `aios-bench/qa-isolation-evidence/v1` JSON only after testing writable pristine state, unreadable sibling host state and unreachable host loopback in addition to verifier-reported filesystem/network confinement. Unavailable namespaces or timeouts become explicit `ok=false` evidence rather than exceptions or false strong-isolation claims.
 - GitHub-hosted CI intentionally installs Bubblewrap. Hosted runners expose the binary but deny the required namespace operations; this exercises the explicit fallback path rather than producing a false strong-isolation claim.
 
 ### Validation and strategic review
@@ -210,18 +211,19 @@ Later evaluate reusable skill acquisition across related levels while explicitly
 - Sandbox regressions cover unavailable/unusable Bubblewrap, `required` fail-closed behavior, command-plan confinement metadata and harness fallback reporting.
 - Parametric validation schema `aios-bench/parametric-validation/v3` requires all eight adversarial witnesses to be rejected while the corresponding golden witnesses still pass.
 - QA report schema `aios-bench/task-qa-report/v6` exposes the five automated checks, exact missing/failed blockers and contamination-risk counts.
-- Empirical QA regressions reject stale revisions and non-comparable/other-suite attempts, preserve outcome/score/profile summaries, distinguish pressure-coordinate diversity from canonical `variant_digest` diversity, and verify deterministic collection-gap reporting without automatically passing manual review.
-- The canonical variant-identity collection checkpoint was observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
-- Ownership remains layered: task families own truth; `parametric_adversarials.py` owns negative-but-plausible witnesses; `validation.py` owns preflight orchestration; `task_qa.py` owns lifecycle/report semantics; `qa_empirical.py` owns descriptive real-run evidence; review documents own human conclusions. No second capability score was introduced.
+- Empirical QA regressions reject stale revisions and non-comparable/other-suite attempts, preserve outcome/score/profile summaries, distinguish pressure-coordinate diversity from canonical `variant_digest` diversity, expose raw status/failure-kind taxonomy without reclassifying it, and verify deterministic collection-gap reporting without automatically passing manual review.
+- Strong-isolation QA regressions require the real strong strategy plus all three observed properties, reject an unconfined strategy, turn namespace unavailability and verifier timeout into failed evidence, and verify reading of the probe written inside the pristine workspace.
+- The empirical failure-taxonomy and strong-isolation diagnostic checkpoints were observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
+- Ownership remains layered: task families own truth; `parametric_adversarials.py` owns negative-but-plausible witnesses; `validation.py` owns preflight orchestration; `task_qa.py` owns lifecycle/report semantics; `qa_empirical.py` owns descriptive real-run evidence; `qa_isolation.py` owns the environment-specific proof orchestration while `pristine_verifier.py` remains the execution-boundary owner; review documents own human conclusions. No second capability score was introduced.
 - QA lifecycle/task review and runtime sandbox capability remain separate. A grader-level adversarial pass must not be interpreted as proof of host confinement.
-- The strong Bubblewrap verifier path is implemented and unit-covered, but GitHub-hosted runners cannot provide the namespaces needed for an end-to-end strong-isolation execution. Runtime proof remains required on a compatible Linux host before M12 can close.
+- The strong Bubblewrap verifier path and its proof mechanism are implemented and unit-covered, but GitHub-hosted runners cannot provide the namespaces needed for an end-to-end `ok=true` execution. Runtime proof remains required on a compatible Linux host before M12 can close.
 - All eight current Frontier v4 tasks remain `pilot`. Ambiguity/oracle, scoped adversarial and contamination reviews are passed; multi-agent and saturation reviews remain pending.
 
 ### Remaining before DONE
 
 - run multi-agent pilots on representative local models/harnesses, using `qa-evidence` collection gaps to prioritize experiments that add missing contrast rather than redundant repeats, and record task-level evidence;
-- perform empirical saturation checks using successful/failed run distributions rather than subjective difficulty labels;
-- execute the strong verifier/harness sandbox contract on a Linux host where Bubblewrap namespaces are actually permitted and record that evidence;
+- perform empirical saturation checks using successful/failed run distributions and `status`/`failure_kind` taxonomy rather than subjective difficulty labels or infrastructure failures;
+- execute `.venv/bin/python -m core.benchmark.qa_isolation` on a Linux host where Bubblewrap namespaces are actually permitted, retain the `ok=true` evidence and record it in the M12 review;
 - complete the final milestone-wide strategic review after the empirical and environment-specific evidence exists.
 
 ## M13 — Multi-dimensional comparison UX — PLANNED
@@ -231,7 +233,7 @@ Expose deterministic capability, reliability/confidence intervals, failure taxon
 ## Current execution order
 
 1. Complete M12 multi-agent pilot and saturation evidence on representative local models/harnesses, guided by `qa-evidence` collection gaps.
-2. Complete M12 compatible-host strong-isolation proof.
+2. Run and record the M12 strong-isolation diagnostic on a compatible host.
 3. Calibrate M10 reference effort from successful real Frontier v4 trajectories gathered during those pilots.
 4. Expand M13 UX as each dimension stabilizes.
 
