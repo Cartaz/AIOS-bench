@@ -112,20 +112,18 @@ Large coordinated changes expose consistency failures that short single-artifact
 - The pilot repository has separate validation, pricing, routing, serialization and integration modules plus public regression tests.
 - The agent must coordinate the priority-tier rollout across four policy modules while `service.py`, README and public tests remain protected.
 - Seeded variants change existing express behavior and priority surcharge/queue/wire-code specification without changing the task contract.
-- The final verifier runs in a separate Python subprocess from the freshly reconstructed repository with a bounded timeout and minimal environment.
+- The final verifier runs from the freshly reconstructed repository through a bounded shared verifier boundary.
 - Hidden checks validate each policy primitive, the integrated priority path, existing standard/express regressions and invalid-tier behavior.
 - Workspace-local test tampering and high-level `service.py` shortcuts fail before hidden verification; newly added non-submitted helpers are absent from the pristine verifier tree.
-- Pristine verification emits descriptive artifact/return-code metadata through the existing rich deterministic evaluation path.
-- README documents the mechanism and explicitly distinguishes pristine verification from OS-level sandboxing.
+- Pristine verification emits descriptive artifact/return-code/isolation metadata through the existing rich deterministic evaluation path.
 
 ### Validation and strategic review
 
 - Tests cover baseline rejection, benchmark-owned golden acceptance, deleted-artifact reconstruction, unsafe/non-baseline path rejection, protected test/integration tampering and seeded semantic variation.
 - A dedicated partial-solution regression proves that updating three of the four required policy modules still fails hidden integration verification.
-- The first CI exposed an over-narrow test that compared only priority coordinates while adjacent variants changed the existing express coordinate; the test was corrected to compare the full observable specification rather than weakening the generator.
 - Reconstruction ownership is isolated in `pristine.py`; domain truth and hidden integration checks remain in the parametric family; harness adapters remain unaware of pristine semantics.
 - Git diff/apply was deliberately rejected for this pilot because it would add Git-specific failure modes without improving the required trust property; direct mutable-workspace verification was rejected because it would not be pristine.
-- The verifier still follows the project-wide workspace threat model rather than claiming hostile-code sandboxing; stronger isolation belongs to M12.
+- M12 later strengthened the verifier execution boundary with capability-tested Bubblewrap isolation when supported, while keeping fallback state explicit rather than retroactively changing M8 task semantics.
 - Final CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
 
 ## M9 — Greenfield repository construction — DONE
@@ -139,11 +137,10 @@ Large coordinated changes expose consistency failures that short single-artifact
 - The generated workspace contains only a benchmark-owned public specification; there is no starter implementation under `submission/`.
 - The agent may choose any internal module layout as long as the submitted tree exposes the documented `registry_app.Registry` public contract.
 - Hidden deterministic verification covers import/API shape, Unicode-aware name normalization, invalid input, duplicate handling, sorted listing, deletion, persistence across new instances and malformed persisted storage.
-- Verification runs with `python -I` in the pristine directory and explicitly adds only that reconstructed directory to the import path.
 - The benchmark golden witness uses a small two-file implementation, but verifier success never compares source text, module count or internal architecture against it.
 - Seeded variants change public name-length constraints and example storage names while preserving the task family contract.
-- Rich evaluation persists descriptive submitted-file count/bytes and verifier status without adding a new scoring system.
-- Frontier v4 discovery/preflight now includes eight parametric tasks/families.
+- Rich evaluation persists descriptive submitted-file count/bytes, verifier status and isolation metadata without adding a new scoring system.
+- Frontier v4 discovery/preflight includes eight parametric tasks/families.
 
 ### Validation and strategic review
 
@@ -153,7 +150,7 @@ Large coordinated changes expose consistency failures that short single-artifact
 - Verification is behavior/reference-solution independent: only the public contract is constrained; internal implementation choices remain hidden behind the submitted package interface.
 - Ownership remains layered: generic extraction/reconstruction in `pristine.py`, domain specification/truth in `greenfield_registry.py`, golden satisfiability in `parametric_goldens.py`, and normal deterministic persistence/scoring in the existing evaluator path.
 - No harness adapter, runner or GUI special case was added for greenfield semantics.
-- The verifier is isolated from ordinary Python environment configuration but is still not an OS-level hostile-code sandbox; stronger execution isolation remains explicitly owned by M12.
+- M12 later strengthened execution isolation without changing the greenfield capability contract.
 - Final documentation-state CI was observed green on Python 3.12, 3.13 and 3.14.
 
 ## M10 — Reference trajectory and adaptive efficiency — ACTIVE
@@ -185,15 +182,37 @@ Later evaluate reusable skill acquisition across related levels while explicitly
 
 ## M12 — Task QA, aging, contamination and anti-cheat — ACTIVE
 
-Formalize task promotion/revision lifecycle: static validation, reference solve, no-op, cheat/adversarial checks, preservation/regression, multi-agent pilots, ambiguity/oracle review and stable promotion. Track revisions, audits, known issues, exposure/contamination risk and empirical saturation. This milestone also owns stronger isolation/anti-cheat work beyond the current workspace trust model.
+### Implemented
 
-Immediate executable slice:
+- Added machine-readable Frontier v4 QA registry schema `aios-bench/task-qa/v2`, keyed by task id and revision with lifecycle (`draft`/`pilot`/`stable`/`retired`), exposure, known issues, audit date and explicit review evidence.
+- Automated grader evidence and manual/pilot evidence remain distinct. Pending ambiguity/oracle, adversarial/cheat, multi-agent, contamination and saturation reviews cannot be represented as passed by inference.
+- Stable lifecycle is fail-closed: all manual reviews must be passed/not-applicable and known issues must be empty; promotion additionally requires automated baseline/golden validation.
+- QA records now carry a SHA-256 semantic digest over task-owned meaning, including prompt, category/mode/tier, revision, tags, capability requirements, dependencies, acceptance, behavioral acceptance and trajectory reference. A same-revision semantic edit therefore invalidates the audit automatically.
+- QA audits have an operational 180-day review interval. Aging does not rewrite historical benchmark semantics: an expired pilot remains structurally valid but maintenance-due/non-promotable, while an expired stable task violates the current promotion contract until re-audited. Tests inject `as_of` dates instead of depending on wall-clock time.
+- Added a shared pristine-verifier execution boundary for M8/M9. Strong mode uses Bubblewrap with minimal read-only runtime/system bindings, writable pristine workspace, ephemeral `/tmp` and separated network/process namespaces.
+- Added a reusable Bubblewrap capability probe. Presence of `bwrap` is no longer treated as evidence that namespaces can actually be created. `auto` records an explicit fallback reason when the host denies isolation; `required` fails closed.
+- Applied the same capability detection to harness workspace sandboxing, removing the previous latent assumption that `shutil.which("bwrap")` implied confinement.
+- Verifier metrics persist isolation strategy, filesystem/network confinement flags and fallback reason, so results cannot silently claim a stronger trust boundary than the host supplied.
+- CI intentionally installs Bubblewrap. GitHub-hosted runners currently expose the binary but deny the required namespace operations; this real environment exercised and validated the capability-fallback path rather than being hidden by a skipped dependency.
 
-- add a machine-readable QA registry keyed by task id/revision and lifecycle state;
-- separate automated evidence from manual review/pilot evidence so pending work cannot be represented as passed;
-- validate missing/stale/duplicate QA records and stable-promotion prerequisites;
-- expose a QA report without changing task capability scores;
-- leave hostile-code sandboxing and empirical multi-agent/saturation evidence pending until their dedicated checks actually exist.
+### Validation and strategic review
+
+- Stale-audit regressions prove that same-revision prompt and trajectory-reference changes invalidate the semantic digest.
+- Aging regressions cover fresh stable promotion, expired pilot maintenance and expired stable contract failure.
+- Sandbox regressions cover unavailable and unusable Bubblewrap, `required` fail-closed behavior, command-plan confinement metadata and harness fallback reporting.
+- CI checkpoint after capability probing observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
+- QA lifecycle is task-design state; runtime sandbox capability is host/environment state. They remain separate instead of contaminating task correctness with machine-specific availability.
+- The strong Bubblewrap verifier path is implemented and unit-covered, but GitHub-hosted runners cannot provide the namespaces needed for an end-to-end strong-isolation execution. Runtime proof therefore remains required on a compatible Linux host before M12 can be closed.
+- All eight current Frontier v4 tasks remain `pilot` with manual reviews pending. No stable-promotion claim has been fabricated.
+
+### Remaining before DONE
+
+- expose more granular automated QA evidence and contamination-risk reporting without creating a second capability score;
+- perform and record ambiguity/oracle and adversarial cheat reviews per task;
+- run multi-agent pilots and empirical saturation checks on representative local models/harnesses;
+- perform contamination review appropriate to a public repository and define revision/retirement policy when exposure becomes unacceptable;
+- execute the strong verifier/harness sandbox contract on a Linux host where Bubblewrap namespaces are actually permitted, then record that evidence;
+- complete a final milestone-wide strategic review after the empirical evidence exists.
 
 ## M13 — Multi-dimensional comparison UX — PLANNED
 
@@ -201,9 +220,9 @@ Expose deterministic capability, reliability/confidence intervals, failure taxon
 
 ## Current execution order
 
-1. Build M12 machine-readable task QA/promotion lifecycle now.
-2. Calibrate M10 reference effort after successful real Frontier v4 trajectory data exists.
-3. Continue M12 contamination/anti-cheat and empirical pilot checks.
+1. Continue M12 with granular automated QA evidence and contamination-risk reporting.
+2. Perform M12 adversarial/manual review and compatible-host isolation validation.
+3. Calibrate M10 reference effort after successful real Frontier v4 trajectory data exists.
 4. Expand M13 UX as each dimension stabilizes.
 
 M11 remains deferred.
