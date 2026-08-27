@@ -184,35 +184,42 @@ Later evaluate reusable skill acquisition across related levels while explicitly
 
 ### Implemented
 
-- Added machine-readable Frontier v4 QA registry schema `aios-bench/task-qa/v2`, keyed by task id and revision with lifecycle (`draft`/`pilot`/`stable`/`retired`), exposure, known issues, audit date and explicit review evidence.
-- Automated grader evidence and manual/pilot evidence remain distinct. Pending ambiguity/oracle, adversarial/cheat, multi-agent, contamination and saturation reviews cannot be represented as passed by inference.
-- Stable lifecycle is fail-closed: all manual reviews must be passed/not-applicable and known issues must be empty; promotion additionally requires automated baseline/golden validation.
-- QA records now carry a SHA-256 semantic digest over task-owned meaning, including prompt, category/mode/tier, revision, tags, capability requirements, dependencies, acceptance, behavioral acceptance and trajectory reference. A same-revision semantic edit therefore invalidates the audit automatically.
-- QA audits have an operational 180-day review interval. Aging does not rewrite historical benchmark semantics: an expired pilot remains structurally valid but maintenance-due/non-promotable, while an expired stable task violates the current promotion contract until re-audited. Tests inject `as_of` dates instead of depending on wall-clock time.
+- Frontier v4 QA registry is now schema `aios-bench/task-qa/v4`, keyed by task id/revision with lifecycle (`draft`/`pilot`/`stable`/`retired`), exposure, known issues, audit date and explicit review state.
+- Completed manual reviews require structured provenance (`kind`, `reference`, `observed_at`, optional `notes`); pending reviews require `evidence=null`.
+- QA records carry both a semantic digest over task-owned meaning and a separate `review_context_digest` over semantic identity plus exposure. Meaning changes invalidate the semantic audit; exposure changes invalidate manual-review context without pretending benchmark semantics changed.
+- QA audits have a 180-day operational review interval. Expired pilots remain structurally valid but maintenance-due/non-promotable; expired stable tasks violate the current promotion contract until re-audited.
+- Automated QA is granular rather than one opaque boolean. Frontier v4 reports same-seed determinism, different-seed variation, untouched negative-baseline rejection, golden-witness acceptance and adversarial-witness rejection. Missing and failed checks remain distinct and no QA check changes capability score.
+- Added `parametric_adversarials.py` as the single owner of deterministic plausible-but-wrong witnesses. Validation materializes a fresh variant, applies the witness and executes the same production grader used by real results.
+- Witnesses cover: correct expense totals with wrong malformed count; correct effective config with incomplete provenance; symptom-only gateway runtime repair; correct live probe with stale-lane repair; correct case data with fabricated lookup receipt; partial finite-set migration; all-but-one-module pristine rollout; and API-complete but non-persistent greenfield registry.
+- Completed ambiguity/oracle review across all eight Frontier v4 tasks. It found two real contract mismatches; `autonomy_expense_001` and `autonomy_causal_gateway_001` were clarified and bumped from revision 4 to 5 rather than preserving misleading comparability.
+- Completed scoped adversarial/cheat review across all eight tasks. The scope is task/grader-level bypass resistance; it explicitly does not claim that an unconfined process cannot escape the workspace and inspect public benchmark internals.
+- Contamination risk is derived from canonical exposure (`private` low, `limited` medium, `public_repository` high) and remains descriptive rather than becoming a second score.
 - Added a shared pristine-verifier execution boundary for M8/M9. Strong mode uses Bubblewrap with minimal read-only runtime/system bindings, writable pristine workspace, ephemeral `/tmp` and separated network/process namespaces.
-- Added a reusable Bubblewrap capability probe. Presence of `bwrap` is no longer treated as evidence that namespaces can actually be created. `auto` records an explicit fallback reason when the host denies isolation; `required` fails closed.
-- Applied the same capability detection to harness workspace sandboxing, removing the previous latent assumption that `shutil.which("bwrap")` implied confinement.
-- Verifier metrics persist isolation strategy, filesystem/network confinement flags and fallback reason, so results cannot silently claim a stronger trust boundary than the host supplied.
-- CI intentionally installs Bubblewrap. GitHub-hosted runners currently expose the binary but deny the required namespace operations; this real environment exercised and validated the capability-fallback path rather than being hidden by a skipped dependency.
+- Bubblewrap availability is capability-tested rather than inferred from executable presence. `auto` records an explicit fallback reason when namespaces are denied; `required` fails closed. Harness workspace sandboxing uses the same capability principle.
+- Verifier/run metadata persist isolation strategy, filesystem/network confinement flags and fallback reason, so results cannot silently claim a stronger trust boundary than the host supplied.
+- GitHub-hosted CI intentionally installs Bubblewrap. Hosted runners expose the binary but deny the required namespace operations; this exercises the explicit fallback path rather than producing a false strong-isolation claim.
 
 ### Validation and strategic review
 
-- Stale-audit regressions prove that same-revision prompt and trajectory-reference changes invalidate the semantic digest.
+- Semantic-digest regressions cover same-revision prompt and trajectory-reference changes; review-context regressions cover exposure changes independently.
+- Review-evidence tests reject opaque completed evidence, invalid provenance and dangling evidence on pending reviews.
 - Aging regressions cover fresh stable promotion, expired pilot maintenance and expired stable contract failure.
-- Sandbox regressions cover unavailable and unusable Bubblewrap, `required` fail-closed behavior, command-plan confinement metadata and harness fallback reporting.
-- CI checkpoint after capability probing observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
-- QA lifecycle is task-design state; runtime sandbox capability is host/environment state. They remain separate instead of contaminating task correctness with machine-specific availability.
-- The strong Bubblewrap verifier path is implemented and unit-covered, but GitHub-hosted runners cannot provide the namespaces needed for an end-to-end strong-isolation execution. Runtime proof therefore remains required on a compatible Linux host before M12 can be closed.
-- All eight current Frontier v4 tasks remain `pilot` with manual reviews pending. No stable-promotion claim has been fabricated.
+- Sandbox regressions cover unavailable/unusable Bubblewrap, `required` fail-closed behavior, command-plan confinement metadata and harness fallback reporting.
+- Parametric validation schema `aios-bench/parametric-validation/v3` requires all eight adversarial witnesses to be rejected while the corresponding golden witnesses still pass.
+- QA report schema `aios-bench/task-qa-report/v6` exposes the five automated checks, exact missing/failed blockers and contamination-risk counts.
+- The adversarial preflight and QA-report integration were observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest before the review evidence/documentation checkpoint.
+- Ownership remains layered: task families own truth; `parametric_adversarials.py` owns negative-but-plausible witnesses; `validation.py` owns preflight orchestration; `task_qa.py` owns lifecycle/report semantics; review documents own human conclusions. No second capability score was introduced.
+- QA lifecycle/task review and runtime sandbox capability remain separate. A grader-level adversarial pass must not be interpreted as proof of host confinement.
+- The strong Bubblewrap verifier path is implemented and unit-covered, but GitHub-hosted runners cannot provide the namespaces needed for an end-to-end strong-isolation execution. Runtime proof remains required on a compatible Linux host before M12 can close.
+- All eight current Frontier v4 tasks remain `pilot`. Ambiguity/oracle and scoped adversarial reviews are passed; multi-agent, contamination and saturation reviews remain pending.
 
 ### Remaining before DONE
 
-- expose more granular automated QA evidence and contamination-risk reporting without creating a second capability score;
-- perform and record ambiguity/oracle and adversarial cheat reviews per task;
-- run multi-agent pilots and empirical saturation checks on representative local models/harnesses;
-- perform contamination review appropriate to a public repository and define revision/retirement policy when exposure becomes unacceptable;
-- execute the strong verifier/harness sandbox contract on a Linux host where Bubblewrap namespaces are actually permitted, then record that evidence;
-- complete a final milestone-wide strategic review after the empirical evidence exists.
+- run multi-agent pilots on representative local models/harnesses and record task-level evidence;
+- perform empirical saturation checks using successful/failed run distributions rather than subjective difficulty labels;
+- perform contamination review appropriate to the public repository, including revision/retirement policy when exposure becomes unacceptable;
+- execute the strong verifier/harness sandbox contract on a Linux host where Bubblewrap namespaces are actually permitted and record that evidence;
+- complete the final milestone-wide strategic review after the empirical and environment-specific evidence exists.
 
 ## M13 — Multi-dimensional comparison UX — PLANNED
 
@@ -220,9 +227,9 @@ Expose deterministic capability, reliability/confidence intervals, failure taxon
 
 ## Current execution order
 
-1. Continue M12 with granular automated QA evidence and contamination-risk reporting.
-2. Perform M12 adversarial/manual review and compatible-host isolation validation.
-3. Calibrate M10 reference effort after successful real Frontier v4 trajectory data exists.
+1. Complete M12 multi-agent pilot and saturation evidence on representative local models/harnesses.
+2. Complete M12 public-repository contamination review and compatible-host strong-isolation proof.
+3. Calibrate M10 reference effort from successful real Frontier v4 trajectories gathered during those pilots.
 4. Expand M13 UX as each dimension stabilizes.
 
 M11 remains deferred.
