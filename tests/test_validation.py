@@ -54,14 +54,19 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "distractor_files": 2,
                 "extra_settings": 3,
             },
+            "causal_gateway": {
+                "distractor_logs": 3,
+                "extra_services": 2,
+            },
         },
     )
 
-    assert result["ok"] is True
-    assert result["checked_tasks"] == 2
+    assert result["ok"] is True, result["failures"]
+    assert result["checked_tasks"] == 3
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
+        "causal_gateway",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
