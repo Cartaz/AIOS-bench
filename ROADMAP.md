@@ -75,43 +75,20 @@ Raw telemetry is not useful if users must inspect task JSON manually. Reporting 
 
 Two agents can both pass a task while one reaches the solution directly and the other loops, retries, makes tool errors or recovers from self-inflicted mistakes. Pass/fail alone hides operational quality.
 
-### What
-
-Phase A — canonical per-task behavior metrics — **DONE (2026-08-27)**:
+### Implemented
 
 - Persist assistant turns, tool calls, unique tools, structured tool errors, retries, file reads/writes, subagent starts, refusals and consecutive repeated tool-call patterns.
 - Derive generic behavior only from canonical non-inferred events when used for cross-harness comparison.
-- Keep all behavior metrics observational and score-neutral.
-- Direct tests cover canonical/non-inferred filtering, profile separation, persisted behavior reuse and unavailable/non-comparable exclusion.
-
-Phase B — reporting — **DONE (2026-08-27)**:
-
-- Aggregate behavior metrics by harness/model/execution fingerprint.
-- Publish `agent_behavior_efficiency` in `summary.json`.
-- Render a dedicated dashboard section for turns, tool calls, tool diversity, structured tool errors, retries, consecutive repetition, file activity, subagents and refusals.
-- Treat missing structured telemetry as unavailable rather than as zero activity.
-- Keep trajectory reporting separate from deterministic capability, reliability, inference efficiency and resource efficiency.
-
-Phase C — replay readiness — **DONE (2026-08-27)**:
-
-- Preserve adapter timestamps and structural identifiers such as tool `call_id` when supplied.
-- Persist an explicit observation `sequence` for every trajectory event so replay order never has to be inferred from timestamps that may collide or be absent.
-- Never mutate adapter/caller-owned event dictionaries while normalizing persisted trajectory events.
-- Keep event payloads structural and bounded; a replay viewer itself is intentionally not part of this milestone.
-
-### Completion criteria
-
-- Supported harnesses expose reliable structured trajectory telemetry where their native interfaces provide it; unavailable/partial telemetry remains explicit.
-- Summary/dashboard make PASS-with-clean-trajectory distinguishable descriptively from PASS-with-high-retry/error/repetition trajectories without changing capability score.
-- No generic heuristic labels actions as useful, destructive, irrelevant or recovered without deterministic evidence.
-- Event ordering is replay-safe and adapter timestamps/identifiers remain intact.
+- Publish `agent_behavior_efficiency` in `summary.json` and dashboard, score-neutral.
+- Preserve adapter timestamps and structural identifiers when supplied.
+- Persist explicit event `sequence` so replay order never depends on timestamps.
+- Keep missing/partial structured telemetry explicit rather than inventing zero activity.
 
 ### Validation and strategic review
 
-- CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest after Phase A and again after Phases B/C.
-- A regression test exposed a test-only namespace collision between the historical `aios_bench` compatibility alias and the canonical `core.benchmark` namespace; the new reporting test was corrected to use only the canonical namespace rather than adding production workarounds.
-- Reporting ownership is now clearer: `behavior_metrics.py` owns generic behavioral derivation/aggregation, `report.py` publishes canonical derived analysis, and `dashboard.py` renders it.
-- During the milestone review, M2's previously missing `summary.json` resource aggregation was corrected instead of duplicating resource aggregation in the dashboard.
+- CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
+- Reporting ownership is separated: behavioral derivation/aggregation, canonical report generation and rendering remain distinct.
+- Test-only `aios_bench` compatibility namespace collisions are handled in tests, not with production workarounds.
 
 ## M4 — Deterministic behavioral oracle framework — DONE
 
@@ -127,30 +104,18 @@ Generic telemetry can count actions but cannot legitimately decide whether an ac
 - Capture preservation/decoy baselines after benchmark materialization and before agent execution.
 - Compare preserved files by benchmark-owned existence/type/SHA-256 snapshots rather than mutable agent-provided metadata.
 - Match required structured evidence by event type, optional source and nested deterministic data subset.
-- Persist results as independent `behavioral_evaluation` plus an ordered trajectory event.
-- Keep all M4 behavioral results score-neutral (`affects_score: false`); correctness remains owned by the normal deterministic acceptance oracle.
-- Include behavioral catalog definitions and evaluator source automatically in suite revision fingerprints through the existing catalog/source hashing.
-- Document the task schema and separation of correctness from behavioral characterization in README.
+- Persist results as independent `behavioral_evaluation` and keep them score-neutral.
+- Include behavioral catalog definitions and evaluator source automatically in suite revision fingerprints.
 
-`restart_survival` and `coverage_set` remain intentionally deferred to M6 and M7 respectively: implementing them as generic M4 shortcuts would leak higher-level task semantics into the base oracle module.
-
-### Completion criteria
-
-- Behavioral oracle definitions are validated and cannot escape the benchmark workspace.
-- Positive, forbidden and preservation/decoy assertions are supported.
-- Oracle results are persisted independently from generic telemetry and capability score.
-- Integration tests demonstrate that a deterministic capability PASS can remain 100/100 while a preservation behavioral oracle independently reports FAIL.
+`coverage_set` remains intentionally deferred to M7; higher-level semantics should not leak into the base oracle module.
 
 ### Validation and strategic review
 
-- Unit coverage validates state predicates, preservation after mutation/deletion, nested structured evidence matching and unsafe definitions.
-- Catalog tests validate `behavioral_acceptance` through the real `load_tasks()` boundary.
-- Runner integration tests cover pre-agent baseline capture, persisted behavioral results, score neutrality, JSON serialization and contiguous replay ordering.
-- The existing suite fingerprint already hashes full task catalog files and semantic benchmark source, so no parallel fingerprint mechanism was added.
-- Review found and fixed a replay regression where post-parse runner-owned metric events could incorrectly flip `telemetry_available`; ordered append now preserves the historical meaning of harness trajectory availability.
-- Final implementation CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest before this roadmap-only status update.
+- Unit, catalog and runner integration coverage validates state predicates, preservation, evidence matching, unsafe definitions, serialization and score neutrality.
+- Capability PASS can remain 100/100 while an independent behavioral preservation oracle reports FAIL.
+- CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
 
-## M5 — Adversarial tool selection and branching — PLANNED
+## M5 — Adversarial tool selection and branching — ACTIVE
 
 ### Why
 
@@ -162,42 +127,49 @@ MCP-Atlas demonstrates that realistic tool use requires selecting among plausibl
 - Include deterministic branching based on runtime observations.
 - Record wrong-tool calls, parameter failures, premature stopping and recovery only where task semantics make them deterministically identifiable.
 - Vary tool topology across filesystem, shell, structured data/API, search/docs and development tooling.
+- Prefer benchmark-owned audited tool fixtures over harness-specific log parsing so observations remain comparable across harnesses.
 
 ### Completion criteria
 
 - At least one family requires correct tool discovery and conditional branching.
 - Distractors are realistic but do not create ambiguity in the ground truth.
+- Tool-use evidence is deterministically attributable without an LLM judge or harness-specific textual heuristics.
 
-## M6 — Causal state, persistence and belief revision — ACTIVE
+## M6 — Causal state, persistence and belief revision — DONE
 
 ### Why
 
 ARC-AGI-3 highlights adaptive intelligence: observe, hypothesize, experiment, update a world model and revise beliefs when evidence contradicts expectations. In software systems the analogue is understanding source-of-truth, generated state, runtime state, caches and persistence.
 
-### What
+### Implemented
 
-- Build tasks with explicit causal structure: source-of-truth -> generated artifact -> runtime behavior.
-- Make superficial fixes pass temporarily but fail after deterministic restart/reconstruction.
-- Add active-investigation tasks where static file inspection is insufficient and runtime probing is needed.
-- Add belief-revision traps: early evidence supports a plausible hypothesis, later evidence falsifies it, and the correct solution requires updating the model of the system.
-- Measure milestones such as steps to first relevant evidence, root-cause evidence, correct fix and verification only when evidence nodes are deterministically defined.
-
-### First pilot
-
-Build one focused causal/persistence task before expanding the family. The pilot must:
-
-- expose a generated runtime artifact whose source-of-truth lives elsewhere;
-- allow a superficial edit to appear fixed temporarily;
-- deterministically reconstruct/restart state during verification so the superficial fix fails;
-- include at least one plausible but irrelevant decoy;
-- verify target behavior and preservation of unrelated state;
-- avoid requiring one exact command sequence.
+- Added the parametric `causal_gateway` pilot with source-of-truth `gateway/template.json`, generated `gateway/runtime.json`, current diagnostic evidence, historical decoys and protected unrelated state.
+- The grader reconstructs runtime state from the source template itself before health verification; editing only the generated runtime therefore cannot survive verification.
+- Protected healthcheck/tooling, registry, historical decoys and unrelated retention state prevent trivial grader tampering or collateral changes.
+- Added deterministic negative and golden preflight witnesses for the causal family.
+- Added the parametric `runtime_investigation` pilot for active investigation and belief revision.
+- Static deployment documentation deterministically names a plausible but stale lane, while the actual live lane exists only behind a benchmark-owned read-only loopback runtime probe.
+- The task must save the exact runtime observation, repair only the observed live lane and preserve every inactive lane and historical document.
+- A correct-looking route edit without runtime evidence fails; modifying inactive lanes fails even with valid evidence.
+- Added a small benchmark-owned `GET /state` probe server with no arbitrary command execution or external network access.
+- Dynamic runtime fixtures are owned by `ParametricTaskMaterializer`; startup is bounded, shutdown uses bounded terminate/wait/kill, and `FrontierRunner.run_task()` guarantees materializer cleanup with `finally` even on task failure.
+- Ephemeral `runtime/endpoint.json` is excluded from same-seed workspace byte comparisons; seeded semantic state and oracle digests remain deterministic.
+- Frontier v4 parametric validation now exercises four families: expense report, config traversal, causal gateway and runtime investigation.
 
 ### Completion criteria
 
-- At least one task distinguishes symptom patching from causal repair.
-- At least one task requires runtime experimentation.
-- Contradictory evidence cannot be bypassed by a hard-coded one-step solution.
+- Symptom patching vs causal repair: satisfied by `autonomy_causal_gateway_001`.
+- Runtime experimentation: satisfied by `autonomy_runtime_investigation_001`.
+- Contradictory evidence cannot be bypassed by a one-step static edit: exact live probe evidence and active-lane-only mutation are verified deterministically.
+
+### Validation and strategic review
+
+- Direct tests cover deterministic generation, persistent source repair, rejection of runtime-only repair, protected-state tampering, stale-vs-live contradiction, required probe evidence, inactive-lane preservation and runtime process cleanup.
+- A regression test verifies probe cleanup even when task execution raises after materialization.
+- The first version of that regression test exposed the historical `aios_bench`/`core.benchmark` test namespace alias; the test was corrected to patch the module that actually owns `run_task`, with no production workaround.
+- Final CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
+- Runtime fixture lifecycle complexity is contained in the materializer rather than spread through task runners or graders.
+- The live probe is intentionally an evaluation fixture, not a security boundary. Public-benchmark contamination/derivation risks remain a documented concern for M12 rather than being misrepresented as cryptographic anti-cheat.
 
 ## M7 — Coverage/completeness tasks — PLANNED
 
@@ -313,13 +285,7 @@ For new task/revision promotion, require an auditable lifecycle:
 
 Track metadata such as task revision, oracle revision, last audit date, known issues and exposure/contamination risk where practical.
 
-Use empirical pass distributions to flag:
-
-- saturated tasks;
-- useful frontier tasks;
-- extreme/broken-candidate tasks.
-
-A 0% pass rate is not automatically desirable; it may indicate an impossible or defective task.
+Use empirical pass distributions to flag saturated tasks, useful frontier tasks and extreme/broken-candidate tasks. A 0% pass rate is not automatically desirable; it may indicate an impossible or defective task.
 
 ### Completion criteria
 
@@ -334,18 +300,7 @@ A single composite score hides trade-offs. Users need to compare capability, rel
 
 ### What
 
-Expose head-to-head views for:
-
-- deterministic capability;
-- reliability/repeats and confidence intervals;
-- failure taxonomy;
-- trajectory behavior;
-- prompt/decode efficiency;
-- client resource cost;
-- server/model resource cost;
-- robustness/pressure response.
-
-Prefer Pareto-style interpretation to arbitrary weighted composite scores.
+Expose head-to-head views for deterministic capability, reliability/repeats and confidence intervals, failure taxonomy, trajectory behavior, prompt/decode efficiency, client resource cost, server/model resource cost and robustness/pressure response. Prefer Pareto-style interpretation to arbitrary weighted composite scores.
 
 ### Completion criteria
 
@@ -354,14 +309,13 @@ Prefer Pareto-style interpretation to arbitrary weighted composite scores.
 
 ## Current execution order
 
-1. Build one M6 causal/persistence pilot task using M4.
-2. Build one M5 adversarial tool-selection pilot family.
-3. Add M7 coverage scoring.
-4. Add M8 pristine long-horizon verification.
-5. Add M9 greenfield task.
-6. Add M10 reference-trajectory efficiency once real trajectory data exists.
-7. Formalize M12 QA/aging before expanding the catalog aggressively.
-8. Expand M13 comparison UX as each new dimension becomes stable.
+1. Build and validate one M5 adversarial tool-selection/branching pilot family.
+2. Add M7 coverage scoring.
+3. Add M8 pristine long-horizon verification.
+4. Add M9 greenfield task.
+5. Add M10 reference-trajectory efficiency once real trajectory data exists.
+6. Formalize M12 QA/aging before expanding the catalog aggressively.
+7. Expand M13 comparison UX as each new dimension becomes stable.
 
 M11 progressive learning remains deferred until the underlying state and replay semantics are mature.
 
