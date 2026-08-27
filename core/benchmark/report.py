@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .behavior_metrics import behavior_efficiency_groups
+from .coverage_reporting import coverage_completeness_groups
 from .landscapes import pressure_landscapes, pressure_paired_comparisons
 from .raw import latest_attempts, load_attempts, source_index
 from .resource_reporting import resource_efficiency_groups
@@ -294,6 +295,7 @@ def build_summary(root: Path) -> dict[str, Any]:
         "raw_source_file_count": sources["file_count"],
         "resource_efficiency": resource_efficiency_groups(rows, **filters),
         "agent_behavior_efficiency": behavior_efficiency_groups(rows, **filters),
+        "coverage_completeness": coverage_completeness_groups(rows, **filters),
         "pressure_landscapes": pressure_landscapes(rows, **filters),
         "pressure_paired_comparisons": pressure_paired_comparisons(rows, **filters),
     }
