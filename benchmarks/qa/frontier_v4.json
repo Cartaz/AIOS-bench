@@ -1,9 +1,10 @@
 {
-  "schema": "aios-bench/task-qa/v1",
+  "schema": "aios-bench/task-qa/v2",
   "tasks": [
     {
       "task_id": "autonomy_expense_001",
       "task_revision": 4,
+      "task_semantic_digest": "f0f2fb009b98c2de11259cd6277791963e658e694324dea553c2af13a7969df5",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
@@ -19,6 +20,7 @@
     {
       "task_id": "autonomy_causal_gateway_001",
       "task_revision": 4,
+      "task_semantic_digest": "260d580749b0f773613a5489554b09fddc8e23d3e58969657f6196dcf5db2f04",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
@@ -34,6 +36,7 @@
     {
       "task_id": "autonomy_runtime_investigation_001",
       "task_revision": 4,
+      "task_semantic_digest": "8ec04d582ed05c0c26a08288a11d69906d3894c86ff5cd1f528884ccad93f618",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
@@ -49,6 +52,7 @@
     {
       "task_id": "greenfield_registry_001",
       "task_revision": 4,
+      "task_semantic_digest": "5c21c6cf97b5a43c7d8e7dbdac57c57d04efdffc2ddac8a20335f371abb2b594",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
@@ -64,6 +68,7 @@
     {
       "task_id": "long_horizon_pristine_001",
       "task_revision": 4,
+      "task_semantic_digest": "a9197fbb08aa5b970c5abd461fd56763d92c270de092aefb5fcf8fc26a1d8d06",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
@@ -79,6 +84,7 @@
     {
       "task_id": "tool_use_config_001",
       "task_revision": 4,
+      "task_semantic_digest": "63730aad947c3b9ddcc41658036666ad4fb239dd10aa5282c2fdaee93c51cd29",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
@@ -94,6 +100,7 @@
     {
       "task_id": "tool_use_branching_001",
       "task_revision": 4,
+      "task_semantic_digest": "37ef749906c3babd6e4e9b176e32844d1c1d2892cd98e9b1baf7da49984c7dfe",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
@@ -109,6 +116,7 @@
     {
       "task_id": "tool_use_coverage_001",
       "task_revision": 4,
+      "task_semantic_digest": "1a687f8576ae94af9f8d833c519838ed437f06f305dc9d06ed8e74068ed7886f",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
