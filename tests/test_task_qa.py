@@ -106,7 +106,7 @@ def test_actual_frontier_v4_qa_registry_covers_every_task_without_claiming_promo
     assert result["task_count"] == result["record_count"] == 8
     assert all(item["lifecycle"] == "pilot" for item in result["records"])
     assert all(item["manual_reviews_ready"] is False for item in result["records"])
-    assert all(len(item["pending_reviews"]) == 3 for item in result["records"])
+    assert all(len(item["pending_reviews"]) == 2 for item in result["records"])
     assert all(len(item["task_semantic_digest"]) == 64 for item in result["records"])
     assert all(len(item["review_context_digest"]) == 64 for item in result["records"])
 
