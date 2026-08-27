@@ -14,6 +14,7 @@ from .fixtures import materialize_long_horizon_corpus
 from .models import Task
 from .parametric import materialize_variant
 from .parametric.runtime_investigation import runtime_probe_payload
+from .parametric.tool_branching import server_payload as tool_branching_payload
 
 
 class RunnerContext(Protocol):
@@ -151,7 +152,25 @@ class ParametricTaskMaterializer:
         temporary.replace(oracle_path)
         self._variants[task.id] = oracle
         if family == "runtime_investigation":
-            self._start_runtime_probe(runner, task, workspace, oracle)
+            self._start_json_service(
+                runner,
+                task,
+                workspace,
+                module="core.benchmark.runtime_probe_server",
+                payload=runtime_probe_payload(oracle),
+                endpoint_relative="runtime/endpoint.json",
+                endpoint_value={"state_url": "http://127.0.0.1:{port}/state"},
+            )
+        elif family == "tool_branching":
+            self._start_json_service(
+                runner,
+                task,
+                workspace,
+                module="core.benchmark.tool_branching_server",
+                payload=tool_branching_payload(oracle),
+                endpoint_relative="runtime/tool_endpoint.json",
+                endpoint_value={"base_url": "http://127.0.0.1:{port}"},
+            )
         return workspace
 
     def identity(self, runner: RunnerContext, task: Task) -> dict[str, Any]:
@@ -171,15 +190,19 @@ class ParametricTaskMaterializer:
     def after_task(self, runner: RunnerContext, task: Task) -> None:
         self._stop_runtime_process(task.id)
 
-    def _start_runtime_probe(
+    def _start_json_service(
         self,
         runner: RunnerContext,
         task: Task,
         workspace: Path,
-        oracle: Mapping[str, Any],
+        *,
+        module: str,
+        payload: Mapping[str, Any],
+        endpoint_relative: str,
+        endpoint_value: Mapping[str, str],
     ) -> None:
         process = subprocess.Popen(
-            [sys.executable, "-m", "core.benchmark.runtime_probe_server"],
+            [sys.executable, "-m", module],
             cwd=runner.repo_root,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -188,24 +211,28 @@ class ParametricTaskMaterializer:
         )
         try:
             if process.stdin is None or process.stdout is None:
-                raise RuntimeError("runtime probe pipes unavailable")
-            process.stdin.write(json.dumps(runtime_probe_payload(oracle)) + "\n")
+                raise RuntimeError("benchmark runtime service pipes unavailable")
+            process.stdin.write(json.dumps(dict(payload)) + "\n")
             process.stdin.flush()
             process.stdin.close()
             selector = selectors.DefaultSelector()
             try:
                 selector.register(process.stdout, selectors.EVENT_READ)
                 if not selector.select(timeout=5):
-                    raise TimeoutError("runtime probe did not report its port within 5 seconds")
+                    raise TimeoutError("benchmark runtime service did not report its port within 5 seconds")
             finally:
                 selector.close()
-            line = process.stdout.readline().strip()
-            port = int(line)
+            port = int(process.stdout.readline().strip())
             if process.poll() is not None:
-                raise RuntimeError("runtime probe exited during startup")
-            endpoint = workspace / "runtime" / "endpoint.json"
+                raise RuntimeError("benchmark runtime service exited during startup")
+            endpoint = workspace / endpoint_relative
+            endpoint.parent.mkdir(parents=True, exist_ok=True)
             endpoint.write_text(
-                json.dumps({"state_url": f"http://127.0.0.1:{port}/state"}, indent=2) + "\n",
+                json.dumps(
+                    {key: template.format(port=port) for key, template in endpoint_value.items()},
+                    indent=2,
+                    sort_keys=True,
+                ) + "\n",
                 encoding="utf-8",
             )
             self._runtime_processes[task.id] = process
