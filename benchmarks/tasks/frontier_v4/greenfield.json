@@ -1,0 +1,14 @@
+[
+  {
+    "id": "greenfield_registry_001",
+    "category": "greenfield",
+    "tier": 5,
+    "revision": 4,
+    "prompt": "Build the persistent registry described in README.md entirely from scratch under submission/. There is no starter implementation. Treat README.md as the public contract, choose an appropriate internal design, and validate your implementation locally without modifying the benchmark specification. The benchmark will reconstruct only your submitted tree in a fresh verifier directory, so the deliverable must be self-contained and may use only the Python standard library.",
+    "mode": "cold",
+    "tags": ["greenfield", "frontier_v4", "parametric", "pristine", "persistence", "hidden_integration"],
+    "acceptance": [
+      {"type": "parametric_reference", "family": "greenfield_registry", "task_id": "greenfield_registry_001", "weight": 10, "fatal": true}
+    ]
+  }
+]
