@@ -11,5 +11,24 @@
       {"type": "exists", "path": "reports/effective_config.md", "weight": 1, "fatal": true},
       {"type": "parametric_reference", "family": "config_traversal", "task_id": "tool_use_config_001", "weight": 9, "fatal": true}
     ]
+  },
+  {
+    "id": "tool_use_branching_001",
+    "category": "tool_use",
+    "tier": 4,
+    "revision": 4,
+    "prompt": "Resolve the live case using the benchmark-owned tools in tools/. Begin with the authoritative case inspection tool, then select only the lookup appropriate to the returned case type and pass it the returned case id. Several plausible legacy, cache, metrics, archive, or directory tools are distractors; broad probing contaminates the live tool session. Save reports/case_resolution.json with exactly case_type, case_id, value, inspection_receipt, and lookup_receipt from the successful branch. Do not modify benchmark-owned tools or README.md.",
+    "mode": "cold",
+    "tags": ["tool_use", "frontier_v4", "parametric", "adversarial_tools", "branching", "tool_selection"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/case_resolution.json", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "tool_branching", "task_id": "tool_use_branching_001", "weight": 9, "fatal": true}
+    ],
+    "behavioral_acceptance": [
+      {"type": "preserved_state", "path": "README.md"},
+      {"type": "preserved_state", "path": "tools/inspect_case.py"},
+      {"type": "preserved_state", "path": "tools/billing_lookup.py"},
+      {"type": "preserved_state", "path": "tools/access_lookup.py"}
+    ]
   }
 ]
