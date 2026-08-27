@@ -25,39 +25,19 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
         load_tasks(TASKS, "frontier_v4"),
         base_seed=42,
         parameters={
-            "expense_report": {
-                "rows": 48,
-                "malformed_rows": 2,
-                "distractor_files": 3,
-                "months": 6,
-            },
-            "config_traversal": {
-                "chain_depth": 3,
-                "distractor_files": 3,
-                "extra_settings": 2,
-            },
-            "causal_gateway": {
-                "distractor_logs": 2,
-                "extra_services": 2,
-            },
-            "runtime_investigation": {
-                "lanes": 4,
-                "distractor_docs": 2,
-            },
-            "tool_branching": {
-                "distractor_tools": 3,
-            },
-            "coverage_migration": {
-                "targets": 8,
-                "current_active": 2,
-                "historical_decoys": 4,
-            },
+            "expense_report": {"rows": 48, "malformed_rows": 2, "distractor_files": 3, "months": 6},
+            "config_traversal": {"chain_depth": 3, "distractor_files": 3, "extra_settings": 2},
+            "causal_gateway": {"distractor_logs": 2, "extra_services": 2},
+            "runtime_investigation": {"lanes": 4, "distractor_docs": 2},
+            "tool_branching": {"distractor_tools": 3},
+            "coverage_migration": {"targets": 8, "current_active": 2, "historical_decoys": 4},
             "pristine_refactor": {},
+            "greenfield_registry": {},
         },
     )
 
     assert result["schema"] == "aios-bench/parametric-validation/v2"
-    assert result["checked_tasks"] == 7
+    assert result["checked_tasks"] == 8
     assert result["ok"] is True, result["failures"]
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
@@ -67,6 +47,7 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
         "tool_branching",
         "coverage_migration",
         "pristine_refactor",
+        "greenfield_registry",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
