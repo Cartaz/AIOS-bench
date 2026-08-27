@@ -12,10 +12,9 @@ from .raw import load_attempts
 EMPIRICAL_QA_SCHEMA = "aios-bench/qa-empirical-evidence/v1"
 COLLECTION_AXES = (
     "current_revision_attempt",
-    "second_profile",
     "second_harness",
     "second_model",
-    "second_pressure_variant",
+    "second_variant",
 )
 
 
@@ -36,11 +35,19 @@ def _profile(row: Mapping[str, Any]) -> tuple[str, str]:
     )
 
 
-def _variant_signature(row: Mapping[str, Any]) -> str | None:
+def _pressure_signature(row: Mapping[str, Any]) -> str | None:
     parameters = row.get("variant_parameters")
     if not isinstance(parameters, Mapping):
         return None
     return json.dumps(dict(parameters), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _variant_signature(row: Mapping[str, Any]) -> str | None:
+    digest = row.get("variant_digest")
+    if isinstance(digest, str) and digest.strip():
+        return f"digest:{digest.strip()}"
+    pressure = _pressure_signature(row)
+    return None if pressure is None else f"legacy-parameters:{pressure}"
 
 
 def _eligible(row: Mapping[str, Any], task_id: str, revision: int) -> bool:
@@ -61,13 +68,12 @@ def _eligible(row: Mapping[str, Any], task_id: str, revision: int) -> bool:
     return True
 
 
-def _collection_state(*, attempts: int, profiles: int, harnesses: int, models: int, variants: int) -> dict[str, bool]:
+def _collection_state(*, attempts: int, harnesses: int, models: int, variants: int) -> dict[str, bool]:
     return {
         "current_revision_attempt": attempts >= 1,
-        "second_profile": profiles >= 2,
         "second_harness": harnesses >= 2,
         "second_model": models >= 2,
-        "second_pressure_variant": variants >= 2,
+        "second_variant": variants >= 2,
     }
 
 
@@ -81,6 +87,11 @@ def _summarize_task(task: object, rows: list[dict[str, Any]]) -> dict[str, Any]:
     passes = sum(row.get("success") is True for row in eligible)
     failures = sum(row.get("success") is False for row in eligible)
     scored = [score for row in eligible if (score := _number(row.get("score"))) is not None]
+    pressure_variants = sorted({
+        signature
+        for row in eligible
+        if (signature := _pressure_signature(row)) is not None
+    })
     variants = sorted({
         signature
         for row in eligible
@@ -100,7 +111,6 @@ def _summarize_task(task: object, rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     collection_state = _collection_state(
         attempts=len(eligible),
-        profiles=len(profiles),
         harnesses=len(harnesses),
         models=len(models),
         variants=len(variants),
@@ -127,7 +137,8 @@ def _summarize_task(task: object, rows: list[dict[str, Any]]) -> dict[str, Any]:
         "score_min": min(scored) if scored else None,
         "score_median": median(scored) if scored else None,
         "score_max": max(scored) if scored else None,
-        "distinct_pressure_variants": len(variants),
+        "distinct_pressure_variants": len(pressure_variants),
+        "distinct_variant_identities": len(variants),
         "cross_profile_evidence_available": len(profiles) >= 2,
         "cross_harness_evidence_available": len(harnesses) >= 2,
         "cross_model_evidence_available": len(models) >= 2,
