@@ -5,6 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.request import urlopen
 
+import pytest
+
+import core.benchmark.frontier_runner as frontier_runner_module
+from core.benchmark.frontier_v4_runner import FrontierV4Runner
 from core.benchmark.materialization import ParametricTaskMaterializer
 from core.benchmark.parametric.runtime_investigation import (
     RuntimeInvestigationPressure,
@@ -12,9 +16,12 @@ from core.benchmark.parametric.runtime_investigation import (
     generate_runtime_investigation_variant,
     runtime_probe_payload,
 )
+from core.benchmark.runner import AGENTS
+from core.benchmark.tasks import load_tasks
 
 
 ROOT = Path(__file__).resolve().parents[1]
+TASK_ROOT = ROOT / "benchmarks" / "tasks"
 
 
 def _repair_from_probe(workspace: Path, payload: dict) -> None:
@@ -102,3 +109,35 @@ def test_editing_inactive_lane_is_rejected_even_with_valid_probe_report(tmp_path
 
     assert passed is False
     assert "inactive lane" in detail
+
+
+def test_runner_cleans_runtime_probe_when_task_execution_raises(monkeypatch, tmp_path: Path) -> None:
+    task = next(
+        item
+        for item in load_tasks(TASK_ROOT, "frontier_v4")
+        if item.id == "autonomy_runtime_investigation_001"
+    )
+    runner = FrontierV4Runner(
+        ROOT,
+        AGENTS["piagent"],
+        tmp_path / "results",
+        task_timeout=1,
+        total_timeout=None,
+        model="test",
+        run_id="runtime-cleanup",
+    )
+    captured: dict[str, object] = {}
+
+    def fail_after_materialization(active_runner, active_task, timeout):
+        active_runner._workspace(active_task)
+        captured["process"] = active_runner.suite.materializer._runtime_processes[active_task.id]
+        raise RuntimeError("synthetic task failure")
+
+    monkeypatch.setattr(frontier_runner_module, "run_frontier_task", fail_after_materialization)
+
+    with pytest.raises(RuntimeError, match="synthetic task failure"):
+        runner.run_task(task, 1)
+
+    process = captured["process"]
+    assert process.poll() is not None
+    assert task.id not in runner.suite.materializer._runtime_processes
