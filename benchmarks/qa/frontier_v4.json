@@ -3,9 +3,9 @@
   "tasks": [
     {
       "task_id": "autonomy_expense_001",
-      "task_revision": 4,
-      "task_semantic_digest": "f0f2fb009b98c2de11259cd6277791963e658e694324dea553c2af13a7969df5",
-      "review_context_digest": "c4f69a337380bd82d709a8746b3db6e1ca731456675075ff3536ddfe7cd0cfa4",
+      "task_revision": 5,
+      "task_semantic_digest": "bacc40a69a232ecacda1c1bbac98732c182fd252da715cb95aa3170fefbb18cb",
+      "review_context_digest": "a5f91002c47c98d2aa065384c11ab7ce8fe8202066ec662ce2c05ff5fdad196b",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
@@ -20,9 +20,9 @@
     },
     {
       "task_id": "autonomy_causal_gateway_001",
-      "task_revision": 4,
-      "task_semantic_digest": "260d580749b0f773613a5489554b09fddc8e23d3e58969657f6196dcf5db2f04",
-      "review_context_digest": "1e8913cba0777253ce1f0a4981076ab2a0074ba7c56472773e433663765ea191",
+      "task_revision": 5,
+      "task_semantic_digest": "2494ff93791148a019f27af158e8fb93d59d20ce1b71bb10a02c2db73fe28de6",
+      "review_context_digest": "835942c2f79cfdad30c55123ed69b4eebb77bbbbd670835e896704e200751767",
       "lifecycle": "pilot",
       "exposure": "public_repository",
       "known_issues": [],
