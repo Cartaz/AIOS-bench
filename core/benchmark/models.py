@@ -19,6 +19,7 @@ class Task:
     depends_on: tuple[str, ...] = ()
     acceptance: tuple[dict[str, Any], ...] = ()
     behavioral_acceptance: tuple[dict[str, Any], ...] = ()
+    trajectory_reference: dict[str, Any] | None = None
 
 
 @dataclass
