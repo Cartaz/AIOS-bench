@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.request import urlopen
 
 import pytest
 
-import core.benchmark.frontier_runner as frontier_runner_module
 from core.benchmark.frontier_v4_runner import FrontierV4Runner
 from core.benchmark.materialization import ParametricTaskMaterializer
 from core.benchmark.parametric.runtime_investigation import (
@@ -133,7 +133,8 @@ def test_runner_cleans_runtime_probe_when_task_execution_raises(monkeypatch, tmp
         captured["process"] = active_runner.suite.materializer._runtime_processes[active_task.id]
         raise RuntimeError("synthetic task failure")
 
-    monkeypatch.setattr(frontier_runner_module, "run_frontier_task", fail_after_materialization)
+    owner_module = sys.modules[runner.run_task.__func__.__module__]
+    monkeypatch.setattr(owner_module, "run_frontier_task", fail_after_materialization)
 
     with pytest.raises(RuntimeError, match="synthetic task failure"):
         runner.run_task(task, 1)
