@@ -38,3 +38,26 @@ def test_catalog_rejects_category_filename_mismatch(tmp_path: Path):
     root = _catalog(tmp_path, [_task(category="browser")])
     with pytest.raises(ValueError, match="category"):
         load_tasks(root)
+
+
+def test_catalog_loads_valid_behavioral_acceptance(tmp_path: Path):
+    root = _catalog(tmp_path, [_task(behavioral_acceptance=[
+        {"type": "preserved_state", "path": "keep.txt"},
+        {"type": "required_evidence", "event_type": "tool_call", "data": {"tool": "probe"}},
+    ])])
+
+    task = load_tasks(root)[0]
+
+    assert task.behavioral_acceptance == (
+        {"type": "preserved_state", "path": "keep.txt"},
+        {"type": "required_evidence", "event_type": "tool_call", "data": {"tool": "probe"}},
+    )
+
+
+def test_catalog_rejects_invalid_behavioral_acceptance(tmp_path: Path):
+    root = _catalog(tmp_path, [_task(behavioral_acceptance=[
+        {"type": "preserved_state", "path": "../outside"},
+    ])])
+
+    with pytest.raises(ValueError, match="Invalid behavioral_acceptance"):
+        load_tasks(root)
