@@ -69,30 +69,47 @@ MCP-Atlas shows that realistic tool use requires choosing among plausible altern
 
 Final CI was observed green on Python 3.12, 3.13 and 3.14.
 
-## M7 — Coverage/completeness tasks — ACTIVE
+## M7 — Coverage/completeness tasks — DONE
 
 ### Why
 
 WideSearch highlights that finding one correct item and finding the complete set are distinct capabilities. Agents can produce locally correct fixes while silently missing affected call sites, configurations or records.
 
-### What
+### Implemented
 
-- Add a dedicated coverage evaluation layer rather than overloading generic behavioral predicates.
-- Generate a hidden finite ground-truth target set and realistic false-positive opportunities.
-- Persist deterministic true-positive, false-positive, false-negative, precision, recall and completion metrics.
-- Keep strict capability correctness: full completion remains required for task PASS; partial coverage is descriptive continuous evidence, not a weakened pass threshold.
-- Build one Frontier v4 pilot requiring migration of every affected active artifact while preserving plausible but out-of-scope files.
+- Added a dedicated finite-set evaluator in `coverage.py`; it owns only TP/FP/FN, precision, recall and Jaccard completion mathematics.
+- Extended parametric evaluation with an optional rich-result path while preserving the historical `check_variant()` PASS/detail contract for existing callers.
+- `parametric_reference` persists optional task-owned metrics inside the canonical deterministic `evaluation.results` entry; capability acceptance scoring remains unchanged.
+- Added parametric `coverage_migration` and Frontier v4 `tool_use_coverage_001`.
+- The generated workspace contains an authoritative runtime index, affected loaded fragments, already-current loaded fragments and retired historical files carrying plausible deprecated keys.
+- Ground-truth target/expected sets and protected hashes live only in the benchmark oracle outside the agent workspace.
+- Exact migration of every affected loaded fragment is required for PASS. Missing targets remain strict failure even though recall/completion show partial progress.
+- Already-current and historical files are hash-protected; unnecessary rewrites count as false positives, so broad replacement is not rewarded.
+- `completion` is Jaccard set similarity (`TP / (TP + FP + FN)`), so both omissions and out-of-scope edits reduce it while precision/recall explain the failure mode.
+- Added `coverage_completeness` reporting in `summary.json`, derived only from persisted evaluator metrics rather than recomputing task truth.
+- Frontier v4 catalog, CLI/GUI discovery, seeded reproducibility and no-op/golden preflight now cover six parametric tasks/families.
 
-### Completion criteria
+### Validation and strategic review
 
-- Ground truth is benchmark-owned and outside the agent workspace.
-- A partial solution produces useful precision/recall metrics while still failing strict capability correctness.
-- Brute-force modification of plausible false positives is penalized deterministically.
-- Coverage metrics are persisted in the canonical task evaluation/result path without introducing a second scoring system.
+- Tests cover exact completion, partial completion, false positives, continuous metrics, evaluator persistence, preflight/golden witnesses and profile-level reporting aggregation.
+- A partial migration can report useful coverage while acceptance score remains 0 and the task remains FAIL.
+- Full recall with an out-of-scope edit still fails and has precision/completion below 1.
+- Ownership is layered: generic set mathematics in `coverage.py`; domain truth in `coverage_migration.py`; persistence in `evaluators.py`; derived aggregation in `coverage_reporting.py`/`report.py`.
+- No second scoring system or coverage-specific behavior heuristic was introduced.
+- Final CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
 
-## M8 — Long-horizon pristine verification — PLANNED
+## M8 — Long-horizon pristine verification — ACTIVE
 
 Add a small number of substantial multi-file/multi-module tasks. Extract the agent artifact/patch and verify it from pristine benchmark-controlled state with target and preservation/regression checks. At least one task must require coordinated edits across multiple modules.
+
+First pilot design goals:
+
+- start from a generated multi-module repository rather than a single artifact set;
+- require coordinated edits whose correctness is only visible through integration behavior;
+- capture the agent-produced patch/artifact without trusting workspace-local tests;
+- reconstruct a pristine verifier workspace from benchmark-owned baseline plus the submitted changes;
+- run hidden deterministic target and regression checks from outside the mutable agent workspace;
+- preserve the current runner/materializer ownership model instead of embedding repository reconstruction inside harness adapters.
 
 ## M9 — Greenfield repository construction — PLANNED
 
@@ -116,12 +133,11 @@ Expose deterministic capability, reliability/confidence intervals, failure taxon
 
 ## Current execution order
 
-1. Complete M7 coverage/completeness scoring and one pilot task.
-2. Add M8 pristine long-horizon verification.
-3. Add M9 greenfield construction.
-4. Add M10 reference-trajectory efficiency once real trajectory data exists.
-5. Formalize M12 QA/aging/contamination before aggressive catalog expansion.
-6. Expand M13 UX as each dimension stabilizes.
+1. Build and validate one M8 pristine long-horizon pilot.
+2. Add M9 greenfield construction.
+3. Add M10 reference-trajectory efficiency once real trajectory data exists.
+4. Formalize M12 QA/aging/contamination before aggressive catalog expansion.
+5. Expand M13 UX as each dimension stabilizes.
 
 M11 remains deferred.
 
