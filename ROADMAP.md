@@ -76,13 +76,15 @@ Two agents can both pass a task while one reaches the solution directly and the 
 
 ### What
 
-Phase A — canonical per-task behavior metrics:
+Phase A — canonical per-task behavior metrics — **DONE (2026-08-27)**:
 
 - Persist assistant turns, tool calls, unique tools, structured tool errors, retries, file reads/writes, subagent starts, refusals and consecutive repeated tool-call patterns.
 - Derive generic behavior only from canonical non-inferred events when used for cross-harness comparison.
 - Keep all behavior metrics observational and score-neutral.
+- Direct tests cover canonical/non-inferred filtering, profile separation, persisted behavior reuse and unavailable/non-comparable exclusion.
+- Validation observed green on Python 3.12, 3.13 and 3.14 CI for compile, Ruff and pytest.
 
-Phase B — reporting:
+Phase B — reporting — **ACTIVE**:
 
 - Aggregate behavior metrics by harness/model/execution fingerprint.
 - Add `agent_behavior_efficiency` to `summary.json`.
