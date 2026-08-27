@@ -87,7 +87,6 @@ WideSearch highlights that finding one correct item and finding the complete set
 - Already-current and historical files are hash-protected; unnecessary rewrites count as false positives, so broad replacement is not rewarded.
 - `completion` is Jaccard set similarity (`TP / (TP + FP + FN)`), so both omissions and out-of-scope edits reduce it while precision/recall explain the failure mode.
 - Added `coverage_completeness` reporting in `summary.json`, derived only from persisted evaluator metrics rather than recomputing task truth.
-- Frontier v4 catalog, CLI/GUI discovery, seeded reproducibility and no-op/golden preflight now cover six parametric tasks/families.
 
 ### Validation and strategic review
 
@@ -98,22 +97,49 @@ WideSearch highlights that finding one correct item and finding the complete set
 - No second scoring system or coverage-specific behavior heuristic was introduced.
 - Final CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
 
-## M8 — Long-horizon pristine verification — ACTIVE
+## M8 — Long-horizon pristine verification — DONE
 
-Add a small number of substantial multi-file/multi-module tasks. Extract the agent artifact/patch and verify it from pristine benchmark-controlled state with target and preservation/regression checks. At least one task must require coordinated edits across multiple modules.
+### Why
+
+Large coordinated changes expose consistency failures that short single-artifact tasks miss, and workspace-local tests are not a trustworthy final verifier when the agent can edit that workspace.
+
+### Implemented
+
+- Added `pristine.py` as the generic reconstruction boundary for existing source artifacts.
+- Safe relative paths are required; symlinks, path traversal and artifact paths absent from the benchmark baseline are rejected.
+- A fresh temporary repository is reconstructed from benchmark-owned baseline text and only task-declared source artifacts are overlaid from the agent workspace; deletions are reproduced explicitly.
+- Added parametric `pristine_refactor` and Frontier v4 `long_horizon_pristine_001`.
+- The pilot repository has separate validation, pricing, routing, serialization and integration modules plus public regression tests.
+- The agent must coordinate the priority-tier rollout across four policy modules while `service.py`, README and public tests remain protected.
+- Seeded variants change existing express behavior and priority surcharge/queue/wire-code specification without changing the task contract.
+- The final verifier runs in a separate Python subprocess from the freshly reconstructed repository with a bounded timeout and minimal environment.
+- Hidden checks validate each policy primitive, the integrated priority path, existing standard/express regressions and invalid-tier behavior.
+- Workspace-local test tampering and high-level `service.py` shortcuts fail before hidden verification; newly added non-submitted helpers are absent from the pristine verifier tree.
+- Pristine verification emits descriptive artifact/return-code metadata through the existing rich deterministic evaluation path.
+- README documents the mechanism and explicitly distinguishes pristine verification from OS-level sandboxing.
+
+### Validation and strategic review
+
+- Tests cover baseline rejection, benchmark-owned golden acceptance, deleted-artifact reconstruction, unsafe/non-baseline path rejection, protected test/integration tampering and seeded semantic variation.
+- A dedicated partial-solution regression proves that updating three of the four required policy modules still fails hidden integration verification.
+- The first CI exposed an over-narrow test that compared only priority coordinates while adjacent variants changed the existing express coordinate; the test was corrected to compare the full observable specification rather than weakening the generator.
+- Reconstruction ownership is isolated in `pristine.py`; domain truth and hidden integration checks remain in the parametric family; harness adapters remain unaware of pristine semantics.
+- Git diff/apply was deliberately rejected for this pilot because it would add Git-specific failure modes without improving the required trust property; direct mutable-workspace verification was rejected because it would not be pristine.
+- The verifier still follows the project-wide workspace threat model rather than claiming hostile-code sandboxing; stronger isolation belongs to M12.
+- Final CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
+
+## M9 — Greenfield repository construction — ACTIVE
+
+Build a small family starting from an empty/minimal repository, with deterministic hidden tests across architecture, API, persistence, validation and integration. Continuous hidden-test coverage may be reported, but completion remains deterministic and reference-solution independent.
 
 First pilot design goals:
 
-- start from a generated multi-module repository rather than a single artifact set;
-- require coordinated edits whose correctness is only visible through integration behavior;
-- capture the agent-produced patch/artifact without trusting workspace-local tests;
-- reconstruct a pristine verifier workspace from benchmark-owned baseline plus the submitted changes;
-- run hidden deterministic target and regression checks from outside the mutable agent workspace;
-- preserve the current runner/materializer ownership model instead of embedding repository reconstruction inside harness adapters.
-
-## M9 — Greenfield repository construction — PLANNED
-
-Add a very small family starting from an empty/minimal repository, with deterministic hidden tests across architecture, API, persistence, validation and integration. Continuous hidden-test coverage may be reported, but completion remains deterministic and reference-solution independent.
+- provide only a specification and minimal project boundary, not a solution scaffold;
+- allow the agent to create a bounded submitted source tree rather than limiting verification to pre-existing artifact paths;
+- reconstruct that submitted tree outside the mutable workspace before verification;
+- verify public API, persistence behavior, malformed-input handling and cross-module integration through hidden deterministic tests;
+- avoid requiring one reference architecture: verification should depend on externally observable contracts rather than exact file contents or a golden source implementation;
+- keep submitted-tree extraction generic so future greenfield tasks can reuse it without teaching harness adapters about repository structure.
 
 ## M10 — Reference trajectory and adaptive efficiency — PLANNED
 
@@ -133,11 +159,10 @@ Expose deterministic capability, reliability/confidence intervals, failure taxon
 
 ## Current execution order
 
-1. Build and validate one M8 pristine long-horizon pilot.
-2. Add M9 greenfield construction.
-3. Add M10 reference-trajectory efficiency once real trajectory data exists.
-4. Formalize M12 QA/aging/contamination before aggressive catalog expansion.
-5. Expand M13 UX as each dimension stabilizes.
+1. Build and validate one M9 greenfield-construction pilot.
+2. Add M10 reference-trajectory efficiency once real trajectory data exists.
+3. Formalize M12 QA/aging/contamination before aggressive catalog expansion.
+4. Expand M13 UX as each dimension stabilizes.
 
 M11 remains deferred.
 
