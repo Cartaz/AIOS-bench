@@ -78,6 +78,16 @@ def _coverage_migration_golden(workspace: Path, oracle: Mapping[str, Any]) -> li
     return []
 
 
+def _pristine_refactor_golden(workspace: Path, oracle: Mapping[str, Any]) -> list[dict[str, Any]]:
+    golden = oracle.get("golden_files")
+    if not isinstance(golden, Mapping):
+        raise ValueError("invalid pristine refactor oracle")
+    for relative, content in golden.items():
+        path = workspace / str(relative)
+        path.write_text(str(content), encoding="utf-8")
+    return []
+
+
 def materialize_parametric_golden(
     family: str,
     workspace: Path,
@@ -89,6 +99,7 @@ def materialize_parametric_golden(
         "runtime_investigation": _runtime_investigation_golden,
         "tool_branching": _tool_branching_golden,
         "coverage_migration": _coverage_migration_golden,
+        "pristine_refactor": _pristine_refactor_golden,
     }
     materializer = registry.get(family)
     if materializer is not None:
