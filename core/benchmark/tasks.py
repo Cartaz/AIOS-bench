@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 
+from .behavioral_oracles import BehavioralOracleError, validate_behavioral_checks
 from .models import Task
 
 
@@ -72,6 +73,14 @@ def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
         if oracle.get("type") == "parametric_reference" and not oracle.get("family"):
             raise ValueError(f"Task {task_id} parametric oracle needs a family")
 
+        behavioral_raw = item.get("behavioral_acceptance", [])
+        if not isinstance(behavioral_raw, list):
+            raise ValueError(f"Task {task_id} behavioral_acceptance must be an array")
+        try:
+            behavioral_acceptance = validate_behavioral_checks(behavioral_raw)
+        except BehavioralOracleError as exc:
+            raise ValueError(f"Invalid behavioral_acceptance for {task_id}: {exc}") from exc
+
         capabilities = item.get("required_capabilities", [])
         if not isinstance(capabilities, list) or not all(isinstance(x, str) and x for x in capabilities):
             raise ValueError(f"Invalid required_capabilities for {task_id}")
@@ -99,6 +108,7 @@ def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
             required_capabilities=tuple(capabilities),
             depends_on=tuple(dependencies),
             acceptance=tuple(acceptance),
+            behavioral_acceptance=behavioral_acceptance,
         ))
 
     positions = {task.id: index for index, task in enumerate(tasks)}
