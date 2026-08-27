@@ -16,8 +16,7 @@
         {"id": "inspect_contract", "event_types": ["file_read"]},
         {"id": "author_submission", "event_types": ["file_write"]},
         {"id": "verify_submission", "event_types": ["tool_call"]}
-      ],
-      "reference_events_to_completion": 5
+      ]
     }
   }
 ]
