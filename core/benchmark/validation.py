@@ -10,8 +10,9 @@ from .evaluators import evaluate_artifacts
 from .experiments import derive_seed
 from .fixtures import materialize_long_horizon_corpus
 from .golden_solutions import materialize_static_golden
-from .parametric_goldens import materialize_parametric_golden
 from .parametric import materialize_variant
+from .parametric_adversarials import materialize_parametric_adversarial
+from .parametric_goldens import materialize_parametric_golden
 
 
 def _checks(repo_root: Path, task: object) -> list[dict[str, Any]]:
@@ -181,7 +182,7 @@ def validate_parametric_baseline(
     base_seed: int,
     parameters: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Validate generator A/A/B behavior plus negative and positive grader contracts."""
+    """Validate deterministic variants plus negative, positive and adversarial grader contracts."""
     failures: list[dict[str, Any]] = []
     observations: list[dict[str, Any]] = []
     parameter_map = parameters or {}
@@ -252,6 +253,41 @@ def validate_parametric_baseline(
                     "error": f"{type(exc).__name__}: {exc}",
                 })
 
+            adversarial_workspace = root / task_id / "adversarial"
+            oracle_adversarial = materialize_variant(
+                family,
+                adversarial_workspace,
+                seed=seed_a,
+                parameters=pressure,
+            )
+            adversarial_run_dir = root / task_id / "adversarial-run"
+            adversarial_run_dir.mkdir(parents=True, exist_ok=True)
+            _write_oracle(adversarial_run_dir, task_id, oracle_adversarial)
+            try:
+                witness = materialize_parametric_adversarial(
+                    family,
+                    adversarial_workspace,
+                    oracle_adversarial,
+                )
+                adversarial = evaluate_artifacts(
+                    adversarial_workspace,
+                    checks,
+                    run_dir=adversarial_run_dir,
+                    fixture_root=fixture_root,
+                )
+                adversarial_rejected = not bool(adversarial["passed"])
+                adversarial_score = float(adversarial["acceptance_score"])
+            except Exception as exc:
+                witness = "materializer_error"
+                adversarial_rejected = False
+                adversarial_score = 0.0
+                adversarial = None
+                failures.append({
+                    "task_id": task_id,
+                    "reason": "parametric adversarial materializer or grader raised",
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
+
             observation = {
                 "task_id": task_id,
                 "family": family,
@@ -263,8 +299,11 @@ def validate_parametric_baseline(
                 "different_seed_changes_variant": varies,
                 "untouched_variant_fails": untouched_fails,
                 "golden_variant_passes": golden_passes,
+                "adversarial_witness": witness,
+                "adversarial_witness_rejected": adversarial_rejected,
                 "negative_acceptance_score": float(negative["acceptance_score"]),
                 "positive_acceptance_score": positive_score,
+                "adversarial_acceptance_score": adversarial_score,
             }
             observations.append(observation)
             if not deterministic:
@@ -286,9 +325,16 @@ def validate_parametric_baseline(
                         item for item in positive["results"] if not item["passed"]
                     ],
                 })
+            if adversarial is not None and not adversarial_rejected:
+                failures.append({
+                    "task_id": task_id,
+                    "reason": "benchmark-owned adversarial witness passes grader",
+                    "witness": witness,
+                    "acceptance_score": adversarial["acceptance_score"],
+                })
 
     return {
-        "schema": "aios-bench/parametric-validation/v2",
+        "schema": "aios-bench/parametric-validation/v3",
         "ok": not failures,
         "checked_tasks": len(observations),
         "observations": observations,
