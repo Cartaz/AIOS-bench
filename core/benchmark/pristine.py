@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
@@ -97,8 +98,97 @@ def pristine_overlay(
         yield root, changes
 
 
+def collect_submitted_tree(
+    workspace: Path,
+    relative_root: str,
+    *,
+    max_files: int = 64,
+    max_total_bytes: int = 512 * 1024,
+) -> list[dict[str, str | int]]:
+    """Collect a bounded agent-created tree without following links or caches."""
+    if max_files < 1 or max_total_bytes < 1:
+        raise ValueError("submitted-tree limits must be positive")
+    relative = _relative_path(relative_root)
+    source_root = _workspace_file(workspace, relative)
+    if not source_root.is_dir():
+        raise PristineArtifactError(f"submitted tree missing: {relative.as_posix()}")
+
+    ignored_dirs = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".git"}
+    files: list[dict[str, str | int]] = []
+    total_bytes = 0
+    for current, dirs, names in os.walk(source_root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        safe_dirs: list[str] = []
+        for name in dirs:
+            candidate = current_path / name
+            if name in ignored_dirs:
+                continue
+            if candidate.is_symlink():
+                raise PristineArtifactError(
+                    f"submitted tree contains symlink directory: {candidate.relative_to(source_root).as_posix()}"
+                )
+            safe_dirs.append(name)
+        dirs[:] = safe_dirs
+
+        for name in sorted(names):
+            candidate = current_path / name
+            if candidate.is_symlink():
+                raise PristineArtifactError(
+                    f"submitted tree contains symlink file: {candidate.relative_to(source_root).as_posix()}"
+                )
+            if not candidate.is_file():
+                raise PristineArtifactError(
+                    f"submitted tree contains non-file entry: {candidate.relative_to(source_root).as_posix()}"
+                )
+            relative_file = candidate.relative_to(source_root).as_posix()
+            data = candidate.read_bytes()
+            total_bytes += len(data)
+            files.append({
+                "path": relative_file,
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            })
+            if len(files) > max_files:
+                raise PristineArtifactError(f"submitted tree exceeds {max_files} files")
+            if total_bytes > max_total_bytes:
+                raise PristineArtifactError(
+                    f"submitted tree exceeds {max_total_bytes} bytes"
+                )
+    return sorted(files, key=lambda item: str(item["path"]))
+
+
+@contextmanager
+def pristine_submitted_tree(
+    workspace: Path,
+    relative_root: str,
+    *,
+    max_files: int = 64,
+    max_total_bytes: int = 512 * 1024,
+) -> Iterator[tuple[Path, list[dict[str, str | int]]]]:
+    """Copy only a bounded new submission tree into a fresh verifier directory."""
+    relative = _relative_path(relative_root)
+    source_root = _workspace_file(workspace, relative)
+    manifest = collect_submitted_tree(
+        workspace,
+        relative.as_posix(),
+        max_files=max_files,
+        max_total_bytes=max_total_bytes,
+    )
+    with tempfile.TemporaryDirectory(prefix="aios-bench-submission-") as temporary:
+        destination_root = Path(temporary)
+        for item in manifest:
+            relative_file = _relative_path(str(item["path"]))
+            source = source_root.joinpath(*relative_file.parts)
+            destination = destination_root.joinpath(*relative_file.parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source.read_bytes())
+        yield destination_root, manifest
+
+
 __all__ = [
     "PristineArtifactError",
     "artifact_changes",
+    "collect_submitted_tree",
     "pristine_overlay",
+    "pristine_submitted_tree",
 ]
