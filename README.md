@@ -61,6 +61,12 @@ The pristine-refactor family verifies selected agent-authored source artifacts o
 
 The greenfield-registry family starts without implementation source code. The agent creates a self-contained tree under `submission/`; AIOS-Bench copies only that bounded tree into a fresh temporary verifier directory, ignores operational caches, rejects symlinks and excessive submissions, then runs hidden deterministic API, validation, persistence and integration checks under isolated Python mode. Internal module structure is not compared against the benchmark golden witness: only the documented public contract and behavior determine capability success.
 
+### Semantic reference trajectories
+
+Selected tasks may define task-owned semantic trajectory milestones such as inspecting the contract, authoring the change and verifying the result. AIOS-Bench compares these milestones only after capability success and only when the required canonical event types are available from non-inferred harness telemetry. Runner-owned metrics/evaluations and inferred events are excluded. The result records ordered milestone completion, reliable events observed up to semantic completion and post-completion activity under `reference_trajectory`; `summary.json` aggregates only these persisted values under `reference_trajectory_efficiency`.
+
+Trajectory references are descriptive and always `affects_score=false`: they never change capability correctness or score, and extra inspection or verification is not treated as a failure. No numeric “times slower than reference” metric is published yet because Frontier v4 does not yet have an empirically calibrated successful reference trajectory for these new tasks. `calibrated_reference_effort_available=false` remains explicit until real run data can support that comparison rather than assigning an arbitrary reference budget.
+
 ### Deterministic behavioral oracles
 
 Task catalogs may define optional `behavioral_acceptance` checks in addition to their normal capability `acceptance` oracle. Behavioral checks are deterministic, task-owned observations used to characterize how an agent behaved; they do not change capability success or score.
