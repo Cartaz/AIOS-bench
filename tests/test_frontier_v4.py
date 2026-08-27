@@ -36,10 +36,11 @@ def _runner(
 
 
 def _workspace_snapshot(workspace: Path) -> dict[str, bytes]:
+    ephemeral = {"runtime/endpoint.json"}
     return {
         path.relative_to(workspace).as_posix(): path.read_bytes()
         for path in sorted(workspace.rglob("*"))
-        if path.is_file()
+        if path.is_file() and path.relative_to(workspace).as_posix() not in ephemeral
     }
 
 
@@ -51,6 +52,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
     assert [task.id for task in v4] == [
         "autonomy_expense_001",
         "autonomy_causal_gateway_001",
+        "autonomy_runtime_investigation_001",
         "tool_use_config_001",
     ]
     assert all(task.revision == 4 for task in v4)
@@ -71,20 +73,23 @@ def test_same_v4_seed_materializes_identical_variant_across_runners_for_every_ac
     for task in tasks:
         first = _runner(tmp_path / task.id / "a", 42, "first")
         second = _runner(tmp_path / task.id / "b", 42, "second")
+        try:
+            workspace_a = first._workspace(task)
+            workspace_b = second._workspace(task)
+            oracle_a = json.loads((first.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8"))
+            oracle_b = json.loads((second.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8"))
 
-        workspace_a = first._workspace(task)
-        workspace_b = second._workspace(task)
-        oracle_a = json.loads((first.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8"))
-        oracle_b = json.loads((second.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8"))
-
-        expected_seed = derive_seed(42, "task", task.id)
-        assert oracle_a["variant_digest"] == oracle_b["variant_digest"]
-        assert oracle_a["seed"] == oracle_b["seed"] == expected_seed
-        assert _workspace_snapshot(workspace_a) == _workspace_snapshot(workspace_b)
-        assert first._result_identity(task)["variant_digest"] == oracle_a["variant_digest"]
-        assert second._result_identity(task)["variant_digest"] == oracle_b["variant_digest"]
-        assert not (workspace_a / "oracles").exists()
-        assert not (workspace_b / "oracles").exists()
+            expected_seed = derive_seed(42, "task", task.id)
+            assert oracle_a["variant_digest"] == oracle_b["variant_digest"]
+            assert oracle_a["seed"] == oracle_b["seed"] == expected_seed
+            assert _workspace_snapshot(workspace_a) == _workspace_snapshot(workspace_b)
+            assert first._result_identity(task)["variant_digest"] == oracle_a["variant_digest"]
+            assert second._result_identity(task)["variant_digest"] == oracle_b["variant_digest"]
+            assert not (workspace_a / "oracles").exists()
+            assert not (workspace_b / "oracles").exists()
+        finally:
+            first.suite.materializer.after_task(first, task)
+            second.suite.materializer.after_task(second, task)
 
 
 def test_different_v4_repeat_seed_changes_variant(tmp_path: Path) -> None:
