@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from core.benchmark.bubblewrap import BubblewrapCapability, probe_bubblewrap
 from core.benchmark.sandbox import (
     REPO_ROOT,
     _benchmark_owned_paths,
@@ -17,12 +18,20 @@ def _has_sequence(command: list[str], sequence: list[str]) -> bool:
     return any(command[index:index + width] == sequence for index in range(len(command) - width + 1))
 
 
+def _mock_usable_bwrap(monkeypatch) -> None:
+    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(
+        "core.benchmark.sandbox.probe_bubblewrap",
+        lambda executable: BubblewrapCapability(True),
+    )
+
+
 def test_bubblewrap_hides_repository_and_rebinds_only_workspace(monkeypatch, tmp_path: Path):
     repo = tmp_path / "repo"
     workspace = repo / "results" / ".local" / "piagent" / "model" / "runs" / "run" / "workspaces" / "task"
     workspace.mkdir(parents=True)
     monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
-    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    _mock_usable_bwrap(monkeypatch)
 
     plan = workspace_sandbox("piagent", workspace, "required")
     command = plan.wrap(["pi", "--mode", "rpc"])
@@ -41,6 +50,9 @@ def test_bubblewrap_repository_hidden_contract_executes(monkeypatch, tmp_path: P
     executable = shutil.which("bwrap")
     if executable is None:
         pytest.skip("bubblewrap is unavailable")
+    capability = probe_bubblewrap(executable)
+    if not capability.usable:
+        pytest.skip(f"bubblewrap namespaces unavailable: {capability.error}")
 
     repo = tmp_path / "repo"
     workspace = repo / "results" / ".local" / "hermes" / "model" / "runs" / "run" / "workspaces" / "task"
@@ -73,7 +85,7 @@ def test_local_harness_does_not_use_grader_blacklist(monkeypatch, tmp_path: Path
     workspace = repo / "results" / ".local" / "hermes" / "model" / "runs" / "run" / "workspaces" / "task"
     workspace.mkdir(parents=True)
     monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
-    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    _mock_usable_bwrap(monkeypatch)
     monkeypatch.setattr(
         "core.benchmark.sandbox._benchmark_owned_paths",
         lambda workspace: (_ for _ in ()).throw(AssertionError("blacklist must not be consulted")),
@@ -100,7 +112,7 @@ def test_agentzero_transport_masks_golden_and_benchmark_content(monkeypatch, tmp
     (package / "reference_checks.py").write_text("secret", encoding="utf-8")
     monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
     monkeypatch.setattr("core.benchmark.sandbox.BENCHMARK_PACKAGE_ROOT", package)
-    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    _mock_usable_bwrap(monkeypatch)
 
     plan = workspace_sandbox("agentzero", workspace, "required")
     command = plan.wrap(["python", "-m", "core.benchmark.agentzero_client", "prompt"])
@@ -163,7 +175,7 @@ def test_pi_state_writes_use_an_ephemeral_overlay(monkeypatch, tmp_path: Path):
     pi_state = tmp_path / ".pi" / "agent"; pi_state.mkdir(parents=True)
     monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
     monkeypatch.setattr("core.benchmark.sandbox.Path.home", lambda: tmp_path)
-    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    _mock_usable_bwrap(monkeypatch)
     command = workspace_sandbox("piagent", workspace, "required").wrap(["pi"])
     assert _has_sequence(command, ["--overlay-src", str(pi_state), "--tmp-overlay", str(pi_state)])
 
@@ -175,7 +187,7 @@ def test_other_harnesses_do_not_expose_pi_state(monkeypatch, tmp_path: Path):
     pi_state = tmp_path / ".pi" / "agent"; pi_state.mkdir(parents=True)
     monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
     monkeypatch.setattr("core.benchmark.sandbox.Path.home", lambda: tmp_path)
-    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    _mock_usable_bwrap(monkeypatch)
     command = workspace_sandbox("hermes", workspace, "required").wrap(["hermes"])
     assert "--tmp-overlay" not in command
 
@@ -186,9 +198,31 @@ def test_required_sandbox_fails_closed(monkeypatch, tmp_path: Path):
         workspace_sandbox("hermes", tmp_path, "required")
 
 
+def test_required_sandbox_fails_closed_when_binary_is_unusable(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(
+        "core.benchmark.sandbox.probe_bubblewrap",
+        lambda executable: BubblewrapCapability(False, "namespace denied"),
+    )
+    with pytest.raises(RuntimeError, match="namespace denied"):
+        workspace_sandbox("hermes", tmp_path, "required")
+
+
 def test_auto_records_unconfined_fallback(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: None)
     plan = workspace_sandbox("hermes", tmp_path, "auto")
     assert plan.strategy == "cwd_only_unconfined"
     assert plan.write_confined is False
     assert plan.grader_hidden is False
+    assert plan.isolation_error is None
+
+
+def test_auto_records_unusable_bubblewrap_reason(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(
+        "core.benchmark.sandbox.probe_bubblewrap",
+        lambda executable: BubblewrapCapability(False, "namespace denied"),
+    )
+    plan = workspace_sandbox("hermes", tmp_path, "auto")
+    assert plan.strategy == "cwd_only_unconfined"
+    assert plan.isolation_error == "namespace denied"
