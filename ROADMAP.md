@@ -113,31 +113,42 @@ Phase C — replay readiness — **DONE (2026-08-27)**:
 - Reporting ownership is now clearer: `behavior_metrics.py` owns generic behavioral derivation/aggregation, `report.py` publishes canonical derived analysis, and `dashboard.py` renders it.
 - During the milestone review, M2's previously missing `summary.json` resource aggregation was corrected instead of duplicating resource aggregation in the dashboard.
 
-## M4 — Deterministic behavioral oracle framework — ACTIVE
+## M4 — Deterministic behavioral oracle framework — DONE
 
 ### Why
 
-Generic telemetry can count actions but cannot legitimately decide whether an action was correct. Benchmarks such as Terminal-Bench, DeepSWE and Frontier-Bench show that strong task-specific verification is what turns trajectories into scientific evidence.
+Generic telemetry can count actions but cannot legitimately decide whether an action was correct. Strong task-specific verification turns trajectories into scientific evidence without an LLM judge.
 
-### What
+### Implemented
 
-Introduce task-owned behavioral assertions separate from generic event statistics. Candidate primitives:
+- Added task-owned `behavioral_acceptance`, deliberately separate from capability `acceptance`.
+- Added deterministic primitives `required_state`, `forbidden_state`, `preserved_state`, `decoy_untouched` and `required_evidence`.
+- Restrict state checks to safe relative workspace paths; reject path traversal and ambiguous predicates at catalog load.
+- Capture preservation/decoy baselines after benchmark materialization and before agent execution.
+- Compare preserved files by benchmark-owned existence/type/SHA-256 snapshots rather than mutable agent-provided metadata.
+- Match required structured evidence by event type, optional source and nested deterministic data subset.
+- Persist results as independent `behavioral_evaluation` plus an ordered trajectory event.
+- Keep all M4 behavioral results score-neutral (`affects_score: false`); correctness remains owned by the normal deterministic acceptance oracle.
+- Include behavioral catalog definitions and evaluator source automatically in suite revision fingerprints through the existing catalog/source hashing.
+- Document the task schema and separation of correctness from behavioral characterization in README.
 
-- `required_state`: facts that must hold at completion.
-- `preserved_state`: unrelated state that must remain unchanged.
-- `forbidden_state`: side effects that must never appear.
-- `restart_survival`: fix remains correct after restart/reload/reconstruction.
-- `decoy_untouched`: explicitly irrelevant bait must remain untouched where scientifically justified.
-- `required_evidence`: deterministic evidence/probe must be produced or observable.
-- `coverage_set`: required elements with precision/recall-style scoring.
-
-Avoid encoding one exact solution path unless the task genuinely requires it; grade observable semantics rather than imitation of a reference patch.
+`restart_survival` and `coverage_set` remain intentionally deferred to M6 and M7 respectively: implementing them as generic M4 shortcuts would leak higher-level task semantics into the base oracle module.
 
 ### Completion criteria
 
-- Behavioral oracle definitions are validated and cannot access mutable agent-owned grader state.
-- Positive and preservation/negative assertions are both supported.
-- Oracle results are persisted independently from generic telemetry.
+- Behavioral oracle definitions are validated and cannot escape the benchmark workspace.
+- Positive, forbidden and preservation/decoy assertions are supported.
+- Oracle results are persisted independently from generic telemetry and capability score.
+- Integration tests demonstrate that a deterministic capability PASS can remain 100/100 while a preservation behavioral oracle independently reports FAIL.
+
+### Validation and strategic review
+
+- Unit coverage validates state predicates, preservation after mutation/deletion, nested structured evidence matching and unsafe definitions.
+- Catalog tests validate `behavioral_acceptance` through the real `load_tasks()` boundary.
+- Runner integration tests cover pre-agent baseline capture, persisted behavioral results, score neutrality, JSON serialization and contiguous replay ordering.
+- The existing suite fingerprint already hashes full task catalog files and semantic benchmark source, so no parallel fingerprint mechanism was added.
+- Review found and fixed a replay regression where post-parse runner-owned metric events could incorrectly flip `telemetry_available`; ordered append now preserves the historical meaning of harness trajectory availability.
+- Final implementation CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest before this roadmap-only status update.
 
 ## M5 — Adversarial tool selection and branching — PLANNED
 
@@ -157,7 +168,7 @@ MCP-Atlas demonstrates that realistic tool use requires selecting among plausibl
 - At least one family requires correct tool discovery and conditional branching.
 - Distractors are realistic but do not create ambiguity in the ground truth.
 
-## M6 — Causal state, persistence and belief revision — PLANNED
+## M6 — Causal state, persistence and belief revision — ACTIVE
 
 ### Why
 
@@ -170,6 +181,17 @@ ARC-AGI-3 highlights adaptive intelligence: observe, hypothesize, experiment, up
 - Add active-investigation tasks where static file inspection is insufficient and runtime probing is needed.
 - Add belief-revision traps: early evidence supports a plausible hypothesis, later evidence falsifies it, and the correct solution requires updating the model of the system.
 - Measure milestones such as steps to first relevant evidence, root-cause evidence, correct fix and verification only when evidence nodes are deterministically defined.
+
+### First pilot
+
+Build one focused causal/persistence task before expanding the family. The pilot must:
+
+- expose a generated runtime artifact whose source-of-truth lives elsewhere;
+- allow a superficial edit to appear fixed temporarily;
+- deterministically reconstruct/restart state during verification so the superficial fix fails;
+- include at least one plausible but irrelevant decoy;
+- verify target behavior and preservation of unrelated state;
+- avoid requiring one exact command sequence.
 
 ### Completion criteria
 
@@ -332,15 +354,14 @@ Prefer Pareto-style interpretation to arbitrary weighted composite scores.
 
 ## Current execution order
 
-1. Implement M4 deterministic behavioral oracle framework.
-2. Build one M6 causal/persistence pilot task using M4.
-3. Build one M5 adversarial tool-selection pilot family.
-4. Add M7 coverage scoring.
-5. Add M8 pristine long-horizon verification.
-6. Add M9 greenfield task.
-7. Add M10 reference-trajectory efficiency once real trajectory data exists.
-8. Formalize M12 QA/aging before expanding the catalog aggressively.
-9. Expand M13 comparison UX as each new dimension becomes stable.
+1. Build one M6 causal/persistence pilot task using M4.
+2. Build one M5 adversarial tool-selection pilot family.
+3. Add M7 coverage scoring.
+4. Add M8 pristine long-horizon verification.
+5. Add M9 greenfield task.
+6. Add M10 reference-trajectory efficiency once real trajectory data exists.
+7. Formalize M12 QA/aging before expanding the catalog aggressively.
+8. Expand M13 comparison UX as each new dimension becomes stable.
 
 M11 progressive learning remains deferred until the underlying state and replay semantics are mature.
 
