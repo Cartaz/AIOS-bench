@@ -14,6 +14,7 @@ from .models import Trajectory
 from .parametric import ConfigTraversalPressure, ExpensePressure
 from .paths import REPO_ROOT, RESULTS_ROOT, TASKS_ROOT
 from .publication import render_derived, verify_publication, write_publication_manifest
+from .qa_empirical import build_empirical_qa_evidence
 from .report import write_summary
 from .scheduler import MatchedInterleavedScheduler
 from .scoring import overall_score
@@ -232,7 +233,19 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["run", "smoke", "list", "score", "dashboard", "publish", "verify", "validate", "qa", "doctor"],
+        choices=[
+            "run",
+            "smoke",
+            "list",
+            "score",
+            "dashboard",
+            "publish",
+            "verify",
+            "validate",
+            "qa",
+            "qa-evidence",
+            "doctor",
+        ],
         default="run",
     )
     parser.add_argument("path", nargs="?", type=Path)
@@ -310,6 +323,12 @@ def main() -> None:
         print(json.dumps(result, indent=2))
         if not result["ok"]:
             raise SystemExit(2)
+        return
+    if args.command == "qa-evidence":
+        if args.suite != "frontier_v4":
+            raise SystemExit("empirical task QA evidence is currently tracked for Frontier v4")
+        result = build_empirical_qa_evidence(RESULTS, tasks)
+        print(json.dumps(result, indent=2))
         return
 
     if not harnesses:
