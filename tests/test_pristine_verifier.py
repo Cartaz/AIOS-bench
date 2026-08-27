@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from core.benchmark.bubblewrap import BubblewrapCapability, probe_bubblewrap
 from core.benchmark.pristine_verifier import run_pristine_verifier
 
 
@@ -21,13 +22,41 @@ def test_unconfined_fallback_is_explicit_and_uses_isolated_python(monkeypatch, t
     assert result.isolation_strategy == "isolated_python_unconfined"
     assert result.filesystem_confined is False
     assert result.network_confined is False
+    assert result.isolation_error is None
     assert (tmp_path / "result.txt").read_text(encoding="utf-8") == "ok"
+
+
+def test_auto_falls_back_when_bubblewrap_binary_is_unusable(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(
+        "core.benchmark.pristine_verifier.probe_bubblewrap",
+        lambda executable: BubblewrapCapability(False, "namespace denied"),
+    )
+
+    result = run_pristine_verifier(tmp_path, "print('ok')", mode="auto")
+
+    assert result.returncode == 0
+    assert result.isolation_strategy == "isolated_python_unconfined"
+    assert result.isolation_error == "namespace denied"
+    assert result.filesystem_confined is False
+    assert result.network_confined is False
 
 
 def test_required_verifier_sandbox_fails_closed_without_bubblewrap(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: None)
 
     with pytest.raises(RuntimeError, match="required"):
+        run_pristine_verifier(tmp_path, "pass", mode="required")
+
+
+def test_required_verifier_sandbox_fails_closed_when_bubblewrap_is_unusable(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(
+        "core.benchmark.pristine_verifier.probe_bubblewrap",
+        lambda executable: BubblewrapCapability(False, "namespace denied"),
+    )
+
+    with pytest.raises(RuntimeError, match="namespace denied"):
         run_pristine_verifier(tmp_path, "pass", mode="required")
 
 
@@ -45,6 +74,10 @@ def test_bubblewrap_plan_reports_filesystem_and_network_confinement(monkeypatch,
         return Completed()
 
     monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(
+        "core.benchmark.pristine_verifier.probe_bubblewrap",
+        lambda executable: BubblewrapCapability(True),
+    )
     monkeypatch.setattr("core.benchmark.pristine_verifier.subprocess.run", fake_run)
 
     result = run_pristine_verifier(tmp_path, "print('ok')", mode="required")
@@ -59,11 +92,16 @@ def test_bubblewrap_plan_reports_filesystem_and_network_confinement(monkeypatch,
     assert result.isolation_strategy == "bubblewrap_minimal_runtime"
     assert result.filesystem_confined is True
     assert result.network_confined is True
+    assert result.isolation_error is None
 
 
 def test_real_bubblewrap_verifier_cannot_read_external_secret(tmp_path: Path) -> None:
-    if shutil.which("bwrap") is None:
+    executable = shutil.which("bwrap")
+    if executable is None:
         pytest.skip("bubblewrap is unavailable")
+    capability = probe_bubblewrap(executable)
+    if not capability.usable:
+        pytest.skip(f"bubblewrap namespaces unavailable: {capability.error}")
 
     pristine = tmp_path / "pristine"
     pristine.mkdir()
