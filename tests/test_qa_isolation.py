@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import subprocess
 
 from core.benchmark.pristine_verifier import VerifierExecution
 
@@ -72,6 +73,19 @@ def test_self_check_reports_required_mode_unavailable_without_claiming_confineme
     assert result["filesystem_confined"] is False
     assert result["network_confined"] is False
     assert "namespaces denied" in result["isolation_error"]
+
+
+def test_self_check_turns_verifier_timeout_into_failed_evidence(monkeypatch) -> None:
+    def timed_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(["bwrap"], 5)
+
+    monkeypatch.setattr(qa_isolation, "run_pristine_verifier", timed_out)
+
+    result = qa_isolation.run_strong_isolation_self_check()
+
+    assert result["ok"] is False
+    assert result["strong_boundary_available"] is False
+    assert "TimeoutExpired" in result["isolation_error"]
 
 
 def test_self_check_reads_probe_created_inside_pristine_workspace(monkeypatch) -> None:
