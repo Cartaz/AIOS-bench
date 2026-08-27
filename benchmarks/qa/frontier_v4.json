@@ -11,7 +11,15 @@
       "known_issues": [],
       "audited_at": "2026-08-27",
       "reviews": {
-        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "ambiguity_oracle_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_ambiguity_2026-08-27.md#autonomy_expense_001",
+            "observed_at": "2026-08-27",
+            "notes": "Revision 5 makes the exact skipped-malformed-row count explicit; grader and public contract now agree."
+          }
+        },
         "cheat_adversarial_review": {"status": "pending", "evidence": null},
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
@@ -28,7 +36,15 @@
       "known_issues": [],
       "audited_at": "2026-08-27",
       "reviews": {
-        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "ambiguity_oracle_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_ambiguity_2026-08-27.md#autonomy_causal_gateway_001",
+            "observed_at": "2026-08-27",
+            "notes": "Revision 5 explicitly protects service-registry and diagnostic/restart state already enforced by the grader."
+          }
+        },
         "cheat_adversarial_review": {"status": "pending", "evidence": null},
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
@@ -45,7 +61,15 @@
       "known_issues": [],
       "audited_at": "2026-08-27",
       "reviews": {
-        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "ambiguity_oracle_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_ambiguity_2026-08-27.md#autonomy_runtime_investigation_001",
+            "observed_at": "2026-08-27",
+            "notes": "Prompt discloses the live-probe evidence and exact preservation/edit scope enforced by the oracle."
+          }
+        },
         "cheat_adversarial_review": {"status": "pending", "evidence": null},
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
@@ -62,7 +86,15 @@
       "known_issues": [],
       "audited_at": "2026-08-27",
       "reviews": {
-        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "ambiguity_oracle_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_ambiguity_2026-08-27.md#greenfield_registry_001",
+            "observed_at": "2026-08-27",
+            "notes": "Hidden verification checks the public behavioral contract without constraining internal architecture."
+          }
+        },
         "cheat_adversarial_review": {"status": "pending", "evidence": null},
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
@@ -79,7 +111,15 @@
       "known_issues": [],
       "audited_at": "2026-08-27",
       "reviews": {
-        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "ambiguity_oracle_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_ambiguity_2026-08-27.md#long_horizon_pristine_001",
+            "observed_at": "2026-08-27",
+            "notes": "Prompt/generated specification disclose protected files and integrated behavior verified from a pristine reconstruction."
+          }
+        },
         "cheat_adversarial_review": {"status": "pending", "evidence": null},
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
@@ -96,7 +136,15 @@
       "known_issues": [],
       "audited_at": "2026-08-27",
       "reviews": {
-        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "ambiguity_oracle_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_ambiguity_2026-08-27.md#tool_use_config_001",
+            "observed_at": "2026-08-27",
+            "notes": "Required settings, ordered chain, consumer path and decoy exclusion are all disclosed in the task contract."
+          }
+        },
         "cheat_adversarial_review": {"status": "pending", "evidence": null},
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
@@ -113,7 +161,15 @@
       "known_issues": [],
       "audited_at": "2026-08-27",
       "reviews": {
-        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "ambiguity_oracle_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_ambiguity_2026-08-27.md#tool_use_branching_001",
+            "observed_at": "2026-08-27",
+            "notes": "Authority/freshness, session-contamination risk and exact report fields are public while command sequence remains unconstrained."
+          }
+        },
         "cheat_adversarial_review": {"status": "pending", "evidence": null},
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
@@ -130,7 +186,15 @@
       "known_issues": [],
       "audited_at": "2026-08-27",
       "reviews": {
-        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "ambiguity_oracle_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_ambiguity_2026-08-27.md#tool_use_coverage_001",
+            "observed_at": "2026-08-27",
+            "notes": "The authoritative finite set, exact migration requirement and protected out-of-scope files are disclosed and match evaluator semantics."
+          }
+        },
         "cheat_adversarial_review": {"status": "pending", "evidence": null},
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
