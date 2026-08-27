@@ -27,6 +27,7 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
         "autonomy_runtime_investigation_001",
         "tool_use_config_001",
         "tool_use_branching_001",
+        "tool_use_coverage_001",
     }
 
 
