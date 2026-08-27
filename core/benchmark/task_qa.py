@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
 QA_SCHEMA = "aios-bench/task-qa/v2"
 QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v2"
+QA_REVIEW_INTERVAL_DAYS = 180
 LIFECYCLES = frozenset({"draft", "pilot", "stable", "retired"})
 REVIEW_STATUSES = frozenset({"pending", "passed", "failed", "not_applicable"})
 REVIEW_KEYS = (
@@ -163,6 +165,11 @@ def validate_task_qa_records(
         audited_at = raw.get("audited_at")
         if not isinstance(audited_at, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", audited_at):
             record_errors.append("audited_at must be YYYY-MM-DD")
+        else:
+            try:
+                date.fromisoformat(audited_at)
+            except ValueError:
+                record_errors.append("audited_at must be a valid calendar date")
         manual_ready, review_errors, pending = _review_state(raw)
         record_errors.extend(review_errors)
         if lifecycle == "stable" and not manual_ready:
@@ -224,27 +231,50 @@ def _automated_by_task(validation: Mapping[str, Any]) -> dict[str, bool]:
     return result
 
 
+def _audit_age(record: Mapping[str, Any], as_of: date) -> dict[str, Any]:
+    try:
+        audited = date.fromisoformat(str(record.get("audited_at", "")))
+    except ValueError:
+        return {
+            "audit_age_days": None,
+            "next_review_due_at": None,
+            "maintenance_due": True,
+        }
+    due = audited + timedelta(days=QA_REVIEW_INTERVAL_DAYS)
+    return {
+        "audit_age_days": (as_of - audited).days,
+        "next_review_due_at": due.isoformat(),
+        "maintenance_due": as_of >= due,
+    }
+
+
 def build_task_qa_report(
     tasks: Iterable[object],
     records: Iterable[Mapping[str, Any]],
     automated_validation: Mapping[str, Any],
+    *,
+    as_of: date | None = None,
 ) -> dict[str, Any]:
     tasks_list = list(tasks)
     registry = validate_task_qa_records(tasks_list, records)
     automated = _automated_by_task(automated_validation)
+    report_date = as_of or date.today()
     rows: list[dict[str, Any]] = []
     stable_contract_errors: list[dict[str, str]] = []
     for record in registry["records"]:
         task_id = str(record["task_id"])
         automated_ready = bool(automated.get(task_id, False))
+        aging = _audit_age(record, report_date)
         promotion_ready = bool(
             automated_ready
             and record["manual_reviews_ready"]
             and not record["known_issues"]
+            and not aging["maintenance_due"]
             and record["lifecycle"] != "retired"
         )
         row = {
             **record,
+            **aging,
             "automated_validation_ready": automated_ready,
             "promotion_ready": promotion_ready,
         }
@@ -253,11 +283,13 @@ def build_task_qa_report(
             stable_contract_errors.append(
                 {
                     "task_id": task_id,
-                    "error": "stable task does not satisfy automated/manual promotion prerequisites",
+                    "error": "stable task does not satisfy current automated/manual/aging promotion prerequisites",
                 }
             )
     return {
         "schema": QA_REPORT_SCHEMA,
+        "as_of": report_date.isoformat(),
+        "review_interval_days": QA_REVIEW_INTERVAL_DAYS,
         "ok": bool(
             registry["registry_ok"]
             and automated_validation.get("ok")
@@ -267,6 +299,7 @@ def build_task_qa_report(
         "automated_validation_ok": bool(automated_validation.get("ok")),
         "all_promotion_ready": bool(rows) and all(row["promotion_ready"] for row in rows),
         "promotion_ready_count": sum(bool(row["promotion_ready"]) for row in rows),
+        "maintenance_due_count": sum(bool(row["maintenance_due"]) for row in rows),
         "task_count": len(tasks_list),
         "tasks": rows,
         "errors": [*registry["errors"], *stable_contract_errors],
@@ -277,6 +310,7 @@ __all__ = [
     "EXPOSURE_LEVELS",
     "LIFECYCLES",
     "QA_REPORT_SCHEMA",
+    "QA_REVIEW_INTERVAL_DAYS",
     "QA_SCHEMA",
     "REVIEW_KEYS",
     "REVIEW_STATUSES",
