@@ -69,9 +69,11 @@ Frontier v4 has a machine-readable QA registry under `benchmarks/qa/`. QA lifecy
 
 Each QA record is tied to both `task_revision` and a SHA-256 semantic digest derived from task-owned meaning: prompt, category/mode/tier, revision, tags, required capabilities, dependencies, capability acceptance, behavioral acceptance and semantic trajectory reference. A meaning-changing edit therefore invalidates the prior audit even if someone forgets to bump the numeric revision.
 
+Manual-review evidence is additionally bound to a separate `review_context_digest` over the task semantic digest plus its current exposure state. Exposure is intentionally not part of benchmark semantic identity, but moving a task from private/limited circulation to a public repository changes contamination assumptions and therefore invalidates the old review context automatically.
+
 QA audits also age independently of historical benchmark reproducibility. The current maintenance interval is 180 days. An expired pilot record remains structurally valid but becomes maintenance-due and cannot be promotion-ready; an expired `stable` record violates the current promotion contract until it is reviewed again. The report date is injectable in tests so aging behavior is deterministic rather than dependent on the CI clock.
 
-Promotion requires current automated positive/negative validation, completed manual review evidence, no known issues, a fresh audit and a non-retired lifecycle. Pending work is represented as pending rather than inferred as passed. Public exposure is recorded explicitly because contamination risk is a scientific property of the benchmark, not a capability-score penalty.
+Promotion requires current automated positive/negative validation, completed manual review evidence, no known issues, a fresh audit and a non-retired lifecycle. Automated evidence is reported as named checks rather than one opaque boolean, with missing and failed checks kept distinct. Contamination risk is derived from the canonical exposure state (`private` → low, `limited` → medium, `public_repository` → high) and remains descriptive rather than becoming a second capability score. Pending work is represented as pending rather than inferred as passed.
 
 ### Semantic reference trajectories
 
