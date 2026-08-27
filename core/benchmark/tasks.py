@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .behavioral_oracles import BehavioralOracleError, validate_behavioral_checks
 from .models import Task
+from .reference_trajectory import ReferenceTrajectoryError, validate_reference_trajectory
 
 
 TASK_DIR = "frontier_v3"
@@ -81,6 +82,11 @@ def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
         except BehavioralOracleError as exc:
             raise ValueError(f"Invalid behavioral_acceptance for {task_id}: {exc}") from exc
 
+        try:
+            trajectory_reference = validate_reference_trajectory(item.get("trajectory_reference"))
+        except ReferenceTrajectoryError as exc:
+            raise ValueError(f"Invalid trajectory_reference for {task_id}: {exc}") from exc
+
         capabilities = item.get("required_capabilities", [])
         if not isinstance(capabilities, list) or not all(isinstance(x, str) and x for x in capabilities):
             raise ValueError(f"Invalid required_capabilities for {task_id}")
@@ -109,6 +115,7 @@ def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
             depends_on=tuple(dependencies),
             acceptance=tuple(acceptance),
             behavioral_acceptance=behavioral_acceptance,
+            trajectory_reference=trajectory_reference,
         ))
 
     positions = {task.id: index for index, task in enumerate(tasks)}
