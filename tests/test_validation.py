@@ -58,15 +58,20 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "distractor_logs": 3,
                 "extra_services": 2,
             },
+            "runtime_investigation": {
+                "lanes": 5,
+                "distractor_docs": 3,
+            },
         },
     )
 
     assert result["ok"] is True, result["failures"]
-    assert result["checked_tasks"] == 3
+    assert result["checked_tasks"] == 4
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
         "causal_gateway",
+        "runtime_investigation",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
