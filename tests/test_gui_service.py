@@ -24,6 +24,7 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
     assert {item["id"] for item in catalog["tasks"]} == {
         "autonomy_expense_001",
         "autonomy_causal_gateway_001",
+        "autonomy_runtime_investigation_001",
         "tool_use_config_001",
     }
 
