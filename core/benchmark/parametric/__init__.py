@@ -19,9 +19,20 @@ from .runtime_investigation import (
     check_runtime_investigation_variant,
     generate_runtime_investigation_variant,
 )
+from .tool_branching import (
+    ToolBranchingPressure,
+    check_tool_branching_variant,
+    generate_tool_branching_variant,
+)
 
 
-FAMILIES = {"expense_report", "config_traversal", "causal_gateway", "runtime_investigation"}
+FAMILIES = {
+    "expense_report",
+    "config_traversal",
+    "causal_gateway",
+    "runtime_investigation",
+    "tool_branching",
+}
 
 
 def materialize_variant(
@@ -43,6 +54,9 @@ def materialize_variant(
     if family == "runtime_investigation":
         pressure = RuntimeInvestigationPressure.from_mapping(parameters or {})
         return generate_runtime_investigation_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "tool_branching":
+        pressure = ToolBranchingPressure.from_mapping(parameters or {})
+        return generate_tool_branching_variant(workspace, seed=int(seed), pressure=pressure)
     raise ValueError(f"unknown parametric family: {family}")
 
 
@@ -55,6 +69,8 @@ def check_variant(family: str, workspace: Path, oracle: Mapping[str, Any]) -> tu
         return check_causal_gateway_variant(workspace, oracle)
     if family == "runtime_investigation":
         return check_runtime_investigation_variant(workspace, oracle)
+    if family == "tool_branching":
+        return check_tool_branching_variant(workspace, oracle)
     return False, f"unknown parametric family: {family}"
 
 
@@ -63,6 +79,7 @@ __all__ = [
     "ConfigTraversalPressure",
     "ExpensePressure",
     "RuntimeInvestigationPressure",
+    "ToolBranchingPressure",
     "FAMILIES",
     "check_variant",
     "materialize_variant",
