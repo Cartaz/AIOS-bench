@@ -30,7 +30,15 @@
           }
         },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
-        "contamination_review": {"status": "pending", "evidence": null},
+        "contamination_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_contamination_2026-08-27.md#autonomy_expense_001",
+            "observed_at": "2026-08-27",
+            "notes": "Public family semantics remain high-risk; concrete seeded totals are run-specific and raw oracle-like payloads do not transit publication."
+          }
+        },
         "saturation_review": {"status": "pending", "evidence": null}
       }
     },
@@ -63,7 +71,15 @@
           }
         },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
-        "contamination_review": {"status": "pending", "evidence": null},
+        "contamination_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_contamination_2026-08-27.md#autonomy_causal_gateway_001",
+            "observed_at": "2026-08-27",
+            "notes": "Seeded ports/state prevent fixed-value memorization, but the public causal repair pattern remains high-risk exposure."
+          }
+        },
         "saturation_review": {"status": "pending", "evidence": null}
       }
     },
@@ -96,7 +112,15 @@
           }
         },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
-        "contamination_review": {"status": "pending", "evidence": null},
+        "contamination_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_contamination_2026-08-27.md#autonomy_runtime_investigation_001",
+            "observed_at": "2026-08-27",
+            "notes": "Live values are variant-specific, while the public stale-doc-versus-live-evidence strategy remains high-risk exposure."
+          }
+        },
         "saturation_review": {"status": "pending", "evidence": null}
       }
     },
@@ -129,7 +153,15 @@
           }
         },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
-        "contamination_review": {"status": "pending", "evidence": null},
+        "contamination_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_contamination_2026-08-27.md#greenfield_registry_001",
+            "observed_at": "2026-08-27",
+            "notes": "Variant constraints change, but the public contract/reference strategy remains high-risk and is not claimed novel."
+          }
+        },
         "saturation_review": {"status": "pending", "evidence": null}
       }
     },
@@ -162,7 +194,15 @@
           }
         },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
-        "contamination_review": {"status": "pending", "evidence": null},
+        "contamination_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_contamination_2026-08-27.md#long_horizon_pristine_001",
+            "observed_at": "2026-08-27",
+            "notes": "Generated coordinates vary, but public family/golden strategy remains high-risk and not contamination-free."
+          }
+        },
         "saturation_review": {"status": "pending", "evidence": null}
       }
     },
@@ -195,7 +235,15 @@
           }
         },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
-        "contamination_review": {"status": "pending", "evidence": null},
+        "contamination_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_contamination_2026-08-27.md#tool_use_config_001",
+            "observed_at": "2026-08-27",
+            "notes": "Concrete chains/settings vary while the public traversal/completeness strategy remains high-risk exposure."
+          }
+        },
         "saturation_review": {"status": "pending", "evidence": null}
       }
     },
@@ -228,7 +276,15 @@
           }
         },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
-        "contamination_review": {"status": "pending", "evidence": null},
+        "contamination_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_contamination_2026-08-27.md#tool_use_branching_001",
+            "observed_at": "2026-08-27",
+            "notes": "Per-run receipt secret is local and aggregate publication is non-transitive; public protocol code still makes contamination risk high."
+          }
+        },
         "saturation_review": {"status": "pending", "evidence": null}
       }
     },
@@ -261,7 +317,15 @@
           }
         },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
-        "contamination_review": {"status": "pending", "evidence": null},
+        "contamination_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_contamination_2026-08-27.md#tool_use_coverage_001",
+            "observed_at": "2026-08-27",
+            "notes": "Concrete target membership varies by seed while public finite-set semantics remain high-risk exposure."
+          }
+        },
         "saturation_review": {"status": "pending", "evidence": null}
       }
     }
