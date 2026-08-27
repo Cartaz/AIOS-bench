@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Protocol
@@ -11,6 +12,7 @@ from .experiments import derive_seed
 from .fixtures import materialize_long_horizon_corpus
 from .models import Task
 from .parametric import materialize_variant
+from .parametric.runtime_investigation import runtime_probe_payload
 
 
 class RunnerContext(Protocol):
@@ -120,13 +122,15 @@ class StaticTaskMaterializer:
 
 @dataclass
 class ParametricTaskMaterializer:
-    """Materializes deterministic seeded task families and keeps grader oracles outside workspaces."""
+    """Materializes seeded task families and owns benchmark-controlled runtime fixtures."""
 
     base_seed: int = 42
     parameters: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     _variants: dict[str, dict[str, Any]] = field(default_factory=dict, init=False)
+    _runtime_processes: dict[str, subprocess.Popen[str]] = field(default_factory=dict, init=False)
 
     def prepare(self, runner: RunnerContext, task: Task) -> Path:
+        self._stop_runtime_process(task.id)
         workspace = _fresh_workspace(runner.run_dir, task.id)
         family = self.family(task)
         oracle = materialize_variant(
@@ -135,6 +139,8 @@ class ParametricTaskMaterializer:
             seed=self.task_seed(task),
             parameters=self.parameters.get(family, {}),
         )
+        if family == "runtime_investigation":
+            self._start_runtime_probe(runner, task, workspace, oracle)
         oracle_dir = runner.run_dir / "oracles"
         oracle_dir.mkdir(parents=True, exist_ok=True)
         oracle_path = oracle_dir / f"{task.id}.json"
@@ -162,7 +168,58 @@ class ParametricTaskMaterializer:
         }
 
     def after_task(self, runner: RunnerContext, task: Task) -> None:
-        return None
+        self._stop_runtime_process(task.id)
+
+    def _start_runtime_probe(
+        self,
+        runner: RunnerContext,
+        task: Task,
+        workspace: Path,
+        oracle: Mapping[str, Any],
+    ) -> None:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "core.benchmark.runtime_probe_server"],
+            cwd=runner.repo_root,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        try:
+            if process.stdin is None or process.stdout is None:
+                raise RuntimeError("runtime probe pipes unavailable")
+            process.stdin.write(json.dumps(runtime_probe_payload(oracle)) + "\n")
+            process.stdin.flush()
+            process.stdin.close()
+            line = process.stdout.readline().strip()
+            port = int(line)
+            if process.poll() is not None:
+                raise RuntimeError("runtime probe exited during startup")
+            endpoint = workspace / "runtime" / "endpoint.json"
+            endpoint.write_text(
+                json.dumps({"state_url": f"http://127.0.0.1:{port}/state"}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            self._runtime_processes[task.id] = process
+        except Exception:
+            self._terminate_process(process)
+            raise
+
+    def _stop_runtime_process(self, task_id: str) -> None:
+        process = self._runtime_processes.pop(task_id, None)
+        if process is not None:
+            self._terminate_process(process)
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen[str]) -> None:
+        if process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
 
     @staticmethod
     def family(task: Task) -> str:
