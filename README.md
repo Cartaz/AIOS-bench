@@ -49,6 +49,14 @@ Frontier v3 and v4 remain separate scientific catalogs so historical results and
 
 Materialization is a task/suite concern; harness execution, lifecycle, telemetry, scoring, persistence and scheduling are shared. A future catalog therefore does not require a new execution engine merely because its task materialization strategy changes.
 
+### Deterministic behavioral oracles
+
+Task catalogs may define optional `behavioral_acceptance` checks in addition to their normal capability `acceptance` oracle. Behavioral checks are deterministic, task-owned observations used to characterize how an agent behaved; they do not change capability success or score.
+
+The initial behavioral-oracle schema supports required state, forbidden state, preservation of pre-task files, untouched decoy files and required structured evidence events. Preservation baselines are captured by the benchmark after workspace materialization and before the agent runs. Behavioral results are persisted independently as `behavioral_evaluation`.
+
+Generic trajectory telemetry never guesses whether an action was useful, destructive or irrelevant. Such claims require explicit deterministic task evidence. Behavioral state paths are restricted to safe relative workspace paths, and behavioral definitions are part of the suite semantic revision through the catalog/source fingerprint.
+
 ### Resource telemetry
 
 Resource telemetry is observational and never changes deterministic task scoring.
