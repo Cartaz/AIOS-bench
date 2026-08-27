@@ -17,7 +17,7 @@
     "category": "tool_use",
     "tier": 4,
     "revision": 4,
-    "prompt": "Resolve the live case using the benchmark-owned tools in tools/. Begin with the authoritative case inspection tool, then select only the lookup appropriate to the returned case type and pass it the returned case id. Several plausible legacy, cache, metrics, archive, or directory tools are distractors; broad probing contaminates the live tool session. Save reports/case_resolution.json with exactly case_type, case_id, value, inspection_receipt, and lookup_receipt from the successful branch. Do not modify benchmark-owned tools or README.md.",
+    "prompt": "Resolve the live case using the benchmark-owned tools in tools/. The available tools expose current case metadata, branch-specific records, caches, legacy data, archives, directory data, and service metrics with different authority and freshness. Determine the live case type and id, then choose the appropriate branch-specific lookup and produce reports/case_resolution.json with exactly case_type, case_id, value, inspection_receipt, and lookup_receipt. Broad non-authoritative probing can invalidate the live tool session. Do not modify benchmark-owned tools or README.md.",
     "mode": "cold",
     "tags": ["tool_use", "frontier_v4", "parametric", "adversarial_tools", "branching", "tool_selection"],
     "acceptance": [
