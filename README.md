@@ -81,6 +81,14 @@ The contamination review deliberately does not call the public suite â€œclean.â€
 
 Run-local generated oracles remain outside the agent workspace and under local result storage. `results/.local/` is ignored by Git, and aggregate publication produces only derived summary/dashboard outputs plus their seal. A publication regression injects an oracle-like sentinel into raw evaluation/artifact fields and verifies that it does not transit into `summary.json`, `dashboard.html` or `publication.json`. Accidental publication of a concrete oracle/secret compromises that generated instance; semantic/family leakage requires revision or retirement rather than merely reseeding. The full revision/rotation/retirement policy is recorded in the contamination review document.
 
+Empirical evidence for the two remaining review types is read from local raw results rather than inferred from CI fixtures. Run:
+
+```bash
+aiosbench --suite frontier_v4 qa-evidence
+```
+
+The report includes only comparable attempts for the current task revision and exposes observed profile/harness/model diversity, pass/fail distribution, score range, distinct pressure variants, plus `collection_state` and `collection_gaps`. The current collection axes ask whether each task has at least one current-revision attempt and contrasting evidence from a second profile, harness, model and pressure variant. These are **collection gaps, not promotion thresholds**: an empty gap list does not automatically pass `multi_agent_pilot` or `saturation_review`, and the command never mutates the QA registry.
+
 Promotion requires current automated validation, completed manual review evidence, no known issues, a fresh audit and a non-retired lifecycle. Contamination risk remains descriptive rather than becoming a capability-score penalty. The scoped adversarial and contamination reviews do **not** claim protection against an agent escaping an unconfined workspace and reading public benchmark internals. Compatible-host proof of the strong Bubblewrap verifier/workspace boundary remains an M12 requirement.
 
 ### Semantic reference trajectories
