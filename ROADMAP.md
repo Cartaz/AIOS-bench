@@ -62,13 +62,14 @@ Raw telemetry is not useful if users must inspect task JSON manually. Reporting 
 - Report mean task peak and worst observed peak rather than summing RAM/VRAM across tasks.
 - Expose separate dashboard sections for client/harness cost and inference-server/model cost.
 - Keep inference throughput and resource consumption as separate dimensions.
+- Publish the same canonical `resource_efficiency` aggregation in `summary.json`; the dashboard consumes that derived data rather than maintaining a second resource-reporting path.
 
 ### Completion criteria
 
 - `summary.json` and dashboard expose resource-efficiency data.
 - Capability score is unchanged.
 
-## M3 — Agentic trajectory telemetry — ACTIVE
+## M3 — Agentic trajectory telemetry — DONE
 
 ### Why
 
@@ -82,27 +83,37 @@ Phase A — canonical per-task behavior metrics — **DONE (2026-08-27)**:
 - Derive generic behavior only from canonical non-inferred events when used for cross-harness comparison.
 - Keep all behavior metrics observational and score-neutral.
 - Direct tests cover canonical/non-inferred filtering, profile separation, persisted behavior reuse and unavailable/non-comparable exclusion.
-- Validation observed green on Python 3.12, 3.13 and 3.14 CI for compile, Ruff and pytest.
 
-Phase B — reporting — **ACTIVE**:
+Phase B — reporting — **DONE (2026-08-27)**:
 
 - Aggregate behavior metrics by harness/model/execution fingerprint.
-- Add `agent_behavior_efficiency` to `summary.json`.
-- Add dashboard section showing mean turns/tool calls/errors/retries/repetition/file activity and coverage of reliable telemetry.
-- Make missing structured telemetry explicit so a low count is not confused with zero activity.
+- Publish `agent_behavior_efficiency` in `summary.json`.
+- Render a dedicated dashboard section for turns, tool calls, tool diversity, structured tool errors, retries, consecutive repetition, file activity, subagents and refusals.
+- Treat missing structured telemetry as unavailable rather than as zero activity.
+- Keep trajectory reporting separate from deterministic capability, reliability, inference efficiency and resource efficiency.
 
-Phase C — replay readiness:
+Phase C — replay readiness — **DONE (2026-08-27)**:
 
-- Ensure event ordering and identity are sufficient to reconstruct an interpretable task timeline.
-- Preserve timestamps and bounded structural tool metadata without storing unnecessary bulk output.
+- Preserve adapter timestamps and structural identifiers such as tool `call_id` when supplied.
+- Persist an explicit observation `sequence` for every trajectory event so replay order never has to be inferred from timestamps that may collide or be absent.
+- Never mutate adapter/caller-owned event dictionaries while normalizing persisted trajectory events.
+- Keep event payloads structural and bounded; a replay viewer itself is intentionally not part of this milestone.
 
 ### Completion criteria
 
-- Every supported harness either provides reliable structured trajectory telemetry or is marked partially/unavailable.
-- Summary/dashboard make PASS-with-clean-trajectory distinguishable from PASS-with-chaotic-trajectory.
+- Supported harnesses expose reliable structured trajectory telemetry where their native interfaces provide it; unavailable/partial telemetry remains explicit.
+- Summary/dashboard make PASS-with-clean-trajectory distinguishable descriptively from PASS-with-high-retry/error/repetition trajectories without changing capability score.
 - No generic heuristic labels actions as useful, destructive, irrelevant or recovered without deterministic evidence.
+- Event ordering is replay-safe and adapter timestamps/identifiers remain intact.
 
-## M4 — Deterministic behavioral oracle framework — PLANNED
+### Validation and strategic review
+
+- CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest after Phase A and again after Phases B/C.
+- A regression test exposed a test-only namespace collision between the historical `aios_bench` compatibility alias and the canonical `core.benchmark` namespace; the new reporting test was corrected to use only the canonical namespace rather than adding production workarounds.
+- Reporting ownership is now clearer: `behavior_metrics.py` owns generic behavioral derivation/aggregation, `report.py` publishes canonical derived analysis, and `dashboard.py` renders it.
+- During the milestone review, M2's previously missing `summary.json` resource aggregation was corrected instead of duplicating resource aggregation in the dashboard.
+
+## M4 — Deterministic behavioral oracle framework — ACTIVE
 
 ### Why
 
@@ -321,16 +332,15 @@ Prefer Pareto-style interpretation to arbitrary weighted composite scores.
 
 ## Current execution order
 
-1. Finish M3 Agentic trajectory telemetry and reporting.
-2. Implement M4 deterministic behavioral oracle framework.
-3. Build one M6 causal/persistence pilot task using M4.
-4. Build one M5 adversarial tool-selection pilot family.
-5. Add M7 coverage scoring.
-6. Add M8 pristine long-horizon verification.
-7. Add M9 greenfield task.
-8. Add M10 reference-trajectory efficiency once real trajectory data exists.
-9. Formalize M12 QA/aging before expanding the catalog aggressively.
-10. Expand M13 comparison UX as each new dimension becomes stable.
+1. Implement M4 deterministic behavioral oracle framework.
+2. Build one M6 causal/persistence pilot task using M4.
+3. Build one M5 adversarial tool-selection pilot family.
+4. Add M7 coverage scoring.
+5. Add M8 pristine long-horizon verification.
+6. Add M9 greenfield task.
+7. Add M10 reference-trajectory efficiency once real trajectory data exists.
+8. Formalize M12 QA/aging before expanding the catalog aggressively.
+9. Expand M13 comparison UX as each new dimension becomes stable.
 
 M11 progressive learning remains deferred until the underlying state and replay semantics are mature.
 
