@@ -33,6 +33,7 @@ def test_frontier_v4_list_is_explicit_opt_in(monkeypatch, capsys):
         "autonomy_causal_gateway_001",
         "autonomy_runtime_investigation_001",
         "tool_use_config_001",
+        "tool_use_branching_001",
     }
 
 
