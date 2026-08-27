@@ -1,330 +1,136 @@
 # AIOS-Bench roadmap
 
-This roadmap is the canonical plan for benchmark evolution. Update it at every completed step. Do not mark a milestone complete until its implementation is integrated, tested, documented where needed, and the touched area has passed a strategic design review.
+This is the canonical benchmark-evolution plan. Update it after every validated step. A milestone is `DONE` only after implementation, tests/CI, documentation where needed, and a strategic review of ownership, complexity, error paths and benchmark semantics.
 
 Status legend: `DONE`, `ACTIVE`, `PLANNED`, `DEFERRED`.
 
 ## Design principles
 
-AIOS-Bench measures agentic systems, not only model prompt quality. Capability correctness remains deterministic and separate from reliability, trajectory efficiency, runtime efficiency, resource cost and robustness. No LLM judge is used for scoring. Generic telemetry may describe behavior, but task-specific claims such as "irrelevant action", "destructive edit", "correct recovery" or "causal understanding" require deterministic task evidence.
+AIOS-Bench measures agentic systems, not only prompt quality. Deterministic capability correctness remains separate from reliability, trajectory behavior, inference/runtime efficiency, hardware cost and robustness. No LLM judge participates in scoring. Generic telemetry may describe actions, but semantic claims such as irrelevant action, destructive edit, causal repair or correct recovery require deterministic task evidence.
 
-The benchmark should remain reproducible, cheap to verify relative to solving, resistant to contamination and benchmark aging, and explicit about run comparability. Historical suites remain frozen scientific artifacts; new semantics require new suite/task revisions rather than silently rewriting old results.
+Historical suites are frozen scientific artifacts. New task/oracle semantics require new revisions. Verification should be substantially cheaper than solving, missing telemetry must remain explicit, and materially different execution profiles must never be silently compared.
 
 ## M0 — Reproducibility and run comparability — DONE
 
-### Why
-
-A numerical comparison is meaningless when runs differ in reasoning mode, context, sampling, harness, suite revision, model identity or relevant runtime configuration.
-
-### What
-
-- Persist canonical execution manifests and semantic fingerprints.
-- Record suite/task revisions, model/provider identity, inference configuration and environment identity.
-- Fail closed or warn when strict comparison requirements are not met.
-- Keep historical suite revisions identifiable.
-
-### Completion criteria
-
-- Run metadata is sufficient to determine whether two observations are scientifically comparable.
-- Comparison/reporting never silently treats materially different execution profiles as identical.
+Canonical manifests, semantic fingerprints, suite/task revisions, model/runtime identity and comparability checks are persisted so materially different runs are not silently treated as equivalent.
 
 ## M1 — Resource telemetry foundation — DONE
 
-### Why
-
-Local-agent usefulness depends on both capability and hardware cost. Client-side harness cost and inference-server/model cost are different quantities and must not be conflated.
-
-### What
-
-- Sample AIOS-Bench/harness process-tree CPU and RAM.
-- On Linux DRM, attribute GPU/VRAM to the process tree when available.
-- Keep client host-total GPU/VRAM separate from process-attributed values.
-- Add optional read-only inference-server resource agent without SSH or arbitrary command execution.
-- Record server process-tree RAM/VRAM/GPU separately from llama.cpp token/throughput metrics.
-- Preserve baseline, mean, p95, peak and peak delta where meaningful.
-- Make resource telemetry fail-open and score-neutral.
-
-### Completion criteria
-
-- Missing/unsupported telemetry is represented as unavailable, never fake zero.
-- Telemetry failure cannot turn an otherwise valid benchmark task into a task failure.
-- Client and server cost remain distinguishable even when both run on the same machine/GPU.
+Client/harness and inference-server/model costs are measured separately. Client process-tree CPU/RAM and Linux DRM GPU/VRAM attribution are separated from host totals. An optional read-only server resource agent provides server process-tree and host telemetry. Sampling is fail-open and score-neutral.
 
 ## M2 — Resource reporting — DONE
 
-### Why
-
-Raw telemetry is not useful if users must inspect task JSON manually. Reporting must expose cost without collapsing it into capability score.
-
-### What
-
-- Aggregate resource telemetry by harness/model/execution profile.
-- Report mean task peak and worst observed peak rather than summing RAM/VRAM across tasks.
-- Expose separate dashboard sections for client/harness cost and inference-server/model cost.
-- Keep inference throughput and resource consumption as separate dimensions.
-- Publish the same canonical `resource_efficiency` aggregation in `summary.json`; the dashboard consumes that derived data rather than maintaining a second resource-reporting path.
-
-### Completion criteria
-
-- `summary.json` and dashboard expose resource-efficiency data.
-- Capability score is unchanged.
+`summary.json` and dashboard expose canonical `resource_efficiency`, including mean task peaks and worst observed peaks rather than nonsensical sums across tasks. Capability and resource cost remain separate dimensions.
 
 ## M3 — Agentic trajectory telemetry — DONE
 
-### Why
-
-Two agents can both pass a task while one reaches the solution directly and the other loops, retries, makes tool errors or recovers from self-inflicted mistakes. Pass/fail alone hides operational quality.
-
-### Implemented
-
-- Persist assistant turns, tool calls, unique tools, structured tool errors, retries, file reads/writes, subagent starts, refusals and consecutive repeated tool-call patterns.
-- Derive generic behavior only from canonical non-inferred events when used for cross-harness comparison.
-- Publish `agent_behavior_efficiency` in `summary.json` and dashboard, score-neutral.
-- Preserve adapter timestamps and structural identifiers when supplied.
-- Persist explicit event `sequence` so replay order never depends on timestamps.
-- Keep missing/partial structured telemetry explicit rather than inventing zero activity.
-
-### Validation and strategic review
-
-- CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
-- Reporting ownership is separated: behavioral derivation/aggregation, canonical report generation and rendering remain distinct.
-- Test-only `aios_bench` compatibility namespace collisions are handled in tests, not with production workarounds.
+Canonical structured trajectory events expose turns, tool calls/diversity/errors, retries, file activity, subagents, refusals and consecutive repetition where harness telemetry supports them. Event `sequence` makes replay ordering explicit. `agent_behavior_efficiency` is published in summary/dashboard and remains score-neutral.
 
 ## M4 — Deterministic behavioral oracle framework — DONE
 
+Task-owned `behavioral_acceptance` supports `required_state`, `forbidden_state`, `preserved_state`, `decoy_untouched` and `required_evidence`. Paths are workspace-confined, preservation baselines are benchmark-owned SHA-256 snapshots captured after materialization and before execution, and results are persisted independently as `behavioral_evaluation`. `coverage_set` was intentionally deferred to M7.
+
+## M5 — Adversarial tool selection and branching — DONE
+
 ### Why
 
-Generic telemetry can count actions but cannot legitimately decide whether an action was correct. Strong task-specific verification turns trajectories into scientific evidence without an LLM judge.
+MCP-Atlas shows that realistic tool use requires choosing among plausible alternatives, passing correct parameters and adapting later actions to runtime observations. Giving an agent only the necessary tool mostly measures execution, not selection.
 
 ### Implemented
 
-- Added task-owned `behavioral_acceptance`, deliberately separate from capability `acceptance`.
-- Added deterministic primitives `required_state`, `forbidden_state`, `preserved_state`, `decoy_untouched` and `required_evidence`.
-- Restrict state checks to safe relative workspace paths; reject path traversal and ambiguous predicates at catalog load.
-- Capture preservation/decoy baselines after benchmark materialization and before agent execution.
-- Compare preserved files by benchmark-owned existence/type/SHA-256 snapshots rather than mutable agent-provided metadata.
-- Match required structured evidence by event type, optional source and nested deterministic data subset.
-- Persist results as independent `behavioral_evaluation` and keep them score-neutral.
-- Include behavioral catalog definitions and evaluator source automatically in suite revision fingerprints.
-
-`coverage_set` remains intentionally deferred to M7; higher-level semantics should not leak into the base oracle module.
+- Added parametric `tool_branching` and Frontier v4 task `tool_use_branching_001`.
+- Materialize benchmark-owned tools for live case inspection, billing/access branch lookups and 2–5 plausible cache/legacy/metrics/archive/directory distractors.
+- A stateful loopback service makes the correct branch depend on the live inspection result.
+- Branch lookup requires the live case id; incorrect parameters return a deterministic recoverable error.
+- Calling the wrong branch or a non-authoritative distractor contaminates the session, so brute-force fan-out cannot obtain a valid receipt chain.
+- The task prompt identifies differing authority/freshness but does not prescribe the exact command sequence.
+- Successful authoritative calls return deterministic branch-specific receipts; the final artifact must match the exact expected receipt chain.
+- Benchmark-owned tool files and README are hash-protected from mutation.
+- Runtime-service startup is generalized in `ParametricTaskMaterializer`, bounded to five seconds, and all services share deterministic bounded shutdown.
+- Server state transitions are serialized with a lock so concurrent calls cannot race `inspected`/`tainted` state.
+- Catalog, GUI, CLI, same-seed materialization and parametric golden/no-op validation include the new family.
+- During review, a real compatibility-wrapper regression was found: v3/v4 constructors did not forward resource telemetry options supplied by the CLI. Both wrappers now forward `server_resource_url` and `resource_poll_interval`, with direct regression tests.
 
 ### Validation and strategic review
 
-- Unit, catalog and runner integration coverage validates state predicates, preservation, evidence matching, unsafe definitions, serialization and score neutrality.
-- Capability PASS can remain 100/100 while an independent behavioral preservation oracle reports FAIL.
-- CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
-
-## M5 — Adversarial tool selection and branching — ACTIVE
-
-### Why
-
-MCP-Atlas demonstrates that realistic tool use requires selecting among plausible distractors, parameterizing calls correctly and adapting future steps to returned state. A benchmark that exposes only the necessary tool mainly tests execution, not tool selection.
-
-### What
-
-- Add task families with relevant and plausible irrelevant tools.
-- Include deterministic branching based on runtime observations.
-- Record wrong-tool calls, parameter failures, premature stopping and recovery only where task semantics make them deterministically identifiable.
-- Vary tool topology across filesystem, shell, structured data/API, search/docs and development tooling.
-- Prefer benchmark-owned audited tool fixtures over harness-specific log parsing so observations remain comparable across harnesses.
-
-### Completion criteria
-
-- At least one family requires correct tool discovery and conditional branching.
-- Distractors are realistic but do not create ambiguity in the ground truth.
-- Tool-use evidence is deterministically attributable without an LLM judge or harness-specific textual heuristics.
+- Tests cover deterministic generation, authoritative happy path, distractor contamination, wrong-branch rejection, wrong-id rejection and recovery from a corrected parameter.
+- No harness-specific textual parser or LLM judge determines which tool was correct; task semantics live in benchmark-owned fixtures and verifier logic.
+- Semantic ownership remains clear: the parametric family owns task truth, the loopback service owns mutable session state, the materializer owns subprocess lifecycle, and the checker owns final deterministic verification.
+- Receipts follow the current Frontier workspace trust model. They are not claimed to be cryptographic anti-cheat against an agent intentionally escaping the workspace and reading benchmark internals; stronger contamination/anti-cheat hardening remains M12.
+- Final CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
 
 ## M6 — Causal state, persistence and belief revision — DONE
 
-### Why
-
-ARC-AGI-3 highlights adaptive intelligence: observe, hypothesize, experiment, update a world model and revise beliefs when evidence contradicts expectations. In software systems the analogue is understanding source-of-truth, generated state, runtime state, caches and persistence.
-
 ### Implemented
 
-- Added the parametric `causal_gateway` pilot with source-of-truth `gateway/template.json`, generated `gateway/runtime.json`, current diagnostic evidence, historical decoys and protected unrelated state.
-- The grader reconstructs runtime state from the source template itself before health verification; editing only the generated runtime therefore cannot survive verification.
-- Protected healthcheck/tooling, registry, historical decoys and unrelated retention state prevent trivial grader tampering or collateral changes.
-- Added deterministic negative and golden preflight witnesses for the causal family.
-- Added the parametric `runtime_investigation` pilot for active investigation and belief revision.
-- Static deployment documentation deterministically names a plausible but stale lane, while the actual live lane exists only behind a benchmark-owned read-only loopback runtime probe.
-- The task must save the exact runtime observation, repair only the observed live lane and preserve every inactive lane and historical document.
-- A correct-looking route edit without runtime evidence fails; modifying inactive lanes fails even with valid evidence.
-- Added a small benchmark-owned `GET /state` probe server with no arbitrary command execution or external network access.
-- Dynamic runtime fixtures are owned by `ParametricTaskMaterializer`; startup is bounded, shutdown uses bounded terminate/wait/kill, and `FrontierRunner.run_task()` guarantees materializer cleanup with `finally` even on task failure.
-- Ephemeral `runtime/endpoint.json` is excluded from same-seed workspace byte comparisons; seeded semantic state and oracle digests remain deterministic.
-- Frontier v4 parametric validation now exercises four families: expense report, config traversal, causal gateway and runtime investigation.
+- `causal_gateway`: source template -> generated runtime -> health behavior. The verifier reconstructs runtime from the source-of-truth so symptom-only runtime edits fail, while unrelated state/tooling/decoys are protected.
+- `runtime_investigation`: static documentation contains a deterministic stale hypothesis while the actual live lane exists only behind a benchmark-owned read-only loopback probe. Exact probe evidence is required and only the observed live lane may be changed.
+- Dynamic runtime fixtures have bounded startup/shutdown and are always cleaned in `FrontierRunner.run_task()` via `finally`, including exception paths.
 
-### Completion criteria
+Final CI was observed green on Python 3.12, 3.13 and 3.14.
 
-- Symptom patching vs causal repair: satisfied by `autonomy_causal_gateway_001`.
-- Runtime experimentation: satisfied by `autonomy_runtime_investigation_001`.
-- Contradictory evidence cannot be bypassed by a one-step static edit: exact live probe evidence and active-lane-only mutation are verified deterministically.
-
-### Validation and strategic review
-
-- Direct tests cover deterministic generation, persistent source repair, rejection of runtime-only repair, protected-state tampering, stale-vs-live contradiction, required probe evidence, inactive-lane preservation and runtime process cleanup.
-- A regression test verifies probe cleanup even when task execution raises after materialization.
-- The first version of that regression test exposed the historical `aios_bench`/`core.benchmark` test namespace alias; the test was corrected to patch the module that actually owns `run_task`, with no production workaround.
-- Final CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
-- Runtime fixture lifecycle complexity is contained in the materializer rather than spread through task runners or graders.
-- The live probe is intentionally an evaluation fixture, not a security boundary. Public-benchmark contamination/derivation risks remain a documented concern for M12 rather than being misrepresented as cryptographic anti-cheat.
-
-## M7 — Coverage/completeness tasks — PLANNED
+## M7 — Coverage/completeness tasks — ACTIVE
 
 ### Why
 
-WideSearch shows that finding one correct item and finding all correct items are different abilities. Coding agents often fix the first call site while missing the rest.
+WideSearch highlights that finding one correct item and finding the complete set are distinct capabilities. Agents can produce locally correct fixes while silently missing affected call sites, configurations or records.
 
 ### What
 
-- Add tasks requiring discovery/modification of a complete finite set.
-- Score atomic precision, recall and completion deterministically.
-- Include realistic false-positive opportunities so brute-force modification is not rewarded.
-
-Candidate domains:
-
-- migrate all deprecated configuration keys;
-- update every affected call site;
-- identify all vulnerable instances;
-- reconcile all entries matching a rule.
+- Add a dedicated coverage evaluation layer rather than overloading generic behavioral predicates.
+- Generate a hidden finite ground-truth target set and realistic false-positive opportunities.
+- Persist deterministic true-positive, false-positive, false-negative, precision, recall and completion metrics.
+- Keep strict capability correctness: full completion remains required for task PASS; partial coverage is descriptive continuous evidence, not a weakened pass threshold.
+- Build one Frontier v4 pilot requiring migration of every affected active artifact while preserving plausible but out-of-scope files.
 
 ### Completion criteria
 
-- Ground-truth sets are generated/hidden from the agent and cheaply verifiable.
-- Partial completion produces informative continuous metrics without weakening correctness semantics.
+- Ground truth is benchmark-owned and outside the agent workspace.
+- A partial solution produces useful precision/recall metrics while still failing strict capability correctness.
+- Brute-force modification of plausible false positives is penalized deterministically.
+- Coverage metrics are persisted in the canonical task evaluation/result path without introducing a second scoring system.
 
 ## M8 — Long-horizon pristine verification — PLANNED
 
-### Why
-
-DeepSWE demonstrates that large multi-file work exposes consistency failures that short tasks cannot, and that verification is stronger when executed outside the mutable agent environment.
-
-### What
-
-- Add a small number of substantial multi-file/multi-module tasks.
-- Extract the agent artifact/patch and verify it in a pristine benchmark-controlled environment.
-- Include regression/preservation checks, not only target-feature tests.
-- Track long-output/reasoning loops, context pressure and recovery through trajectory telemetry.
-
-### Completion criteria
-
-- At least one task requires meaningful coordinated edits across multiple modules.
-- The final verifier runs from pristine benchmark-owned state and cannot be modified by the agent.
+Add a small number of substantial multi-file/multi-module tasks. Extract the agent artifact/patch and verify it from pristine benchmark-controlled state with target and preservation/regression checks. At least one task must require coordinated edits across multiple modules.
 
 ## M9 — Greenfield repository construction — PLANNED
 
-### Why
-
-NL2Repo tests architectural completeness rather than local patching. An agent may be strong at repairs while weak at designing a coherent application from a specification.
-
-### What
-
-- Add a very small greenfield family starting from an empty/minimal workspace.
-- Use large deterministic hidden test suites across API, persistence, validation and integration behavior.
-- Report continuous test coverage alongside strict completion criteria.
-
-### Completion criteria
-
-- At least one task requires architecture, implementation and integration rather than editing an existing scaffold.
-- Verification remains deterministic and reference-solution independent.
+Add a very small family starting from an empty/minimal repository, with deterministic hidden tests across architecture, API, persistence, validation and integration. Continuous hidden-test coverage may be reported, but completion remains deterministic and reference-solution independent.
 
 ## M10 — Reference trajectory and adaptive efficiency — PLANNED
 
-### Why
-
-ARC-AGI-3's action-efficiency framing suggests comparing successful behavior to a meaningful reference. Raw tool-call counts alone are not quality metrics because additional verification can be beneficial.
-
-### What
-
-- For selected tasks, curate a reference-efficient trajectory or reference milestone path.
-- Compare agent effort to the reference descriptively, never as correctness replacement.
-- Prefer semantically meaningful milestones/actions over a naive minimum command count.
-- Explore metrics for exploration efficiency and steps-to-evidence.
-
-### Completion criteria
-
-- Reference trajectories are clearly labeled as efficiency baselines, not mandatory solution paths.
-- An agent is never penalized for legitimate extra verification merely because it uses more commands.
+For selected tasks, curate semantic reference milestones/efficient trajectories. Compare successful agent effort descriptively without turning raw command count into correctness or penalizing legitimate extra verification.
 
 ## M11 — Progressive environments and within-run learning — DEFERRED
 
-### Why
+Later evaluate reusable skill acquisition across related levels while explicitly separating persistent agent memory from workspace leakage. Resume only after trajectory, causal-state and cross-task ownership are mature.
 
-ARC-AGI-3 measures whether an agent acquires reusable skills across related levels. This is scientifically valuable but changes benchmark semantics substantially and should not be introduced before trajectory/replay and causal-state foundations are mature.
+## M12 — Task QA, aging, contamination and anti-cheat — PLANNED
 
-### What
-
-- Design small environment families whose later levels reuse and perturb earlier rules.
-- Measure whether exploration cost decreases as the agent learns.
-- Distinguish persistent agent memory from accidental workspace leakage.
-
-### Exit from deferral
-
-Proceed only after M3, M4 and M6 are stable and the ownership of cross-task state is explicit.
-
-## M12 — Task QA, aging and contamination management — PLANNED
-
-### Why
-
-Terminal-Bench 2.1, SWE-bench Verified and Frontier-Bench show that benchmark tasks themselves age, contain oracle defects and become contaminated or over-optimized. A benchmark is not finished when its first test suite passes.
-
-### What
-
-For new task/revision promotion, require an auditable lifecycle:
-
-1. static validation;
-2. reference solve;
-3. no-op validation;
-4. cheat/adversarial validation;
-5. preservation/regression validation;
-6. multi-agent pilot runs;
-7. ambiguity/oracle review;
-8. stable promotion.
-
-Track metadata such as task revision, oracle revision, last audit date, known issues and exposure/contamination risk where practical.
-
-Use empirical pass distributions to flag saturated tasks, useful frontier tasks and extreme/broken-candidate tasks. A 0% pass rate is not automatically desirable; it may indicate an impossible or defective task.
-
-### Completion criteria
-
-- Task promotion/revision rules are documented and enforced by tooling where practical.
-- Historical results remain tied to the exact task/oracle semantics that produced them.
+Formalize task promotion/revision lifecycle: static validation, reference solve, no-op, cheat/adversarial checks, preservation/regression, multi-agent pilots, ambiguity/oracle review and stable promotion. Track revisions, audits, known issues, exposure/contamination risk and empirical saturation. This milestone also owns stronger isolation/anti-cheat work beyond the current workspace trust model.
 
 ## M13 — Multi-dimensional comparison UX — PLANNED
 
-### Why
-
-A single composite score hides trade-offs. Users need to compare capability, reliability, trajectory quality, inference speed and hardware cost independently.
-
-### What
-
-Expose head-to-head views for deterministic capability, reliability/repeats and confidence intervals, failure taxonomy, trajectory behavior, prompt/decode efficiency, client resource cost, server/model resource cost and robustness/pressure response. Prefer Pareto-style interpretation to arbitrary weighted composite scores.
-
-### Completion criteria
-
-- Dashboard/head-to-head never implies that a faster or smaller model is more capable solely because of efficiency.
-- Comparability warnings remain visible when profiles differ materially.
+Expose deterministic capability, reliability/confidence intervals, failure taxonomy, trajectory behavior, inference speed, client resource cost, server/model resource cost and robustness/pressure response side-by-side. Prefer Pareto-style interpretation over arbitrary composite weighting and keep comparability warnings visible.
 
 ## Current execution order
 
-1. Build and validate one M5 adversarial tool-selection/branching pilot family.
-2. Add M7 coverage scoring.
-3. Add M8 pristine long-horizon verification.
-4. Add M9 greenfield task.
-5. Add M10 reference-trajectory efficiency once real trajectory data exists.
-6. Formalize M12 QA/aging before expanding the catalog aggressively.
-7. Expand M13 comparison UX as each new dimension becomes stable.
+1. Complete M7 coverage/completeness scoring and one pilot task.
+2. Add M8 pristine long-horizon verification.
+3. Add M9 greenfield construction.
+4. Add M10 reference-trajectory efficiency once real trajectory data exists.
+5. Formalize M12 QA/aging/contamination before aggressive catalog expansion.
+6. Expand M13 UX as each dimension stabilizes.
 
-M11 progressive learning remains deferred until the underlying state and replay semantics are mature.
+M11 remains deferred.
 
 ## Milestone update protocol
 
 At every completed step:
 
-- update the relevant status and checklist in this file;
-- record any architectural deviation or justified deferral;
+- update status and implementation notes here;
+- record architectural deviations and justified deferrals;
 - run compile, Ruff and pytest plus relevant native/offscreen checks;
-- perform a milestone strategic review for ownership, duplication, hidden dependencies, change amplification, error paths and benchmark-semantic drift;
-- do not mark work `DONE` based only on implementation without observed validation.
+- perform a strategic review for ownership, duplication, hidden dependencies, change amplification, races, shutdown/error paths and semantic drift;
+- never mark work `DONE` based only on implementation without observed validation.
