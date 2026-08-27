@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import hmac
 import hashlib
+import hmac
 import json
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -13,12 +14,17 @@ class ToolState:
         self.payload = payload
         self.inspected = False
         self.tainted = False
+        self._lock = threading.Lock()
 
     def _receipt(self, tool: str, value: str) -> str:
         raw = f"{self.payload['observation_id']}:{tool}:{value}".encode()
         return hmac.new(str(self.payload['secret']).encode(), raw, hashlib.sha256).hexdigest()
 
     def call(self, tool: str, argument: str) -> tuple[int, dict[str, Any]]:
+        with self._lock:
+            return self._call_locked(tool, argument)
+
+    def _call_locked(self, tool: str, argument: str) -> tuple[int, dict[str, Any]]:
         distractors = set(self.payload.get("distractor_tools") or [])
         if tool in distractors:
             self.tainted = True
