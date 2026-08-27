@@ -42,11 +42,18 @@ class Trajectory:
     evaluation_score: float | None = None
 
     def apply_events(self, events: list[dict[str, Any]]) -> None:
-        self.events = events
-        self.telemetry_available = bool(events)
+        # Persist observation order explicitly so replay never has to infer it
+        # from timestamps, which may collide or be absent for adapter-native
+        # records. Keep adapter-provided timestamps and identifiers untouched.
+        self.events = []
+        for sequence, event in enumerate(events, 1):
+            normalized = dict(event)
+            normalized.setdefault("sequence", sequence)
+            self.events.append(normalized)
+        self.telemetry_available = bool(self.events)
         counts: dict[str, int] = {}
         input_tokens = output_tokens = 0
-        for event in events:
+        for event in self.events:
             kind = event.get("type", "unknown")
             counts[kind] = counts.get(kind, 0) + 1
             data = event.get("data") or {}
@@ -58,7 +65,7 @@ class Trajectory:
         self.tool_calls = counts.get("tool_call", 0)
         reliable_errors = sum(
             event.get("type") == "error" and not (event.get("data") or {}).get("inferred", False)
-            for event in events
+            for event in self.events
         )
         self.errors = max(self.errors, reliable_errors)
         self.retries = counts.get("retry", 0)
