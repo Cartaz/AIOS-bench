@@ -128,22 +128,45 @@ Large coordinated changes expose consistency failures that short single-artifact
 - The verifier still follows the project-wide workspace threat model rather than claiming hostile-code sandboxing; stronger isolation belongs to M12.
 - Final CI observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
 
-## M9 — Greenfield repository construction — ACTIVE
+## M9 — Greenfield repository construction — DONE
 
-Build a small family starting from an empty/minimal repository, with deterministic hidden tests across architecture, API, persistence, validation and integration. Continuous hidden-test coverage may be reported, but completion remains deterministic and reference-solution independent.
+### Implemented
 
-First pilot design goals:
+- Extended `pristine.py` with a reusable submitted-tree boundary for files that do not exist in a benchmark baseline.
+- `collect_submitted_tree()` accepts only a declared relative root, never follows symlinks, ignores operational cache directories and enforces configurable file-count and byte limits.
+- `pristine_submitted_tree()` copies only that manifest into a new temporary verifier directory; files elsewhere in the mutable workspace are absent by construction.
+- Added parametric `greenfield_registry` and Frontier v4 `greenfield_registry_001`.
+- The generated workspace contains only a benchmark-owned public specification; there is no starter implementation under `submission/`.
+- The agent may choose any internal module layout as long as the submitted tree exposes the documented `registry_app.Registry` public contract.
+- Hidden deterministic verification covers import/API shape, Unicode-aware name normalization, invalid input, duplicate handling, sorted listing, deletion, persistence across new instances and malformed persisted storage.
+- Verification runs with `python -I` in the pristine directory and explicitly adds only that reconstructed directory to the import path.
+- The benchmark golden witness uses a small two-file implementation, but verifier success never compares source text, module count or internal architecture against it.
+- Seeded variants change public name-length constraints and example storage names while preserving the task family contract.
+- Rich evaluation persists descriptive submitted-file count/bytes and verifier status without adding a new scoring system.
+- Frontier v4 discovery/preflight now includes eight parametric tasks/families.
 
-- provide only a specification and minimal project boundary, not a solution scaffold;
-- allow the agent to create a bounded submitted source tree rather than limiting verification to pre-existing artifact paths;
-- reconstruct that submitted tree outside the mutable workspace before verification;
-- verify public API, persistence behavior, malformed-input handling and cross-module integration through hidden deterministic tests;
-- avoid requiring one reference architecture: verification should depend on externally observable contracts rather than exact file contents or a golden source implementation;
-- keep submitted-tree extraction generic so future greenfield tasks can reuse it without teaching harness adapters about repository structure.
+### Validation and strategic review
 
-## M10 — Reference trajectory and adaptive efficiency — PLANNED
+- Tests prove that the empty baseline fails and the benchmark-owned witness passes from the copied submission alone.
+- Files placed outside `submission/` cannot satisfy verification, and modification of the benchmark specification is rejected before executing submitted code.
+- Submitted-tree tests cover cache exclusion, out-of-tree exclusion, symlink rejection and both file-count and total-byte bounds.
+- Verification is behavior/reference-solution independent: only the public contract is constrained; internal implementation choices remain hidden behind the submitted package interface.
+- Ownership remains layered: generic extraction/reconstruction in `pristine.py`, domain specification/truth in `greenfield_registry.py`, golden satisfiability in `parametric_goldens.py`, and normal deterministic persistence/scoring in the existing evaluator path.
+- No harness adapter, runner or GUI special case was added for greenfield semantics.
+- The verifier is isolated from ordinary Python environment configuration but is still not an OS-level hostile-code sandbox; stronger execution isolation remains explicitly owned by M12.
+- Full CI was observed green on Python 3.12, 3.13 and 3.14 for the implementation/test checkpoint; final documentation-state CI is required before this status is considered release-ready.
+
+## M10 — Reference trajectory and adaptive efficiency — ACTIVE
 
 For selected tasks, curate semantic reference milestones/efficient trajectories. Compare successful agent effort descriptively without turning raw command count into correctness or penalizing legitimate extra verification.
+
+Design goals:
+
+- define task-owned semantic milestones rather than brittle exact command sequences;
+- measure successful-agent effort only when trajectory telemetry is sufficiently reliable;
+- compare milestone order/redundancy and effort descriptively, never as capability correctness;
+- tolerate legitimate extra inspection/verification and avoid rewarding unsafe shortcutting;
+- keep reference trajectory data outside mutable agent workspaces and preserve suite fingerprinting/comparability.
 
 ## M11 — Progressive environments and within-run learning — DEFERRED
 
@@ -159,10 +182,9 @@ Expose deterministic capability, reliability/confidence intervals, failure taxon
 
 ## Current execution order
 
-1. Build and validate one M9 greenfield-construction pilot.
-2. Add M10 reference-trajectory efficiency once real trajectory data exists.
-3. Formalize M12 QA/aging/contamination before aggressive catalog expansion.
-4. Expand M13 UX as each dimension stabilizes.
+1. Build M10 semantic reference-trajectory efficiency on selected tasks.
+2. Formalize M12 QA/aging/contamination before aggressive catalog expansion.
+3. Expand M13 UX as each dimension stabilizes.
 
 M11 remains deferred.
 
