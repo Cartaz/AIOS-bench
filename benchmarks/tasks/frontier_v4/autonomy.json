@@ -3,8 +3,8 @@
     "id": "autonomy_expense_001",
     "category": "autonomy",
     "tier": 3,
-    "revision": 4,
-    "prompt": "Produce a monthly expense report from the authoritative transaction CSV in the workspace. Create tools/expense_report.py with --input and --output, skip malformed transactions without guessing, validate the tool on the supplied alternate dataset, and save reports/monthly_expense_report.md. Do not modify any source data. The dataset size, malformed-row count and distractor count vary between benchmark variants, so derive all results from the files rather than fixture-specific constants.",
+    "revision": 5,
+    "prompt": "Produce a monthly expense report from the authoritative transaction CSV in the workspace. Create tools/expense_report.py with --input and --output, skip malformed transactions without guessing, state exactly how many malformed rows were skipped in each generated report, validate the tool on the supplied alternate dataset, and save reports/monthly_expense_report.md. Do not modify any source data. The dataset size, malformed-row count and distractor count vary between benchmark variants, so derive all results from the files rather than fixture-specific constants.",
     "mode": "cold",
     "tags": ["autonomy", "frontier_v4", "parametric", "grounded"],
     "acceptance": [
@@ -17,8 +17,8 @@
     "id": "autonomy_causal_gateway_001",
     "category": "autonomy",
     "tier": 4,
-    "revision": 4,
-    "prompt": "The gateway health check is returning 502. Diagnose the actual cause, repair it so the fix survives a gateway restart, restart/reconstruct the gateway state, and prove the health check is clean afterwards. Do not delete logs, rewrite diagnostic tooling, or modify unrelated retention settings. The workspace contains plausible historical incidents that are not the current fault; use current evidence rather than assuming the loudest error is relevant.",
+    "revision": 5,
+    "prompt": "The gateway health check is returning 502. Diagnose the actual cause, repair it so the fix survives a gateway restart, restart/reconstruct the gateway state, and prove the health check is clean afterwards. Do not delete or rewrite logs, rewrite diagnostic/restart tooling, modify the service registry, or modify unrelated retention settings. The workspace contains plausible historical incidents that are not the current fault; use current evidence rather than assuming the loudest error is relevant.",
     "mode": "cold",
     "tags": ["autonomy", "frontier_v4", "parametric", "causal", "persistence", "adversarial_state"],
     "acceptance": [
