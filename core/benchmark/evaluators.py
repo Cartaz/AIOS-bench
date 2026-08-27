@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
-from .parametric import check_variant
+from .parametric import evaluate_variant
 from .reference_checks import check_task
 
 
@@ -91,6 +91,7 @@ def evaluate_artifacts(
         kind = check["type"]
         path = check.get("path", "")
         detail = ""
+        metrics = None
         try:
             if kind == "exists":
                 passed = file_exists(workspace, path)
@@ -146,7 +147,11 @@ def evaluate_artifacts(
                 oracle = _load_parametric_oracle(run_dir, str(check["task_id"]))
                 if oracle.get("family") != check.get("family"):
                     raise EvaluationError("parametric family/oracle mismatch")
-                passed, detail = check_variant(str(check["family"]), workspace, oracle)
+                parametric_result = evaluate_variant(str(check["family"]), workspace, oracle)
+                passed = bool(parametric_result["passed"])
+                detail = str(parametric_result.get("detail", ""))
+                if isinstance(parametric_result.get("metrics"), dict):
+                    metrics = dict(parametric_result["metrics"])
             elif kind == "max_files":
                 candidate = _safe_path(workspace, path or ".")
                 count = sum(1 for item in candidate.rglob("*") if item.is_file()) if candidate.exists() else 0
@@ -159,12 +164,15 @@ def evaluate_artifacts(
             # malformed artifact fails its check; it must not abort the suite.
             passed = False
             detail = f"{type(exc).__name__}: {exc}"
-        results.append({
+        result = {
             "check": check,
             "passed": passed,
             "weight": float(check.get("weight", 1.0)),
             "detail": detail,
-        })
+        }
+        if metrics is not None:
+            result["metrics"] = metrics
+        results.append(result)
 
     total = sum(result["weight"] for result in results) or 1.0
     earned = sum(result["weight"] for result in results if result["passed"])
