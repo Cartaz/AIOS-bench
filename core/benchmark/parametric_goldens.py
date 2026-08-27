@@ -66,6 +66,18 @@ def _tool_branching_golden(workspace: Path, oracle: Mapping[str, Any]) -> list[d
     return []
 
 
+def _coverage_migration_golden(workspace: Path, oracle: Mapping[str, Any]) -> list[dict[str, Any]]:
+    expected = oracle.get("expected_targets")
+    if not isinstance(expected, Mapping):
+        raise ValueError("invalid coverage migration oracle")
+    for relative, payload in expected.items():
+        if not isinstance(payload, Mapping):
+            raise ValueError("invalid coverage migration target")
+        path = workspace / str(relative)
+        path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return []
+
+
 def materialize_parametric_golden(
     family: str,
     workspace: Path,
@@ -76,6 +88,7 @@ def materialize_parametric_golden(
         "causal_gateway": _causal_gateway_golden,
         "runtime_investigation": _runtime_investigation_golden,
         "tool_branching": _tool_branching_golden,
+        "coverage_migration": _coverage_migration_golden,
     }
     materializer = registry.get(family)
     if materializer is not None:
