@@ -62,9 +62,8 @@ def reference_trajectory_groups(
             "reference_trajectory_completion_rate": complete / len(items) if items else 0.0,
             "mean_milestone_completion": _mean(items, "milestone_completion"),
             "mean_events_to_completion": _mean(items, "events_to_completion"),
-            "mean_reference_events_to_completion": _mean(items, "reference_events_to_completion"),
-            "mean_effort_multiple_of_reference": _mean(items, "effort_multiple_of_reference"),
             "mean_post_completion_events": _mean(items, "post_completion_events"),
+            "calibrated_reference_effort_available": False,
             "scope": "successful_reliable_canonical_events",
             "affects_score": False,
         })
