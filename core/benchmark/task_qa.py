@@ -9,7 +9,7 @@ from typing import Any, Iterable, Mapping
 
 
 QA_SCHEMA = "aios-bench/task-qa/v4"
-QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v5"
+QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v6"
 QA_REVIEW_INTERVAL_DAYS = 180
 LIFECYCLES = frozenset({"draft", "pilot", "stable", "retired"})
 REVIEW_STATUSES = frozenset({"pending", "passed", "failed", "not_applicable"})
@@ -38,6 +38,7 @@ AUTOMATED_CHECK_KEYS = (
     "different_seed_changes_variant",
     "negative_baseline_fails",
     "golden_witness_passes",
+    "adversarial_witness_rejected",
 )
 _SAFE_ID = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -247,7 +248,7 @@ def validate_task_qa_records(
         if lifecycle == "stable" and known_issues:
             record_errors.append("stable lifecycle requires no known issues")
 
-        normalized_record = {
+        normalized.append({
             "task_id": task_id,
             "task_revision": revision,
             "task_semantic_digest": semantic_digest,
@@ -258,8 +259,7 @@ def validate_task_qa_records(
             "audited_at": audited_at,
             "manual_reviews_ready": manual_ready,
             "pending_reviews": pending,
-        }
-        normalized.append(normalized_record)
+        })
         for error in record_errors:
             errors.append({"task_id": task_id or None, "error": error})
 
@@ -299,6 +299,7 @@ def _automated_evidence_by_task(validation: Mapping[str, Any]) -> dict[str, dict
                 "different_seed_changes_variant": _status(item.get("different_seed_changes_variant")),
                 "negative_baseline_fails": _status(item.get("untouched_variant_fails")),
                 "golden_witness_passes": _status(item.get("golden_variant_passes")),
+                "adversarial_witness_rejected": _status(item.get("adversarial_witness_rejected")),
             }
         else:
             checks = {
@@ -306,6 +307,7 @@ def _automated_evidence_by_task(validation: Mapping[str, Any]) -> dict[str, dict
                 "different_seed_changes_variant": "not_applicable",
                 "negative_baseline_fails": _status(item.get("untouched_fixture_fails")),
                 "golden_witness_passes": _status(item.get("golden_solution_passes")),
+                "adversarial_witness_rejected": "not_applicable",
             }
         missing = [key for key in AUTOMATED_CHECK_KEYS if checks[key] == "missing"]
         failed = [key for key in AUTOMATED_CHECK_KEYS if checks[key] == "failed"]
@@ -385,12 +387,10 @@ def build_task_qa_report(
         }
         rows.append(row)
         if record["lifecycle"] == "stable" and not promotion_ready:
-            stable_contract_errors.append(
-                {
-                    "task_id": task_id,
-                    "error": "stable task does not satisfy current automated/manual/aging promotion prerequisites",
-                }
-            )
+            stable_contract_errors.append({
+                "task_id": task_id,
+                "error": "stable task does not satisfy current automated/manual/aging promotion prerequisites",
+            })
     risk_counts = {
         risk: sum(row["contamination_risk"] == risk for row in rows)
         for risk in ("low", "medium", "high", "unknown")
