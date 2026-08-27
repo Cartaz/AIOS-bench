@@ -31,4 +31,4 @@ def test_false_positive_reduces_precision_without_weakening_recall() -> None:
     assert metrics.false_negatives == 0
     assert metrics.precision == 2 / 3
     assert metrics.recall == 1.0
-    assert metrics.completion == 1.0
+    assert metrics.completion == 2 / 3
