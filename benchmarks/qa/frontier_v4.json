@@ -1,0 +1,125 @@
+{
+  "schema": "aios-bench/task-qa/v1",
+  "tasks": [
+    {
+      "task_id": "autonomy_expense_001",
+      "task_revision": 4,
+      "lifecycle": "pilot",
+      "exposure": "public_repository",
+      "known_issues": [],
+      "audited_at": "2026-08-27",
+      "reviews": {
+        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "multi_agent_pilot": {"status": "pending", "evidence": null},
+        "contamination_review": {"status": "pending", "evidence": null},
+        "saturation_review": {"status": "pending", "evidence": null}
+      }
+    },
+    {
+      "task_id": "autonomy_causal_gateway_001",
+      "task_revision": 4,
+      "lifecycle": "pilot",
+      "exposure": "public_repository",
+      "known_issues": [],
+      "audited_at": "2026-08-27",
+      "reviews": {
+        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "multi_agent_pilot": {"status": "pending", "evidence": null},
+        "contamination_review": {"status": "pending", "evidence": null},
+        "saturation_review": {"status": "pending", "evidence": null}
+      }
+    },
+    {
+      "task_id": "autonomy_runtime_investigation_001",
+      "task_revision": 4,
+      "lifecycle": "pilot",
+      "exposure": "public_repository",
+      "known_issues": [],
+      "audited_at": "2026-08-27",
+      "reviews": {
+        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "multi_agent_pilot": {"status": "pending", "evidence": null},
+        "contamination_review": {"status": "pending", "evidence": null},
+        "saturation_review": {"status": "pending", "evidence": null}
+      }
+    },
+    {
+      "task_id": "greenfield_registry_001",
+      "task_revision": 4,
+      "lifecycle": "pilot",
+      "exposure": "public_repository",
+      "known_issues": [],
+      "audited_at": "2026-08-27",
+      "reviews": {
+        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "multi_agent_pilot": {"status": "pending", "evidence": null},
+        "contamination_review": {"status": "pending", "evidence": null},
+        "saturation_review": {"status": "pending", "evidence": null}
+      }
+    },
+    {
+      "task_id": "long_horizon_pristine_001",
+      "task_revision": 4,
+      "lifecycle": "pilot",
+      "exposure": "public_repository",
+      "known_issues": [],
+      "audited_at": "2026-08-27",
+      "reviews": {
+        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "multi_agent_pilot": {"status": "pending", "evidence": null},
+        "contamination_review": {"status": "pending", "evidence": null},
+        "saturation_review": {"status": "pending", "evidence": null}
+      }
+    },
+    {
+      "task_id": "tool_use_config_001",
+      "task_revision": 4,
+      "lifecycle": "pilot",
+      "exposure": "public_repository",
+      "known_issues": [],
+      "audited_at": "2026-08-27",
+      "reviews": {
+        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "multi_agent_pilot": {"status": "pending", "evidence": null},
+        "contamination_review": {"status": "pending", "evidence": null},
+        "saturation_review": {"status": "pending", "evidence": null}
+      }
+    },
+    {
+      "task_id": "tool_use_branching_001",
+      "task_revision": 4,
+      "lifecycle": "pilot",
+      "exposure": "public_repository",
+      "known_issues": [],
+      "audited_at": "2026-08-27",
+      "reviews": {
+        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "multi_agent_pilot": {"status": "pending", "evidence": null},
+        "contamination_review": {"status": "pending", "evidence": null},
+        "saturation_review": {"status": "pending", "evidence": null}
+      }
+    },
+    {
+      "task_id": "tool_use_coverage_001",
+      "task_revision": 4,
+      "lifecycle": "pilot",
+      "exposure": "public_repository",
+      "known_issues": [],
+      "audited_at": "2026-08-27",
+      "reviews": {
+        "ambiguity_oracle_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "multi_agent_pilot": {"status": "pending", "evidence": null},
+        "contamination_review": {"status": "pending", "evidence": null},
+        "saturation_review": {"status": "pending", "evidence": null}
+      }
+    }
+  ]
+}
