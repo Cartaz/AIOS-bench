@@ -33,7 +33,8 @@ def evaluate_set_coverage(
         else 1.0 if not required_set else 0.0
     )
     recall = true_positives / len(required_set) if required_set else 1.0
-    completion = 1.0 if false_positives == 0 and false_negatives == 0 else recall
+    union_size = true_positives + false_positives + false_negatives
+    completion = true_positives / union_size if union_size else 1.0
     return CoverageMetrics(
         true_positives=true_positives,
         false_positives=false_positives,
