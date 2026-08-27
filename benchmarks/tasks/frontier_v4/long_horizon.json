@@ -21,8 +21,7 @@
         {"id": "inspect_existing_contract", "event_types": ["file_read"]},
         {"id": "coordinate_policy_edits", "event_types": ["file_write"]},
         {"id": "verify_regressions", "event_types": ["tool_call"]}
-      ],
-      "reference_events_to_completion": 7
+      ]
     }
   }
 ]
