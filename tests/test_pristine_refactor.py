@@ -73,10 +73,12 @@ def test_pristine_variant_changes_semantically_with_seed(tmp_path: Path) -> None
 
     assert first["variant_digest"] != second["variant_digest"]
     assert (
+        first["express_surcharge"],
         first["priority_surcharge"],
         first["priority_queue"],
         first["priority_code"],
     ) != (
+        second["express_surcharge"],
         second["priority_surcharge"],
         second["priority_queue"],
         second["priority_code"],
