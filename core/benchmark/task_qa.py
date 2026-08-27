@@ -9,7 +9,7 @@ from typing import Any, Iterable, Mapping
 
 
 QA_SCHEMA = "aios-bench/task-qa/v2"
-QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v2"
+QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v3"
 QA_REVIEW_INTERVAL_DAYS = 180
 LIFECYCLES = frozenset({"draft", "pilot", "stable", "retired"})
 REVIEW_STATUSES = frozenset({"pending", "passed", "failed", "not_applicable"})
@@ -21,6 +21,17 @@ REVIEW_KEYS = (
     "saturation_review",
 )
 EXPOSURE_LEVELS = frozenset({"private", "limited", "public_repository"})
+CONTAMINATION_RISK_BY_EXPOSURE = {
+    "private": "low",
+    "limited": "medium",
+    "public_repository": "high",
+}
+AUTOMATED_CHECK_KEYS = (
+    "same_seed_deterministic",
+    "different_seed_changes_variant",
+    "negative_baseline_fails",
+    "golden_witness_passes",
+)
 _SAFE_ID = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -205,8 +216,16 @@ def validate_task_qa_records(
     }
 
 
-def _automated_by_task(validation: Mapping[str, Any]) -> dict[str, bool]:
-    result: dict[str, bool] = {}
+def _status(value: object) -> str:
+    if value is True:
+        return "passed"
+    if value is False:
+        return "failed"
+    return "missing"
+
+
+def _automated_evidence_by_task(validation: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
     observations = validation.get("observations")
     if not isinstance(observations, list):
         return result
@@ -215,20 +234,37 @@ def _automated_by_task(validation: Mapping[str, Any]) -> dict[str, bool]:
             continue
         task_id = str(item["task_id"])
         if "same_seed_deterministic" in item:
-            result[task_id] = all(
-                bool(item.get(field))
-                for field in (
-                    "same_seed_deterministic",
-                    "different_seed_changes_variant",
-                    "untouched_variant_fails",
-                    "golden_variant_passes",
-                )
-            )
+            checks = {
+                "same_seed_deterministic": _status(item.get("same_seed_deterministic")),
+                "different_seed_changes_variant": _status(item.get("different_seed_changes_variant")),
+                "negative_baseline_fails": _status(item.get("untouched_variant_fails")),
+                "golden_witness_passes": _status(item.get("golden_variant_passes")),
+            }
         else:
-            result[task_id] = bool(
-                item.get("untouched_fixture_fails") and item.get("golden_solution_passes")
-            )
+            checks = {
+                "same_seed_deterministic": "not_applicable",
+                "different_seed_changes_variant": "not_applicable",
+                "negative_baseline_fails": _status(item.get("untouched_fixture_fails")),
+                "golden_witness_passes": _status(item.get("golden_solution_passes")),
+            }
+        missing = [key for key in AUTOMATED_CHECK_KEYS if checks[key] == "missing"]
+        failed = [key for key in AUTOMATED_CHECK_KEYS if checks[key] == "failed"]
+        result[task_id] = {
+            "checks": checks,
+            "missing_checks": missing,
+            "failed_checks": failed,
+            "ready": not missing and not failed,
+        }
     return result
+
+
+def _missing_automated_evidence() -> dict[str, Any]:
+    return {
+        "checks": {key: "missing" for key in AUTOMATED_CHECK_KEYS},
+        "missing_checks": list(AUTOMATED_CHECK_KEYS),
+        "failed_checks": [],
+        "ready": False,
+    }
 
 
 def _audit_age(record: Mapping[str, Any], as_of: date) -> dict[str, Any]:
@@ -257,14 +293,19 @@ def build_task_qa_report(
 ) -> dict[str, Any]:
     tasks_list = list(tasks)
     registry = validate_task_qa_records(tasks_list, records)
-    automated = _automated_by_task(automated_validation)
+    automated = _automated_evidence_by_task(automated_validation)
     report_date = as_of or date.today()
     rows: list[dict[str, Any]] = []
     stable_contract_errors: list[dict[str, str]] = []
     for record in registry["records"]:
         task_id = str(record["task_id"])
-        automated_ready = bool(automated.get(task_id, False))
+        evidence = automated.get(task_id, _missing_automated_evidence())
+        automated_ready = bool(evidence["ready"])
         aging = _audit_age(record, report_date)
+        contamination_risk = CONTAMINATION_RISK_BY_EXPOSURE.get(
+            str(record["exposure"]),
+            "unknown",
+        )
         promotion_ready = bool(
             automated_ready
             and record["manual_reviews_ready"]
@@ -275,6 +316,10 @@ def build_task_qa_report(
         row = {
             **record,
             **aging,
+            "contamination_risk": contamination_risk,
+            "automated_checks": dict(evidence["checks"]),
+            "automated_missing_checks": list(evidence["missing_checks"]),
+            "automated_failed_checks": list(evidence["failed_checks"]),
             "automated_validation_ready": automated_ready,
             "promotion_ready": promotion_ready,
         }
@@ -286,6 +331,10 @@ def build_task_qa_report(
                     "error": "stable task does not satisfy current automated/manual/aging promotion prerequisites",
                 }
             )
+    risk_counts = {
+        risk: sum(row["contamination_risk"] == risk for row in rows)
+        for risk in ("low", "medium", "high", "unknown")
+    }
     return {
         "schema": QA_REPORT_SCHEMA,
         "as_of": report_date.isoformat(),
@@ -300,6 +349,7 @@ def build_task_qa_report(
         "all_promotion_ready": bool(rows) and all(row["promotion_ready"] for row in rows),
         "promotion_ready_count": sum(bool(row["promotion_ready"]) for row in rows),
         "maintenance_due_count": sum(bool(row["maintenance_due"]) for row in rows),
+        "contamination_risk_counts": risk_counts,
         "task_count": len(tasks_list),
         "tasks": rows,
         "errors": [*registry["errors"], *stable_contract_errors],
@@ -307,6 +357,8 @@ def build_task_qa_report(
 
 
 __all__ = [
+    "AUTOMATED_CHECK_KEYS",
+    "CONTAMINATION_RISK_BY_EXPOSURE",
     "EXPOSURE_LEVELS",
     "LIFECYCLES",
     "QA_REPORT_SCHEMA",
