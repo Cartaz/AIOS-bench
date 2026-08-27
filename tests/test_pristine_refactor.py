@@ -42,6 +42,21 @@ def test_pristine_refactor_golden_passes_from_reconstructed_artifact(tmp_path: P
     assert {item["path"] for item in result["metrics"]["changed_artifacts"]} == set(oracle["artifact_paths"])
 
 
+def test_three_of_four_policy_modules_is_still_incomplete(tmp_path: Path) -> None:
+    workspace, oracle = _variant(tmp_path)
+    golden = oracle["golden_files"]
+    omitted = "order_service/serializer.py"
+    for relative in oracle["artifact_paths"]:
+        if relative != omitted:
+            (workspace / relative).write_text(golden[relative], encoding="utf-8")
+
+    result = evaluate_pristine_refactor_variant(workspace, oracle)
+
+    assert result["passed"] is False
+    assert result["metrics"]["pristine_verification_passed"] is False
+    assert result["metrics"]["changed_artifact_count"] == 3
+
+
 def test_workspace_local_test_tampering_cannot_make_pristine_verification_pass(tmp_path: Path) -> None:
     workspace, oracle = _variant(tmp_path)
     public_test = workspace / "tests" / "test_public.py"
