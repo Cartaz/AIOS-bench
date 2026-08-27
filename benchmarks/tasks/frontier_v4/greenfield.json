@@ -9,6 +9,15 @@
     "tags": ["greenfield", "frontier_v4", "parametric", "pristine", "persistence", "hidden_integration"],
     "acceptance": [
       {"type": "parametric_reference", "family": "greenfield_registry", "task_id": "greenfield_registry_001", "weight": 10, "fatal": true}
-    ]
+    ],
+    "trajectory_reference": {
+      "required_event_types": ["file_read", "file_write", "tool_call"],
+      "milestones": [
+        {"id": "inspect_contract", "event_types": ["file_read"]},
+        {"id": "author_submission", "event_types": ["file_write"]},
+        {"id": "verify_submission", "event_types": ["tool_call"]}
+      ],
+      "reference_events_to_completion": 5
+    }
   }
 ]
