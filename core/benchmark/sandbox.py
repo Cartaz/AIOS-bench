@@ -5,6 +5,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from .bubblewrap import probe_bubblewrap
 from .paths import BENCHMARK_PACKAGE_ROOT, REPO_ROOT
 
 
@@ -17,6 +18,7 @@ class SandboxPlan:
     command_prefix: tuple[str, ...] = ()
     write_confined: bool = False
     grader_hidden: bool = False
+    isolation_error: str | None = None
 
     def wrap(self, command: list[str]) -> list[str]:
         return [*self.command_prefix, *command]
@@ -87,19 +89,12 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
     try:
         relative = workspace.relative_to(repo)
     except ValueError:
-        # Custom result roots and tests may live outside the repository. In that
-        # case hiding the repo cannot cover the workspace, so a direct bind is
-        # sufficient and avoids imposing a repository-layout requirement on the
-        # runner interface.
         return (
             "--tmpfs", str(repo),
             "--bind", str(workspace), str(workspace),
             "--chdir", str(workspace),
         )
 
-    # When the workspace itself lives below the repository, preserve it through
-    # an alias before replacing the repository mount, then recreate only its
-    # parent path and bind the alias back at the original absolute location.
     args: tuple[str, ...] = (
         "--bind", str(workspace), str(_WORKSPACE_ALIAS),
         "--tmpfs", str(repo),
@@ -116,13 +111,6 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
 
 
 def _remote_transport_args(workspace: Path) -> tuple[tuple[str, ...], bool]:
-    """Mask grader material while retaining package code for the Agent Zero client.
-
-    Agent Zero's model executes in a separately isolated service/project and
-    never receives host paths. The local subprocess is trusted transport code,
-    so it retains the package required for ``python -m`` while benchmark-owned
-    answers, fixtures, docs and result history remain masked.
-    """
     prefix: tuple[str, ...] = ()
     hidden_directories, hidden_files = _benchmark_owned_paths(workspace)
     for path in hidden_directories:
@@ -133,15 +121,7 @@ def _remote_transport_args(workspace: Path) -> tuple[tuple[str, ...], bool]:
 
 
 def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = None) -> SandboxPlan:
-    """Return a cross-harness confinement plan.
-
-    Local harnesses receive a read-only host plus one writable task workspace;
-    the AIOS-bench repository itself is replaced by an empty tmpfs and therefore
-    cannot leak golden solutions, graders, docs or prior results. Agent Zero is
-    a special transport case: its model runs in a separately isolated service,
-    while the trusted local client retains only the package access it needs and
-    masks benchmark-owned answer material explicitly.
-    """
+    """Return a capability-tested cross-harness confinement plan."""
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
         raise ValueError("AIOS_BENCH_SANDBOX must be auto, required or off")
@@ -149,6 +129,13 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
         return SandboxPlan("disabled", write_confined=False, grader_hidden=False)
 
     executable = shutil.which("bwrap")
+    capability_error: str | None = None
+    if executable:
+        capability = probe_bubblewrap(executable)
+        if not capability.usable:
+            capability_error = capability.error
+            executable = None
+
     if executable:
         workspace = workspace.resolve()
         prefix: tuple[str, ...] = (
@@ -188,5 +175,11 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
         return SandboxPlan(strategy, prefix, write_confined=True, grader_hidden=grader_hidden)
 
     if selected == "required":
-        raise RuntimeError("workspace sandbox required but bubblewrap is unavailable")
-    return SandboxPlan("cwd_only_unconfined", write_confined=False, grader_hidden=False)
+        reason = capability_error or "bubblewrap is unavailable"
+        raise RuntimeError(f"workspace sandbox required but unavailable: {reason}")
+    return SandboxPlan(
+        "cwd_only_unconfined",
+        write_confined=False,
+        grader_hidden=False,
+        isolation_error=capability_error,
+    )
