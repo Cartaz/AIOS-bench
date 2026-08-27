@@ -40,16 +40,21 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
                 "distractor_logs": 2,
                 "extra_services": 2,
             },
+            "runtime_investigation": {
+                "lanes": 4,
+                "distractor_docs": 2,
+            },
         },
     )
 
     assert result["schema"] == "aios-bench/parametric-validation/v2"
-    assert result["checked_tasks"] == 3
+    assert result["checked_tasks"] == 4
     assert result["ok"] is True, result["failures"]
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
         "causal_gateway",
+        "runtime_investigation",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
