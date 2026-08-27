@@ -18,6 +18,7 @@ class Task:
     required_capabilities: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     acceptance: tuple[dict[str, Any], ...] = ()
+    behavioral_acceptance: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass
@@ -41,15 +42,20 @@ class Trajectory:
     events: list[dict[str, Any]] = field(default_factory=list)
     evaluation_score: float | None = None
 
+    def append_event(self, event: dict[str, Any]) -> None:
+        """Append one event with stable ordering while preserving adapter metadata."""
+        normalized = dict(event)
+        normalized.setdefault("sequence", len(self.events) + 1)
+        self.events.append(normalized)
+        self.telemetry_available = True
+
     def apply_events(self, events: list[dict[str, Any]]) -> None:
         # Persist observation order explicitly so replay never has to infer it
         # from timestamps, which may collide or be absent for adapter-native
         # records. Keep adapter-provided timestamps and identifiers untouched.
         self.events = []
-        for sequence, event in enumerate(events, 1):
-            normalized = dict(event)
-            normalized.setdefault("sequence", sequence)
-            self.events.append(normalized)
+        for event in events:
+            self.append_event(event)
         self.telemetry_available = bool(self.events)
         counts: dict[str, int] = {}
         input_tokens = output_tokens = 0
