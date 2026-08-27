@@ -10,10 +10,12 @@ from typing import Any, Callable, Iterable
 from .failures import classify_failure
 from .materialization import TaskMaterializer
 from .models import Task
+from .reference_trajectory import evaluate_reference_trajectory
 from .remote_resources import build_remote_resource_client
 from .runner import BenchmarkRunner
 from .server_metrics import build_server_metrics_client
 from .task_execution import run_frontier_task
+from .tasks import load_tasks
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,11 @@ class FrontierRunner(BenchmarkRunner):
             run_id=run_id,
         )
         self.landscape_execution_fingerprint = self._landscape_execution_fingerprint()
+        self._trajectory_references = {
+            task.id: task.trajectory_reference
+            for task in load_tasks(repo_root / "benchmarks" / "tasks", suite.catalog_dir)
+            if task.trajectory_reference is not None
+        }
 
     def latest_results(self) -> dict[str, dict]:
         return self._latest_results()
@@ -193,6 +200,19 @@ class FrontierRunner(BenchmarkRunner):
         if self.suite.parametric is not None:
             identity["landscape_execution_fingerprint"] = self.landscape_execution_fingerprint
         return identity
+
+    def _write_result(self, item: dict) -> None:
+        task_id = str(item.get("task_id", ""))
+        reference = self._trajectory_references.get(task_id)
+        if reference is not None and "reference_trajectory" not in item:
+            enriched = dict(item)
+            enriched["reference_trajectory"] = evaluate_reference_trajectory(
+                reference,
+                item.get("events") if isinstance(item.get("events"), list) else [],
+                capability_success=bool(item.get("success")),
+            )
+            item = enriched
+        super()._write_result(item)
 
     def _write_noncomparable(self, task: Task, status: str, reason: dict, assessment=None) -> None:
         failure_kind = classify_failure(
