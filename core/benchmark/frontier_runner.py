@@ -227,9 +227,10 @@ class FrontierRunner(BenchmarkRunner):
         self._log({"event": f"task_{status}", "task_id": task.id, "failure_kind": failure_kind, **reason})
 
     def run_task(self, task: Task, timeout: float):
-        trajectory = run_frontier_task(self, task, timeout)
-        self.suite.materializer.after_task(self, task)
-        return trajectory
+        try:
+            return run_frontier_task(self, task, timeout)
+        finally:
+            self.suite.materializer.after_task(self, task)
 
     def _hash_files(self, digest, roots: Iterable[Path]) -> None:
         for root in roots:
