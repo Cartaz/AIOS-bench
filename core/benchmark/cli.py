@@ -19,6 +19,7 @@ from .scheduler import MatchedInterleavedScheduler
 from .scoring import overall_score
 from .smoke import discover_smoke_run_dirs, make_smoke_id, select_smoke_tasks, write_smoke_report
 from .statistics import augment_summary_file
+from .task_qa import build_task_qa_report, load_task_qa
 from .tasks import load_tasks
 from .validation import validate_parametric_baseline, validate_static_baseline
 
@@ -231,7 +232,7 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["run", "smoke", "list", "score", "dashboard", "publish", "verify", "validate", "doctor"],
+        choices=["run", "smoke", "list", "score", "dashboard", "publish", "verify", "validate", "qa", "doctor"],
         default="run",
     )
     parser.add_argument("path", nargs="?", type=Path)
@@ -291,6 +292,21 @@ def main() -> None:
             )
         else:
             result = validate_static_baseline(ROOT, tasks)
+        print(json.dumps(result, indent=2))
+        if not result["ok"]:
+            raise SystemExit(2)
+        return
+    if args.command == "qa":
+        if args.suite != "frontier_v4":
+            raise SystemExit("task QA lifecycle is currently tracked for Frontier v4")
+        automated = validate_parametric_baseline(
+            ROOT,
+            tasks,
+            base_seed=args.seed,
+            parameters=_v4_parameters(args),
+        )
+        records = load_task_qa(ROOT / "benchmarks" / "qa" / "frontier_v4.json")
+        result = build_task_qa_report(tasks, records, automated)
         print(json.dumps(result, indent=2))
         if not result["ok"]:
             raise SystemExit(2)
