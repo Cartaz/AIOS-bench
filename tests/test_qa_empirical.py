@@ -25,6 +25,8 @@ def _write_run(
     variant_digest: str | None = None,
     suite: str = "frontier_v4",
     comparable: bool = True,
+    status: str = "completed",
+    failure_kind: str | None = None,
 ) -> None:
     directory = root / harness / model / "runs" / run_id
     directory.mkdir(parents=True)
@@ -44,7 +46,8 @@ def _write_run(
         json.dumps({
             "task_id": task_id,
             "task_revision": revision,
-            "status": "completed",
+            "status": status,
+            "failure_kind": failure_kind,
             "comparable": comparable,
             "success": success,
             "score": score,
@@ -71,6 +74,8 @@ def test_empirical_report_is_empty_without_current_revision_runs(tmp_path: Path)
     row = report["tasks"][0]
     assert row["eligible_attempts"] == 0
     assert row["outcome_distribution"] == "none"
+    assert row["status_counts"] == {}
+    assert row["failure_kind_counts"] == {}
     assert row["cross_profile_evidence_available"] is False
     assert row["collection_gaps"] == [
         "current_revision_attempt",
@@ -100,6 +105,8 @@ def test_empirical_report_separates_profiles_models_harnesses_and_outcomes(tmp_p
         score=25,
         variant_parameters={"pressure": 2},
         variant_digest="variant-b",
+        status="failed",
+        failure_kind="deterministic_evaluation",
     )
 
     report = build_empirical_qa_evidence(tmp_path, [_task()])
@@ -117,6 +124,8 @@ def test_empirical_report_separates_profiles_models_harnesses_and_outcomes(tmp_p
     assert row["pass_count"] == 1
     assert row["fail_count"] == 1
     assert row["outcome_distribution"] == "mixed"
+    assert row["status_counts"] == {"completed": 1, "failed": 1}
+    assert row["failure_kind_counts"] == {"deterministic_evaluation": 1, "none": 1}
     assert row["success_rate"] == 0.5
     assert row["score_min"] == 25
     assert row["score_median"] == 62.5
@@ -156,6 +165,38 @@ def test_variant_identity_uses_digest_even_when_pressure_coordinates_match(tmp_p
     assert row["distinct_pressure_variants"] == 1
     assert row["distinct_variant_identities"] == 2
     assert "second_variant" not in row["collection_gaps"]
+
+
+def test_failure_taxonomy_keeps_infrastructure_error_distinct_from_capability_failure(tmp_path: Path) -> None:
+    _write_run(
+        tmp_path,
+        harness="piagent",
+        model="model-a",
+        run_id="capability-fail",
+        success=False,
+        score=0,
+        status="failed",
+        failure_kind="deterministic_evaluation",
+    )
+    _write_run(
+        tmp_path,
+        harness="claude",
+        model="model-b",
+        run_id="infra-error",
+        success=False,
+        score=0,
+        status="error",
+        failure_kind="runner_error",
+    )
+
+    row = build_empirical_qa_evidence(tmp_path, [_task()])["tasks"][0]
+
+    assert row["fail_count"] == 2
+    assert row["status_counts"] == {"error": 1, "failed": 1}
+    assert row["failure_kind_counts"] == {
+        "deterministic_evaluation": 1,
+        "runner_error": 1,
+    }
 
 
 def test_empirical_report_excludes_noncomparable_and_other_suite_rows(tmp_path: Path) -> None:
