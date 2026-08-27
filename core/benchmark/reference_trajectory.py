@@ -14,7 +14,6 @@ def validate_reference_trajectory(value: object) -> dict[str, Any] | None:
         raise ReferenceTrajectoryError("trajectory_reference must be an object")
     required_raw = value.get("required_event_types", [])
     milestones_raw = value.get("milestones", [])
-    reference_events = value.get("reference_events_to_completion")
     if not isinstance(required_raw, list) or not all(isinstance(item, str) and item for item in required_raw):
         raise ReferenceTrajectoryError("required_event_types must be non-empty strings")
     if not isinstance(milestones_raw, list) or not milestones_raw:
@@ -32,16 +31,9 @@ def validate_reference_trajectory(value: object) -> dict[str, Any] | None:
             raise ReferenceTrajectoryError(f"milestone {milestone_id} needs event_types")
         seen.add(milestone_id)
         milestones.append({"id": milestone_id, "event_types": tuple(event_types)})
-    try:
-        reference_count = int(reference_events)
-    except (TypeError, ValueError) as exc:
-        raise ReferenceTrajectoryError("reference_events_to_completion must be an integer") from exc
-    if reference_count < len(milestones):
-        raise ReferenceTrajectoryError("reference_events_to_completion cannot be smaller than milestone count")
     return {
         "required_event_types": tuple(required_raw),
         "milestones": tuple(milestones),
-        "reference_events_to_completion": reference_count,
     }
 
 
@@ -110,7 +102,6 @@ def evaluate_reference_trajectory(
     total = len(milestones)
     complete = len(matched) == total
     events_to_completion = cursor if complete else None
-    reference_events = int(reference["reference_events_to_completion"])
     return {
         "available": True,
         "complete": complete,
@@ -120,13 +111,10 @@ def evaluate_reference_trajectory(
         "milestones": matched,
         "reliable_events": len(reliable),
         "events_to_completion": events_to_completion,
-        "reference_events_to_completion": reference_events,
-        "effort_multiple_of_reference": (
-            events_to_completion / reference_events if events_to_completion is not None else None
-        ),
         "post_completion_events": (
             len(reliable) - events_to_completion if events_to_completion is not None else None
         ),
+        "calibrated_reference_effort_available": False,
         "scope": "successful_reliable_canonical_events",
         "affects_score": False,
     }
