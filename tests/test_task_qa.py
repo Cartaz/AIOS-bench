@@ -55,6 +55,7 @@ def _record(
     task_id: str = "task_a",
     revision: int = 4,
     lifecycle: str = "pilot",
+    exposure: str = "public_repository",
 ) -> dict:
     task = task or _task(task_id=task_id, revision=revision)
     return {
@@ -62,7 +63,7 @@ def _record(
         "task_revision": revision,
         "task_semantic_digest": task_semantic_digest(task),
         "lifecycle": lifecycle,
-        "exposure": "public_repository",
+        "exposure": exposure,
         "known_issues": [],
         "audited_at": AUDIT_DATE.isoformat(),
         "reviews": _reviews(),
@@ -183,6 +184,7 @@ def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() 
         as_of=AUDIT_DATE,
     )
 
+    assert result["schema"] == "aios-bench/task-qa-report/v3"
     assert result["ok"] is True
     assert result["promotion_ready_count"] == 0
     assert result["maintenance_due_count"] == 0
@@ -190,6 +192,92 @@ def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() 
     assert result["tasks"][0]["automated_validation_ready"] is True
     assert result["tasks"][0]["manual_reviews_ready"] is False
     assert result["tasks"][0]["audit_age_days"] == 0
+    assert result["tasks"][0]["automated_checks"] == {
+        "same_seed_deterministic": "passed",
+        "different_seed_changes_variant": "passed",
+        "negative_baseline_fails": "passed",
+        "golden_witness_passes": "passed",
+    }
+    assert result["tasks"][0]["automated_missing_checks"] == []
+    assert result["tasks"][0]["automated_failed_checks"] == []
+    assert result["tasks"][0]["contamination_risk"] == "high"
+    assert result["contamination_risk_counts"] == {
+        "low": 0,
+        "medium": 0,
+        "high": 1,
+        "unknown": 0,
+    }
+
+
+def test_missing_automated_observation_is_explicit_not_inferred_as_failure() -> None:
+    task = _task()
+
+    result = build_task_qa_report(
+        [task],
+        [_record(task)],
+        {"ok": True, "observations": []},
+        as_of=AUDIT_DATE,
+    )
+
+    row = result["tasks"][0]
+    assert row["automated_validation_ready"] is False
+    assert row["automated_failed_checks"] == []
+    assert row["automated_missing_checks"] == [
+        "same_seed_deterministic",
+        "different_seed_changes_variant",
+        "negative_baseline_fails",
+        "golden_witness_passes",
+    ]
+    assert set(row["automated_checks"].values()) == {"missing"}
+
+
+def test_failed_automated_check_identifies_exact_promotion_blocker() -> None:
+    task = _task()
+    validation = _automated()
+    validation["observations"][0]["different_seed_changes_variant"] = False
+
+    result = build_task_qa_report(
+        [task],
+        [_record(task)],
+        validation,
+        as_of=AUDIT_DATE,
+    )
+
+    row = result["tasks"][0]
+    assert row["automated_validation_ready"] is False
+    assert row["automated_failed_checks"] == ["different_seed_changes_variant"]
+    assert row["automated_checks"]["different_seed_changes_variant"] == "failed"
+
+
+def test_contamination_risk_is_derived_from_existing_exposure_source_of_truth() -> None:
+    tasks = [_task("private_task"), _task("limited_task"), _task("public_task")]
+    records = [
+        _record(tasks[0], task_id="private_task", exposure="private"),
+        _record(tasks[1], task_id="limited_task", exposure="limited"),
+        _record(tasks[2], task_id="public_task", exposure="public_repository"),
+    ]
+    validation = {
+        "ok": True,
+        "observations": [
+            {**_automated(task.id)["observations"][0]}
+            for task in tasks
+        ],
+    }
+
+    result = build_task_qa_report(tasks, records, validation, as_of=AUDIT_DATE)
+
+    risks = {row["task_id"]: row["contamination_risk"] for row in result["tasks"]}
+    assert risks == {
+        "private_task": "low",
+        "limited_task": "medium",
+        "public_task": "high",
+    }
+    assert result["contamination_risk_counts"] == {
+        "low": 1,
+        "medium": 1,
+        "high": 1,
+        "unknown": 0,
+    }
 
 
 def test_stable_promotion_requires_automated_manual_and_fresh_evidence() -> None:
