@@ -19,6 +19,11 @@ from .coverage_migration import (
     generate_coverage_migration_variant,
 )
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
+from .pristine_refactor import (
+    PristineRefactorPressure,
+    evaluate_pristine_refactor_variant,
+    generate_pristine_refactor_variant,
+)
 from .runtime_investigation import (
     RuntimeInvestigationPressure,
     check_runtime_investigation_variant,
@@ -38,6 +43,7 @@ FAMILIES = {
     "runtime_investigation",
     "tool_branching",
     "coverage_migration",
+    "pristine_refactor",
 }
 
 
@@ -66,6 +72,9 @@ def materialize_variant(
     if family == "coverage_migration":
         pressure = CoverageMigrationPressure.from_mapping(parameters or {})
         return generate_coverage_migration_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "pristine_refactor":
+        pressure = PristineRefactorPressure.from_mapping(parameters or {})
+        return generate_pristine_refactor_variant(workspace, seed=int(seed), pressure=pressure)
     raise ValueError(f"unknown parametric family: {family}")
 
 
@@ -76,6 +85,8 @@ def evaluate_variant(
 ) -> dict[str, Any]:
     if family == "coverage_migration":
         return evaluate_coverage_migration_variant(workspace, oracle)
+    if family == "pristine_refactor":
+        return evaluate_pristine_refactor_variant(workspace, oracle)
 
     checks = {
         "expense_report": check_expense_variant,
@@ -101,6 +112,7 @@ __all__ = [
     "ConfigTraversalPressure",
     "CoverageMigrationPressure",
     "ExpensePressure",
+    "PristineRefactorPressure",
     "RuntimeInvestigationPressure",
     "ToolBranchingPressure",
     "FAMILIES",
