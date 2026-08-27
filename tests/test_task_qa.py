@@ -91,6 +91,7 @@ def _automated(task_id: str = "task_a") -> dict:
             "different_seed_changes_variant": True,
             "untouched_variant_fails": True,
             "golden_variant_passes": True,
+            "adversarial_witness_rejected": True,
         }],
     }
 
@@ -266,7 +267,7 @@ def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() 
         as_of=AUDIT_DATE,
     )
 
-    assert result["schema"] == "aios-bench/task-qa-report/v5"
+    assert result["schema"] == "aios-bench/task-qa-report/v6"
     assert result["ok"] is True
     assert result["promotion_ready_count"] == 0
     assert result["maintenance_due_count"] == 0
@@ -279,6 +280,7 @@ def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() 
         "different_seed_changes_variant": "passed",
         "negative_baseline_fails": "passed",
         "golden_witness_passes": "passed",
+        "adversarial_witness_rejected": "passed",
     }
     assert result["tasks"][0]["automated_missing_checks"] == []
     assert result["tasks"][0]["automated_failed_checks"] == []
@@ -309,6 +311,7 @@ def test_missing_automated_observation_is_explicit_not_inferred_as_failure() -> 
         "different_seed_changes_variant",
         "negative_baseline_fails",
         "golden_witness_passes",
+        "adversarial_witness_rejected",
     ]
     assert set(row["automated_checks"].values()) == {"missing"}
 
