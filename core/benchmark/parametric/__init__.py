@@ -13,6 +13,11 @@ from .config_traversal import (
     check_config_traversal_variant,
     generate_config_traversal_variant,
 )
+from .coverage_migration import (
+    CoverageMigrationPressure,
+    evaluate_coverage_migration_variant,
+    generate_coverage_migration_variant,
+)
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
 from .runtime_investigation import (
     RuntimeInvestigationPressure,
@@ -32,6 +37,7 @@ FAMILIES = {
     "causal_gateway",
     "runtime_investigation",
     "tool_branching",
+    "coverage_migration",
 }
 
 
@@ -57,30 +63,48 @@ def materialize_variant(
     if family == "tool_branching":
         pressure = ToolBranchingPressure.from_mapping(parameters or {})
         return generate_tool_branching_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "coverage_migration":
+        pressure = CoverageMigrationPressure.from_mapping(parameters or {})
+        return generate_coverage_migration_variant(workspace, seed=int(seed), pressure=pressure)
     raise ValueError(f"unknown parametric family: {family}")
 
 
+def evaluate_variant(
+    family: str,
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> dict[str, Any]:
+    if family == "coverage_migration":
+        return evaluate_coverage_migration_variant(workspace, oracle)
+
+    checks = {
+        "expense_report": check_expense_variant,
+        "config_traversal": check_config_traversal_variant,
+        "causal_gateway": check_causal_gateway_variant,
+        "runtime_investigation": check_runtime_investigation_variant,
+        "tool_branching": check_tool_branching_variant,
+    }
+    checker = checks.get(family)
+    if checker is None:
+        return {"passed": False, "detail": f"unknown parametric family: {family}"}
+    passed, detail = checker(workspace, oracle)
+    return {"passed": bool(passed), "detail": str(detail)}
+
+
 def check_variant(family: str, workspace: Path, oracle: Mapping[str, Any]) -> tuple[bool, str]:
-    if family == "expense_report":
-        return check_expense_variant(workspace, oracle)
-    if family == "config_traversal":
-        return check_config_traversal_variant(workspace, oracle)
-    if family == "causal_gateway":
-        return check_causal_gateway_variant(workspace, oracle)
-    if family == "runtime_investigation":
-        return check_runtime_investigation_variant(workspace, oracle)
-    if family == "tool_branching":
-        return check_tool_branching_variant(workspace, oracle)
-    return False, f"unknown parametric family: {family}"
+    result = evaluate_variant(family, workspace, oracle)
+    return bool(result["passed"]), str(result.get("detail", ""))
 
 
 __all__ = [
     "CausalGatewayPressure",
     "ConfigTraversalPressure",
+    "CoverageMigrationPressure",
     "ExpensePressure",
     "RuntimeInvestigationPressure",
     "ToolBranchingPressure",
     "FAMILIES",
     "check_variant",
+    "evaluate_variant",
     "materialize_variant",
 ]
