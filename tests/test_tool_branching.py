@@ -118,3 +118,18 @@ def test_wrong_branch_or_wrong_case_id_is_rejected(tmp_path: Path) -> None:
         assert "does not match" in wrong_id.stderr
     finally:
         materializer.after_task(runner, task)
+
+
+def test_wrong_case_id_is_recoverable_without_contaminating_branch(tmp_path: Path) -> None:
+    materializer, runner, task, workspace, oracle = _materialized(tmp_path)
+    try:
+        inspection = json.loads(_run_tool(workspace, "inspect_case").stdout)
+        lookup_name = f"{inspection['case_type']}_lookup"
+        wrong = _run_tool(workspace, lookup_name, "case-0000")
+        assert wrong.returncode == 2
+        corrected = _run_tool(workspace, lookup_name, inspection["case_id"])
+        assert corrected.returncode == 0, corrected.stderr
+        result = json.loads(corrected.stdout)
+        assert result["value"] == str(oracle["expected_value"])
+    finally:
+        materializer.after_task(runner, task)
