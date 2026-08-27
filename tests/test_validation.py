@@ -65,17 +65,23 @@ def test_parametric_preflight_checks_all_catalog_families():
             "tool_branching": {
                 "distractor_tools": 4,
             },
+            "coverage_migration": {
+                "targets": 7,
+                "current_active": 2,
+                "historical_decoys": 4,
+            },
         },
     )
 
     assert result["ok"] is True, result["failures"]
-    assert result["checked_tasks"] == 5
+    assert result["checked_tasks"] == 6
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
         "causal_gateway",
         "runtime_investigation",
         "tool_branching",
+        "coverage_migration",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
