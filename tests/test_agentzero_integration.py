@@ -364,9 +364,11 @@ def test_agentzero_sandbox_adds_only_shared_projects_root_write_bridge(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     monkeypatch.setenv("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", str(projects_root))
-    monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda _: "/usr/bin/bwrap")
-    monkeypatch.setattr(
-        "aios_bench.sandbox.probe_bubblewrap",
+    globals_map = workspace_sandbox.__globals__
+    monkeypatch.setattr(globals_map["shutil"], "which", lambda _: "/usr/bin/bwrap")
+    monkeypatch.setitem(
+        globals_map,
+        "probe_bubblewrap",
         lambda executable: BubblewrapCapability(True),
     )
 
