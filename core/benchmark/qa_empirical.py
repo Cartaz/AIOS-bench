@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from pathlib import Path
 from statistics import median
 from typing import Any, Iterable, Mapping
@@ -77,6 +78,11 @@ def _collection_state(*, attempts: int, harnesses: int, models: int, variants: i
     }
 
 
+def _count_strings(rows: Iterable[Mapping[str, Any]], key: str, *, fallback: str) -> dict[str, int]:
+    counts = Counter(str(row.get(key) or fallback) for row in rows)
+    return dict(sorted(counts.items()))
+
+
 def _summarize_task(task: object, rows: list[dict[str, Any]]) -> dict[str, Any]:
     task_id = str(getattr(task, "id"))
     revision = int(getattr(task, "revision"))
@@ -97,6 +103,8 @@ def _summarize_task(task: object, rows: list[dict[str, Any]]) -> dict[str, Any]:
         for row in eligible
         if (signature := _variant_signature(row)) is not None
     })
+    status_counts = _count_strings(eligible, "status", fallback="unknown")
+    failure_kind_counts = _count_strings(eligible, "failure_kind", fallback="none")
 
     if not eligible:
         outcome_distribution = "none"
@@ -133,6 +141,8 @@ def _summarize_task(task: object, rows: list[dict[str, Any]]) -> dict[str, Any]:
         "pass_count": passes,
         "fail_count": failures,
         "outcome_distribution": outcome_distribution,
+        "status_counts": status_counts,
+        "failure_kind_counts": failure_kind_counts,
         "success_rate": passes / (passes + failures) if passes + failures else None,
         "score_min": min(scored) if scored else None,
         "score_median": median(scored) if scored else None,
@@ -156,8 +166,8 @@ def build_empirical_qa_evidence(
 
     Collection gaps identify missing contrasting observations only. They are not
     promotion thresholds and never automatically pass multi-agent or saturation
-    review. Lifecycle decisions remain owned by the QA registry and documented
-    review evidence.
+    review. Status/failure-kind counts are copied from canonical raw results so
+    infrastructure errors are not conflated with capability failures.
     """
     task_list = list(tasks)
     attempts = load_attempts(raw_root)
@@ -186,7 +196,8 @@ def build_empirical_qa_evidence(
         "collection_gap_counts": gap_counts,
         "interpretation": (
             "Collection gaps identify missing contrasting evidence only; they do not "
-            "automatically pass multi-agent or saturation review."
+            "automatically pass multi-agent or saturation review. Status/failure-kind "
+            "counts must be considered before interpreting failed outcomes as model capability."
         ),
         "tasks": rows,
     }
