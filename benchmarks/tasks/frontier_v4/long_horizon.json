@@ -1,0 +1,19 @@
+[
+  {
+    "id": "long_horizon_pristine_001",
+    "category": "long_horizon",
+    "tier": 5,
+    "revision": 4,
+    "prompt": "Complete the priority-tier rollout described in README.md across the existing order_service policy modules. The final behavior must preserve standard and express semantics while making priority validation, surcharge calculation, routing, serialization, and the integrated service agree with the generated specification. Do not modify README.md, public tests, or order_service/service.py. Verify the public tests, but do not assume workspace-local tests are the final verifier.",
+    "mode": "cold",
+    "tags": ["long_horizon", "frontier_v4", "parametric", "multi_module", "pristine_verification", "regression"],
+    "acceptance": [
+      {"type": "parametric_reference", "family": "pristine_refactor", "task_id": "long_horizon_pristine_001", "weight": 10, "fatal": true}
+    ],
+    "behavioral_acceptance": [
+      {"type": "preserved_state", "path": "README.md"},
+      {"type": "preserved_state", "path": "tests/test_public.py"},
+      {"type": "preserved_state", "path": "order_service/service.py"}
+    ]
+  }
+]
