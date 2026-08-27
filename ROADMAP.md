@@ -154,27 +154,46 @@ Large coordinated changes expose consistency failures that short single-artifact
 - Ownership remains layered: generic extraction/reconstruction in `pristine.py`, domain specification/truth in `greenfield_registry.py`, golden satisfiability in `parametric_goldens.py`, and normal deterministic persistence/scoring in the existing evaluator path.
 - No harness adapter, runner or GUI special case was added for greenfield semantics.
 - The verifier is isolated from ordinary Python environment configuration but is still not an OS-level hostile-code sandbox; stronger execution isolation remains explicitly owned by M12.
-- Full CI was observed green on Python 3.12, 3.13 and 3.14 for the implementation/test checkpoint; final documentation-state CI is required before this status is considered release-ready.
+- Final documentation-state CI was observed green on Python 3.12, 3.13 and 3.14.
 
 ## M10 — Reference trajectory and adaptive efficiency — ACTIVE
 
-For selected tasks, curate semantic reference milestones/efficient trajectories. Compare successful agent effort descriptively without turning raw command count into correctness or penalizing legitimate extra verification.
+### Implemented framework
 
-Design goals:
+- Added validated task-owned `trajectory_reference` definitions using semantic milestone ids and accepted canonical event types rather than exact command strings or tool arguments.
+- Added `reference_trajectory.py`, which ignores inferred and runner-owned events, requires declared telemetry kinds, and matches milestones monotonically through canonical event order.
+- Comparison occurs only for capability-successful tasks. Failed tasks report `capability_not_successful`; harnesses lacking required telemetry report `required_telemetry_missing` rather than guessed values.
+- Added pilot milestone references to `greenfield_registry_001` and `long_horizon_pristine_001`: inspect -> author/coordinate -> verify.
+- `FrontierRunner` enriches the canonical result at write time; capability evaluation, score, behavioral oracles and `task_execution` remain unchanged.
+- Results expose milestone completion, reliable events to semantic completion and post-completion events with `affects_score=false`.
+- `summary.json` publishes `reference_trajectory_efficiency` by aggregating only persisted trajectory evidence; reporting does not replay or reinterpret events.
+- Tests cover validation, ordered matching, missing/inferred telemetry, failed-capability exclusion, incomplete ordering, result persistence and aggregation.
+- README documents scope and non-scoring semantics.
 
-- define task-owned semantic milestones rather than brittle exact command sequences;
-- measure successful-agent effort only when trajectory telemetry is sufficiently reliable;
-- compare milestone order/redundancy and effort descriptively, never as capability correctness;
-- tolerate legitimate extra inspection/verification and avoid rewarding unsafe shortcutting;
-- keep reference trajectory data outside mutable agent workspaces and preserve suite fingerprinting/comparability.
+### Strategic review and empirical blocker
+
+- An initial design included manually chosen reference event counts. Review rejected this before milestone closure because a numeric ratio without a real successful reference trajectory would create false precision.
+- The framework therefore publishes absolute observed effort only. `calibrated_reference_effort_available=false` remains explicit and no “times reference” metric exists.
+- Semantic milestone references are already suite-fingerprinted because they live in task catalogs; the evaluator itself is also semantic source code.
+- Ownership is separated: tasks own semantic milestones, `reference_trajectory.py` owns comparison semantics, the runner owns persistence, and reporting owns aggregation.
+- Framework/documentation CI was observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
+- M10 remains `ACTIVE`, not `DONE`, until successful real Frontier v4 runs provide evidence from which a reference-effort calibration can be justified. This is an empirical dependency, not an implementation shortcut.
 
 ## M11 — Progressive environments and within-run learning — DEFERRED
 
 Later evaluate reusable skill acquisition across related levels while explicitly separating persistent agent memory from workspace leakage. Resume only after trajectory, causal-state and cross-task ownership are mature.
 
-## M12 — Task QA, aging, contamination and anti-cheat — PLANNED
+## M12 — Task QA, aging, contamination and anti-cheat — ACTIVE
 
 Formalize task promotion/revision lifecycle: static validation, reference solve, no-op, cheat/adversarial checks, preservation/regression, multi-agent pilots, ambiguity/oracle review and stable promotion. Track revisions, audits, known issues, exposure/contamination risk and empirical saturation. This milestone also owns stronger isolation/anti-cheat work beyond the current workspace trust model.
+
+Immediate executable slice:
+
+- add a machine-readable QA registry keyed by task id/revision and lifecycle state;
+- separate automated evidence from manual review/pilot evidence so pending work cannot be represented as passed;
+- validate missing/stale/duplicate QA records and stable-promotion prerequisites;
+- expose a QA report without changing task capability scores;
+- leave hostile-code sandboxing and empirical multi-agent/saturation evidence pending until their dedicated checks actually exist.
 
 ## M13 — Multi-dimensional comparison UX — PLANNED
 
@@ -182,9 +201,10 @@ Expose deterministic capability, reliability/confidence intervals, failure taxon
 
 ## Current execution order
 
-1. Build M10 semantic reference-trajectory efficiency on selected tasks.
-2. Formalize M12 QA/aging/contamination before aggressive catalog expansion.
-3. Expand M13 UX as each dimension stabilizes.
+1. Build M12 machine-readable task QA/promotion lifecycle now.
+2. Calibrate M10 reference effort after successful real Frontier v4 trajectory data exists.
+3. Continue M12 contamination/anti-cheat and empirical pilot checks.
+4. Expand M13 UX as each dimension stabilizes.
 
 M11 remains deferred.
 
