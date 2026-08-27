@@ -59,6 +59,8 @@ The coverage-migration family verifies complete finite-set work rather than only
 
 The pristine-refactor family verifies selected agent-authored source artifacts outside the mutable task workspace. AIOS-Bench reconstructs a fresh temporary repository from a benchmark-owned baseline, overlays only the task-declared source artifacts, and runs hidden integration/regression checks in a separate Python subprocess. Workspace-local tests, modified documentation, or edits to protected high-level integration code therefore cannot become the final verifier. This is pristine evaluation within the existing workspace trust model, not an OS-level security sandbox; stronger isolation remains part of later anti-cheat work.
 
+The greenfield-registry family starts without implementation source code. The agent creates a self-contained tree under `submission/`; AIOS-Bench copies only that bounded tree into a fresh temporary verifier directory, ignores operational caches, rejects symlinks and excessive submissions, then runs hidden deterministic API, validation, persistence and integration checks under isolated Python mode. Internal module structure is not compared against the benchmark golden witness: only the documented public contract and behavior determine capability success.
+
 ### Deterministic behavioral oracles
 
 Task catalogs may define optional `behavioral_acceptance` checks in addition to their normal capability `acceptance` oracle. Behavioral checks are deterministic, task-owned observations used to characterize how an agent behaved; they do not change capability success or score.
