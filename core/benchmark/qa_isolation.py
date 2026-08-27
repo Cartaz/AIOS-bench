@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import socket
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Mapping
@@ -46,6 +47,23 @@ def assess_strong_isolation(
         "external_secret_unreadable": external_secret_unreadable,
         "host_loopback_unreachable": host_loopback_unreachable,
         "probe": observed,
+    }
+
+
+def _unavailable_evidence(exc: BaseException) -> dict[str, Any]:
+    return {
+        "schema": ISOLATION_EVIDENCE_SCHEMA,
+        "ok": False,
+        "strong_boundary_available": False,
+        "isolation_strategy": None,
+        "filesystem_confined": False,
+        "network_confined": False,
+        "isolation_error": f"{type(exc).__name__}: {exc}",
+        "verifier_returncode": None,
+        "workspace_write_verified": False,
+        "external_secret_unreadable": False,
+        "host_loopback_unreachable": False,
+        "probe": {},
     }
 
 
@@ -101,21 +119,8 @@ def run_strong_isolation_self_check() -> dict[str, Any]:
                     timeout=5.0,
                     mode="required",
                 )
-            except (OSError, RuntimeError, TimeoutError) as exc:
-                return {
-                    "schema": ISOLATION_EVIDENCE_SCHEMA,
-                    "ok": False,
-                    "strong_boundary_available": False,
-                    "isolation_strategy": None,
-                    "filesystem_confined": False,
-                    "network_confined": False,
-                    "isolation_error": f"{type(exc).__name__}: {exc}",
-                    "verifier_returncode": None,
-                    "workspace_write_verified": False,
-                    "external_secret_unreadable": False,
-                    "host_loopback_unreachable": False,
-                    "probe": {},
-                }
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                return _unavailable_evidence(exc)
         finally:
             listener.close()
 
