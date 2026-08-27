@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from core.benchmark.qa_empirical import build_empirical_qa_evidence, build_empirical_qa_plan
+from core.benchmark.qa_empirical import build_empirical_qa_evidence
 
 
 def _task(task_id: str = "task_a", revision: int = 4):
@@ -127,6 +127,7 @@ def test_empirical_report_separates_profiles_models_harnesses_and_outcomes(tmp_p
         "second_model": 0,
         "second_pressure_variant": 0,
     }
+    assert "do not automatically pass" in report["interpretation"]
 
 
 def test_empirical_report_excludes_noncomparable_and_other_suite_rows(tmp_path: Path) -> None:
@@ -166,52 +167,3 @@ def test_empirical_report_excludes_noncomparable_and_other_suite_rows(tmp_path: 
         "second_model",
         "second_pressure_variant",
     ]
-
-
-def test_empirical_plan_surfaces_missing_axes_without_declaring_review_pass(tmp_path: Path) -> None:
-    _write_run(
-        tmp_path,
-        harness="piagent",
-        model="model-a",
-        run_id="one",
-        success=True,
-        variant_parameters={"pressure": 1},
-    )
-
-    plan = build_empirical_qa_plan(tmp_path, [_task()])
-
-    assert plan["schema"] == "aios-bench/qa-empirical-plan/v1"
-    assert plan["tasks_needing_additional_collection"] == 1
-    row = plan["tasks"][0]
-    assert row["outcome_distribution"] == "all_pass"
-    assert row["additional_collection_needed"] is True
-    assert row["next_collection_targets"] == [
-        "second_profile",
-        "second_harness",
-        "second_model",
-        "second_pressure_variant",
-    ]
-    assert "do not automatically pass" in plan["interpretation"]
-
-
-def test_empirical_plan_is_collection_complete_with_contrasting_profiles_and_variants(tmp_path: Path) -> None:
-    _write_run(
-        tmp_path,
-        harness="piagent",
-        model="model-a",
-        run_id="one",
-        variant_parameters={"pressure": 1},
-    )
-    _write_run(
-        tmp_path,
-        harness="claude",
-        model="model-b",
-        run_id="two",
-        variant_parameters={"pressure": 2},
-    )
-
-    plan = build_empirical_qa_plan(tmp_path, [_task()])
-
-    assert plan["tasks_needing_additional_collection"] == 0
-    assert plan["tasks"][0]["collection_gaps"] == []
-    assert plan["tasks"][0]["additional_collection_needed"] is False
