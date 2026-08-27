@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from ..pristine import PristineArtifactError, pristine_submitted_tree
+from ..pristine_verifier import run_pristine_verifier
 
 
 @dataclass(frozen=True)
@@ -85,7 +84,7 @@ def _hidden_verifier(oracle: Mapping[str, Any]) -> str:
     max_name_length = int(oracle["max_name_length"])
     storage_name = str(oracle["storage_name"])
     return f'''\\
-import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path.cwd()))\nfrom registry_app import Registry\n\nroot = Path.cwd()\nstorage = root / {storage_name!r}\nregistry = Registry(storage)\nassert registry.list_entries() == []\nassert registry.add("  Alpha  ", "  first  ") == {{"name": "alpha", "value": "first"}}\nassert registry.add("BETA", "second") == {{"name": "beta", "value": "second"}}\nassert registry.get(" ALPHA ") == {{"name": "alpha", "value": "first"}}\nassert registry.list_entries() == [\n    {{"name": "alpha", "value": "first"}},\n    {{"name": "beta", "value": "second"}},\n]\ntry:\n    registry.add("alpha", "duplicate")\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError("duplicate normalized name accepted")\nfor bad_name in ("", "   ", "x" * ({max_name_length} + 1)):\n    try:\n        registry.add(bad_name, "value")\n    except ValueError:\n        pass\n    else:\n        raise AssertionError("invalid name accepted")\nfor bad_value in ("", "   ", 7, None):\n    try:\n        registry.add("value-check", bad_value)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError("invalid value accepted")\nassert registry.remove(" BETA ") is True\nassert registry.remove("beta") is False\nreopened = Registry(storage)\nassert reopened.get("alpha") == {{"name": "alpha", "value": "first"}}\nassert reopened.get("beta") is None\nassert reopened.list_entries() == [{{"name": "alpha", "value": "first"}}]\nstorage.write_text("not-json", encoding="utf-8")\ntry:\n    Registry(storage)\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError("malformed persisted storage was silently accepted")\nprint("greenfield registry verification passed")\n'''
+from pathlib import Path\nfrom registry_app import Registry\n\nroot = Path.cwd()\nstorage = root / {storage_name!r}\nregistry = Registry(storage)\nassert registry.list_entries() == []\nassert registry.add("  Alpha  ", "  first  ") == {{"name": "alpha", "value": "first"}}\nassert registry.add("BETA", "second") == {{"name": "beta", "value": "second"}}\nassert registry.get(" ALPHA ") == {{"name": "alpha", "value": "first"}}\nassert registry.list_entries() == [\n    {{"name": "alpha", "value": "first"}},\n    {{"name": "beta", "value": "second"}},\n]\ntry:\n    registry.add("alpha", "duplicate")\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError("duplicate normalized name accepted")\nfor bad_name in ("", "   ", "x" * ({max_name_length} + 1)):\n    try:\n        registry.add(bad_name, "value")\n    except ValueError:\n        pass\n    else:\n        raise AssertionError("invalid name accepted")\nfor bad_value in ("", "   ", 7, None):\n    try:\n        registry.add("value-check", bad_value)\n    except ValueError:\n        pass\n    else:\n        raise AssertionError("invalid value accepted")\nassert registry.remove(" BETA ") is True\nassert registry.remove("beta") is False\nreopened = Registry(storage)\nassert reopened.get("alpha") == {{"name": "alpha", "value": "first"}}\nassert reopened.get("beta") is None\nassert reopened.list_entries() == [{{"name": "alpha", "value": "first"}}]\nstorage.write_text("not-json", encoding="utf-8")\ntry:\n    Registry(storage)\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError("malformed persisted storage was silently accepted")\nprint("greenfield registry verification passed")\n'''
 
 
 def evaluate_greenfield_registry_variant(
@@ -105,34 +104,32 @@ def evaluate_greenfield_registry_variant(
             max_files=32,
             max_total_bytes=256 * 1024,
         ) as (pristine, manifest):
-            env = {
-                "PATH": os.environ.get("PATH", ""),
-                "PYTHONDONTWRITEBYTECODE": "1",
-                "PYTHONIOENCODING": "utf-8",
-            }
-            process = subprocess.run(
-                [sys.executable, "-I", "-c", _hidden_verifier(oracle)],
-                cwd=pristine,
-                env=env,
-                text=True,
-                capture_output=True,
-                timeout=8,
-                check=False,
-            )
-        passed = process.returncode == 0
-        detail = (process.stdout + "\n" + process.stderr).strip()[-2000:]
+            execution = run_pristine_verifier(pristine, _hidden_verifier(oracle), timeout=8)
+        passed = execution.returncode == 0
+        detail = (execution.stdout + "\n" + execution.stderr).strip()[-2000:]
         return {
             "passed": passed,
-            "detail": detail or f"greenfield verifier exited {process.returncode}",
+            "detail": detail or f"greenfield verifier exited {execution.returncode}",
             "metrics": {
-                "schema": "aios-bench/greenfield-verification/v1",
+                "schema": "aios-bench/greenfield-verification/v2",
                 "submitted_file_count": len(manifest),
                 "submitted_bytes": sum(int(item["size"]) for item in manifest),
-                "verifier_returncode": process.returncode,
+                "verifier_returncode": execution.returncode,
                 "greenfield_verification_passed": passed,
+                "verifier_isolation_strategy": execution.isolation_strategy,
+                "verifier_filesystem_confined": execution.filesystem_confined,
+                "verifier_network_confined": execution.network_confined,
             },
         }
-    except (OSError, TypeError, ValueError, KeyError, PristineArtifactError, subprocess.TimeoutExpired) as exc:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        PristineArtifactError,
+        subprocess.TimeoutExpired,
+    ) as exc:
         return {
             "passed": False,
             "detail": f"greenfield registry verifier error: {type(exc).__name__}: {exc}",
