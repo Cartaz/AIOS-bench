@@ -22,8 +22,10 @@ class FrontierV3Runner(FrontierRunner):
         run_id: str | None = None,
         server_metrics_url: str | None = None,
         server_metrics_model: str | None = None,
+        server_resource_url: str | None = None,
         max_output_tokens: int = 65536,
         metrics_poll_interval: float = 1.0,
+        resource_poll_interval: float = 1.0,
     ) -> None:
         super().__init__(
             repo_root,
@@ -38,6 +40,8 @@ class FrontierV3Runner(FrontierRunner):
             run_id=run_id,
             server_metrics_url=server_metrics_url,
             server_metrics_model=server_metrics_model,
+            server_resource_url=server_resource_url,
             max_output_tokens=max_output_tokens,
             metrics_poll_interval=metrics_poll_interval,
+            resource_poll_interval=resource_poll_interval,
         )
