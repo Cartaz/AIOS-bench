@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import selectors
 import shutil
 import subprocess
 import sys
@@ -139,8 +140,6 @@ class ParametricTaskMaterializer:
             seed=self.task_seed(task),
             parameters=self.parameters.get(family, {}),
         )
-        if family == "runtime_investigation":
-            self._start_runtime_probe(runner, task, workspace, oracle)
         oracle_dir = runner.run_dir / "oracles"
         oracle_dir.mkdir(parents=True, exist_ok=True)
         oracle_path = oracle_dir / f"{task.id}.json"
@@ -151,6 +150,8 @@ class ParametricTaskMaterializer:
         )
         temporary.replace(oracle_path)
         self._variants[task.id] = oracle
+        if family == "runtime_investigation":
+            self._start_runtime_probe(runner, task, workspace, oracle)
         return workspace
 
     def identity(self, runner: RunnerContext, task: Task) -> dict[str, Any]:
@@ -191,6 +192,13 @@ class ParametricTaskMaterializer:
             process.stdin.write(json.dumps(runtime_probe_payload(oracle)) + "\n")
             process.stdin.flush()
             process.stdin.close()
+            selector = selectors.DefaultSelector()
+            try:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                if not selector.select(timeout=5):
+                    raise TimeoutError("runtime probe did not report its port within 5 seconds")
+            finally:
+                selector.close()
             line = process.stdout.readline().strip()
             port = int(line)
             if process.poll() is not None:
