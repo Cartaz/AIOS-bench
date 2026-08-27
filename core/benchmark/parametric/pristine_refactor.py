@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import random
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -25,14 +24,28 @@ class PristineRefactorPressure:
         return {}
 
 
-def _derived_seed(seed: int, label: str) -> int:
-    digest = hashlib.sha256(f"{int(seed)}:{label}".encode()).digest()
-    return int.from_bytes(digest[:8], "big")
-
-
 def _digest(value: Mapping[str, Any]) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _variant_coordinates(seed: int) -> tuple[int, int, str, str]:
+    """Map adjacent seeds to different semantic specs without RNG collisions."""
+    express_values = [8, 10, 12, 15, 18]
+    priority_values = [25, 30, 35, 40, 45]
+    queue_values = ["priority", "rush", "expedite"]
+    code_values = ["PRI", "P1", "HOT"]
+    coordinate = int(seed) % (
+        len(express_values) * len(priority_values) * len(queue_values) * len(code_values)
+    )
+    express = express_values[coordinate % len(express_values)]
+    coordinate //= len(express_values)
+    priority = priority_values[coordinate % len(priority_values)]
+    coordinate //= len(priority_values)
+    queue = queue_values[coordinate % len(queue_values)]
+    coordinate //= len(queue_values)
+    code = code_values[coordinate % len(code_values)]
+    return express, priority, queue, code
 
 
 def _pricing(express: int, priority: int | None = None) -> str:
@@ -132,11 +145,7 @@ def generate_pristine_refactor_variant(
     pressure: PristineRefactorPressure,
 ) -> dict[str, Any]:
     workspace.mkdir(parents=True, exist_ok=True)
-    rng = random.Random(_derived_seed(seed, "pristine_refactor"))
-    express_surcharge = rng.choice([8, 10, 12, 15, 18])
-    priority_surcharge = rng.choice([25, 30, 35, 40, 45])
-    priority_queue = rng.choice(["priority", "rush", "expedite"])
-    priority_code = rng.choice(["PRI", "P1", "HOT"])
+    express_surcharge, priority_surcharge, priority_queue, priority_code = _variant_coordinates(seed)
 
     baseline_files = {
         "order_service/__init__.py": "",
