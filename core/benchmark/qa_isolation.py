@@ -133,8 +133,19 @@ def run_strong_isolation_self_check() -> dict[str, Any]:
         return assess_strong_isolation(execution, probe)
 
 
+def main() -> None:
+    evidence = run_strong_isolation_self_check()
+    print(json.dumps(evidence, indent=2, sort_keys=True))
+    if not evidence["ok"]:
+        raise SystemExit(2)
+
+
 __all__ = [
     "ISOLATION_EVIDENCE_SCHEMA",
     "assess_strong_isolation",
     "run_strong_isolation_self_check",
 ]
+
+
+if __name__ == "__main__":
+    main()
