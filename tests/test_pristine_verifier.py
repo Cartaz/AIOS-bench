@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
+import core.benchmark.pristine_verifier as verifier
 from core.benchmark.bubblewrap import BubblewrapCapability, probe_bubblewrap
-from core.benchmark.pristine_verifier import run_pristine_verifier
 
 
 def test_unconfined_fallback_is_explicit_and_uses_isolated_python(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: None)
+    monkeypatch.setattr(verifier.shutil, "which", lambda name: None)
 
-    result = run_pristine_verifier(
+    result = verifier.run_pristine_verifier(
         tmp_path,
         "Path('result.txt').write_text('ok', encoding='utf-8')",
         mode="auto",
@@ -27,13 +27,14 @@ def test_unconfined_fallback_is_explicit_and_uses_isolated_python(monkeypatch, t
 
 
 def test_auto_falls_back_when_bubblewrap_binary_is_unusable(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(verifier.shutil, "which", lambda name: "/usr/bin/bwrap")
     monkeypatch.setattr(
-        "core.benchmark.pristine_verifier.probe_bubblewrap",
+        verifier,
+        "probe_bubblewrap",
         lambda executable: BubblewrapCapability(False, "namespace denied"),
     )
 
-    result = run_pristine_verifier(tmp_path, "print('ok')", mode="auto")
+    result = verifier.run_pristine_verifier(tmp_path, "print('ok')", mode="auto")
 
     assert result.returncode == 0
     assert result.isolation_strategy == "isolated_python_unconfined"
@@ -43,21 +44,22 @@ def test_auto_falls_back_when_bubblewrap_binary_is_unusable(monkeypatch, tmp_pat
 
 
 def test_required_verifier_sandbox_fails_closed_without_bubblewrap(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: None)
+    monkeypatch.setattr(verifier.shutil, "which", lambda name: None)
 
     with pytest.raises(RuntimeError, match="required"):
-        run_pristine_verifier(tmp_path, "pass", mode="required")
+        verifier.run_pristine_verifier(tmp_path, "pass", mode="required")
 
 
 def test_required_verifier_sandbox_fails_closed_when_bubblewrap_is_unusable(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(verifier.shutil, "which", lambda name: "/usr/bin/bwrap")
     monkeypatch.setattr(
-        "core.benchmark.pristine_verifier.probe_bubblewrap",
+        verifier,
+        "probe_bubblewrap",
         lambda executable: BubblewrapCapability(False, "namespace denied"),
     )
 
     with pytest.raises(RuntimeError, match="namespace denied"):
-        run_pristine_verifier(tmp_path, "pass", mode="required")
+        verifier.run_pristine_verifier(tmp_path, "pass", mode="required")
 
 
 def test_bubblewrap_plan_reports_filesystem_and_network_confinement(monkeypatch, tmp_path: Path) -> None:
@@ -73,14 +75,15 @@ def test_bubblewrap_plan_reports_filesystem_and_network_confinement(monkeypatch,
         captured["kwargs"] = kwargs
         return Completed()
 
-    monkeypatch.setattr("core.benchmark.pristine_verifier.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr(verifier.shutil, "which", lambda name: "/usr/bin/bwrap")
     monkeypatch.setattr(
-        "core.benchmark.pristine_verifier.probe_bubblewrap",
+        verifier,
+        "probe_bubblewrap",
         lambda executable: BubblewrapCapability(True),
     )
-    monkeypatch.setattr("core.benchmark.pristine_verifier.subprocess.run", fake_run)
+    monkeypatch.setattr(verifier.subprocess, "run", fake_run)
 
-    result = run_pristine_verifier(tmp_path, "print('ok')", mode="required")
+    result = verifier.run_pristine_verifier(tmp_path, "print('ok')", mode="required")
 
     command = captured["command"]
     assert isinstance(command, list)
@@ -113,7 +116,7 @@ def test_real_bubblewrap_verifier_cannot_read_external_secret(tmp_path: Path) ->
         "Path('inside.txt').write_text('verified', encoding='utf-8')\n"
     )
 
-    result = run_pristine_verifier(pristine, code, mode="required")
+    result = verifier.run_pristine_verifier(pristine, code, mode="required")
 
     assert result.returncode == 0, result.stderr
     assert (pristine / "inside.txt").read_text(encoding="utf-8") == "verified"
