@@ -246,7 +246,7 @@ def _pressure_axis_rows(landscapes: list[dict[str, Any]]) -> str:
                     f'<td>{_display(landscape.get("model"))}</td>'
                     f'<td>{_display(landscape.get("variant_family"))}</td>'
                     f'<td>{_display(axis)}</td>'
-                    f'<td>{_display(cell.get("value"))}</td>'
+                    f'<td>{_display(axis)}={_display(cell.get("value"))}</td>'
                     f'<td>{int(cell.get("observations", 0))}</td>'
                     f'<td>{int(cell.get("unique_variants", 0))}</td>'
                     f'<td>{_percent(cell.get("pass_rate"))}</td>'
