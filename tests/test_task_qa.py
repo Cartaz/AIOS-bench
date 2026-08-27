@@ -9,6 +9,7 @@ from core.benchmark.task_qa import (
     QA_REVIEW_INTERVAL_DAYS,
     build_task_qa_report,
     load_task_qa,
+    review_context_digest,
     task_semantic_digest,
     validate_task_qa_records,
 )
@@ -58,10 +59,12 @@ def _record(
     exposure: str = "public_repository",
 ) -> dict:
     task = task or _task(task_id=task_id, revision=revision)
+    semantic_digest = task_semantic_digest(task)
     return {
         "task_id": task_id,
         "task_revision": revision,
-        "task_semantic_digest": task_semantic_digest(task),
+        "task_semantic_digest": semantic_digest,
+        "review_context_digest": review_context_digest(semantic_digest, exposure),
         "lifecycle": lifecycle,
         "exposure": exposure,
         "known_issues": [],
@@ -95,6 +98,7 @@ def test_actual_frontier_v4_qa_registry_covers_every_task_without_claiming_promo
     assert all(item["manual_reviews_ready"] is False for item in result["records"])
     assert all(len(item["pending_reviews"]) == 5 for item in result["records"])
     assert all(len(item["task_semantic_digest"]) == 64 for item in result["records"])
+    assert all(len(item["review_context_digest"]) == 64 for item in result["records"])
 
 
 def test_registry_rejects_missing_and_stale_records() -> None:
@@ -155,6 +159,29 @@ def test_missing_semantic_digest_is_rejected() -> None:
     assert any("task_semantic_digest must be" in item["error"] for item in result["errors"])
 
 
+def test_missing_review_context_digest_is_rejected() -> None:
+    task = _task()
+    record = _record(task)
+    del record["review_context_digest"]
+
+    result = validate_task_qa_records([task], [record])
+
+    assert result["registry_ok"] is False
+    assert any("review_context_digest must be" in item["error"] for item in result["errors"])
+
+
+def test_exposure_change_invalidates_prior_review_context() -> None:
+    task = _task()
+    record = _record(task, exposure="limited")
+    record["exposure"] = "public_repository"
+
+    result = validate_task_qa_records([task], [record])
+
+    assert result["registry_ok"] is False
+    assert not any("stale task_semantic_digest" in item["error"] for item in result["errors"])
+    assert any("stale review_context_digest" in item["error"] for item in result["errors"])
+
+
 def test_invalid_calendar_audit_date_is_rejected() -> None:
     task = _task()
     record = _record(task)
@@ -184,7 +211,7 @@ def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() 
         as_of=AUDIT_DATE,
     )
 
-    assert result["schema"] == "aios-bench/task-qa-report/v3"
+    assert result["schema"] == "aios-bench/task-qa-report/v4"
     assert result["ok"] is True
     assert result["promotion_ready_count"] == 0
     assert result["maintenance_due_count"] == 0
