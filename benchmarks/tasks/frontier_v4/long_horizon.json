@@ -14,6 +14,15 @@
       {"type": "preserved_state", "path": "README.md"},
       {"type": "preserved_state", "path": "tests/test_public.py"},
       {"type": "preserved_state", "path": "order_service/service.py"}
-    ]
+    ],
+    "trajectory_reference": {
+      "required_event_types": ["file_read", "file_write", "tool_call"],
+      "milestones": [
+        {"id": "inspect_existing_contract", "event_types": ["file_read"]},
+        {"id": "coordinate_policy_edits", "event_types": ["file_write"]},
+        {"id": "verify_regressions", "event_types": ["tool_call"]}
+      ],
+      "reference_events_to_completion": 7
+    }
   }
 ]
