@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
-QA_SCHEMA = "aios-bench/task-qa/v2"
-QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v3"
+QA_SCHEMA = "aios-bench/task-qa/v3"
+QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v4"
 QA_REVIEW_INTERVAL_DAYS = 180
 LIFECYCLES = frozenset({"draft", "pilot", "stable", "retired"})
 REVIEW_STATUSES = frozenset({"pending", "passed", "failed", "not_applicable"})
@@ -64,6 +64,19 @@ def task_semantic_digest(task: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def review_context_digest(task_digest: str, exposure: str) -> str:
+    """Bind manual review evidence to task meaning plus its exposure state."""
+    payload = json.dumps(
+        {
+            "task_semantic_digest": str(task_digest),
+            "exposure": str(exposure),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -167,6 +180,17 @@ def validate_task_qa_records(
         exposure = str(raw.get("exposure", ""))
         if exposure not in EXPOSURE_LEVELS:
             record_errors.append(f"invalid exposure {exposure!r}")
+
+        context_digest = str(raw.get("review_context_digest", ""))
+        if not _SHA256.fullmatch(context_digest):
+            record_errors.append("review_context_digest must be a lowercase SHA-256 hex digest")
+        elif _SHA256.fullmatch(semantic_digest) and exposure in EXPOSURE_LEVELS:
+            expected_context = review_context_digest(semantic_digest, exposure)
+            if context_digest != expected_context:
+                record_errors.append(
+                    f"stale review_context_digest {context_digest}; current context has {expected_context}"
+                )
+
         known_issues = raw.get("known_issues")
         if not isinstance(known_issues, list) or not all(
             isinstance(item, str) and item.strip() for item in known_issues
@@ -192,6 +216,7 @@ def validate_task_qa_records(
             "task_id": task_id,
             "task_revision": revision,
             "task_semantic_digest": semantic_digest,
+            "review_context_digest": context_digest,
             "lifecycle": lifecycle,
             "exposure": exposure,
             "known_issues": list(known_issues),
@@ -369,6 +394,7 @@ __all__ = [
     "TaskQAError",
     "build_task_qa_report",
     "load_task_qa",
+    "review_context_digest",
     "task_semantic_digest",
     "task_semantic_payload",
     "validate_task_qa_records",
