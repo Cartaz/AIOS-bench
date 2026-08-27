@@ -52,11 +52,12 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
                 "current_active": 2,
                 "historical_decoys": 4,
             },
+            "pristine_refactor": {},
         },
     )
 
     assert result["schema"] == "aios-bench/parametric-validation/v2"
-    assert result["checked_tasks"] == 6
+    assert result["checked_tasks"] == 7
     assert result["ok"] is True, result["failures"]
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
@@ -65,6 +66,7 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
         "runtime_investigation",
         "tool_branching",
         "coverage_migration",
+        "pristine_refactor",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
