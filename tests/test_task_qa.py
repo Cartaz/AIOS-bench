@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from aios_bench.tasks import load_tasks
 from core.benchmark.task_qa import (
     build_task_qa_report,
     load_task_qa,
+    task_semantic_digest,
     validate_task_qa_records,
 )
-from aios_bench.tasks import load_tasks
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,10 +29,35 @@ def _reviews(status: str = "pending") -> dict:
     }
 
 
-def _record(task_id: str = "task_a", revision: int = 4, lifecycle: str = "pilot") -> dict:
+def _task(task_id: str = "task_a", revision: int = 4, prompt: str = "Do the task"):
+    return SimpleNamespace(
+        id=task_id,
+        category="autonomy",
+        prompt=prompt,
+        mode="cold",
+        tier=4,
+        revision=revision,
+        tags=("test",),
+        required_capabilities=(),
+        depends_on=(),
+        acceptance=({"type": "reference", "task_id": task_id},),
+        behavioral_acceptance=(),
+        trajectory_reference=None,
+    )
+
+
+def _record(
+    task=None,
+    *,
+    task_id: str = "task_a",
+    revision: int = 4,
+    lifecycle: str = "pilot",
+) -> dict:
+    task = task or _task(task_id=task_id, revision=revision)
     return {
         "task_id": task_id,
         "task_revision": revision,
+        "task_semantic_digest": task_semantic_digest(task),
         "lifecycle": lifecycle,
         "exposure": "public_repository",
         "known_issues": [],
@@ -51,11 +77,15 @@ def test_actual_frontier_v4_qa_registry_covers_every_task_without_claiming_promo
     assert all(item["lifecycle"] == "pilot" for item in result["records"])
     assert all(item["manual_reviews_ready"] is False for item in result["records"])
     assert all(len(item["pending_reviews"]) == 5 for item in result["records"])
+    assert all(len(item["task_semantic_digest"]) == 64 for item in result["records"])
 
 
 def test_registry_rejects_missing_and_stale_records() -> None:
-    tasks = [SimpleNamespace(id="task_a", revision=4), SimpleNamespace(id="task_b", revision=4)]
-    result = validate_task_qa_records(tasks, [_record(revision=3)])
+    task_a = _task()
+    tasks = [task_a, _task(task_id="task_b")]
+    record = _record(task_a, revision=3)
+
+    result = validate_task_qa_records(tasks, [record])
 
     assert result["registry_ok"] is False
     assert {item["error"] for item in result["errors"]} == {
@@ -64,16 +94,60 @@ def test_registry_rejects_missing_and_stale_records() -> None:
     }
 
 
+def test_same_revision_prompt_change_invalidates_prior_audit_digest() -> None:
+    audited = _task(prompt="Original task contract")
+    changed = _task(prompt="Changed task contract")
+    record = _record(audited)
+
+    result = validate_task_qa_records([changed], [record])
+
+    assert result["registry_ok"] is False
+    assert any("stale task_semantic_digest" in item["error"] for item in result["errors"])
+
+
+def test_same_revision_trajectory_reference_change_invalidates_prior_audit_digest() -> None:
+    audited = _task()
+    audited.trajectory_reference = {
+        "required_event_types": ("file_read",),
+        "milestones": ({"id": "inspect", "event_types": ("file_read",)},),
+    }
+    changed = _task()
+    changed.trajectory_reference = {
+        "required_event_types": ("file_read", "tool_call"),
+        "milestones": (
+            {"id": "inspect", "event_types": ("file_read",)},
+            {"id": "verify", "event_types": ("tool_call",)},
+        ),
+    }
+    record = _record(audited)
+
+    result = validate_task_qa_records([changed], [record])
+
+    assert result["registry_ok"] is False
+    assert any("stale task_semantic_digest" in item["error"] for item in result["errors"])
+
+
+def test_missing_semantic_digest_is_rejected() -> None:
+    task = _task()
+    record = _record(task)
+    del record["task_semantic_digest"]
+
+    result = validate_task_qa_records([task], [record])
+
+    assert result["registry_ok"] is False
+    assert any("task_semantic_digest must be" in item["error"] for item in result["errors"])
+
+
 def test_stable_lifecycle_cannot_be_declared_with_pending_reviews() -> None:
-    tasks = [SimpleNamespace(id="task_a", revision=4)]
-    result = validate_task_qa_records(tasks, [_record(lifecycle="stable")])
+    task = _task()
+    result = validate_task_qa_records([task], [_record(task, lifecycle="stable")])
 
     assert result["registry_ok"] is False
     assert any("stable lifecycle requires" in item["error"] for item in result["errors"])
 
 
 def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() -> None:
-    tasks = [SimpleNamespace(id="task_a", revision=4)]
+    task = _task()
     automated = {
         "ok": True,
         "observations": [{
@@ -85,7 +159,7 @@ def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() 
         }],
     }
 
-    result = build_task_qa_report(tasks, [_record()], automated)
+    result = build_task_qa_report([task], [_record(task)], automated)
 
     assert result["ok"] is True
     assert result["promotion_ready_count"] == 0
@@ -95,8 +169,8 @@ def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() 
 
 
 def test_stable_promotion_requires_automated_and_manual_evidence() -> None:
-    tasks = [SimpleNamespace(id="task_a", revision=4)]
-    record = _record(lifecycle="stable")
+    task = _task()
+    record = _record(task, lifecycle="stable")
     record["reviews"] = _reviews("passed")
     automated = {
         "ok": True,
@@ -109,7 +183,7 @@ def test_stable_promotion_requires_automated_and_manual_evidence() -> None:
         }],
     }
 
-    result = build_task_qa_report(tasks, [record], automated)
+    result = build_task_qa_report([task], [record], automated)
 
     assert result["ok"] is True
     assert result["all_promotion_ready"] is True
