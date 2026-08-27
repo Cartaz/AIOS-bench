@@ -19,8 +19,17 @@ ROOT = Path(__file__).resolve().parents[1]
 AUDIT_DATE = date(2026, 8, 27)
 
 
+def _evidence() -> dict:
+    return {
+        "kind": "manual_review",
+        "reference": "tests/review-evidence.md#task-a",
+        "observed_at": AUDIT_DATE.isoformat(),
+        "notes": "review evidence",
+    }
+
+
 def _reviews(status: str = "pending") -> dict:
-    evidence = "review evidence" if status != "pending" else None
+    evidence = _evidence() if status != "pending" else None
     return {
         key: {"status": status, "evidence": evidence}
         for key in (
@@ -182,6 +191,52 @@ def test_exposure_change_invalidates_prior_review_context() -> None:
     assert any("stale review_context_digest" in item["error"] for item in result["errors"])
 
 
+def test_completed_review_requires_structured_evidence() -> None:
+    task = _task()
+    record = _record(task)
+    record["reviews"]["ambiguity_oracle_review"] = {
+        "status": "passed",
+        "evidence": "opaque string",
+    }
+
+    result = validate_task_qa_records([task], [record])
+
+    assert result["registry_ok"] is False
+    assert any("requires structured evidence" in item["error"] for item in result["errors"])
+
+
+def test_structured_review_evidence_validates_kind_reference_and_date() -> None:
+    task = _task()
+    record = _record(task)
+    record["reviews"]["ambiguity_oracle_review"] = {
+        "status": "passed",
+        "evidence": {
+            "kind": "made_up_kind",
+            "reference": "",
+            "observed_at": "2026-02-31",
+        },
+    }
+
+    result = validate_task_qa_records([task], [record])
+    errors = [item["error"] for item in result["errors"]]
+
+    assert result["registry_ok"] is False
+    assert any("invalid kind" in error for error in errors)
+    assert any("reference must be" in error for error in errors)
+    assert any("observed_at must be" in error for error in errors)
+
+
+def test_pending_review_rejects_dangling_evidence() -> None:
+    task = _task()
+    record = _record(task)
+    record["reviews"]["ambiguity_oracle_review"]["evidence"] = _evidence()
+
+    result = validate_task_qa_records([task], [record])
+
+    assert result["registry_ok"] is False
+    assert any("pending status requires evidence=null" in item["error"] for item in result["errors"])
+
+
 def test_invalid_calendar_audit_date_is_rejected() -> None:
     task = _task()
     record = _record(task)
@@ -190,7 +245,7 @@ def test_invalid_calendar_audit_date_is_rejected() -> None:
     result = validate_task_qa_records([task], [record])
 
     assert result["registry_ok"] is False
-    assert any("valid calendar date" in item["error"] for item in result["errors"])
+    assert any("valid YYYY-MM-DD" in item["error"] for item in result["errors"])
 
 
 def test_stable_lifecycle_cannot_be_declared_with_pending_reviews() -> None:
@@ -211,7 +266,7 @@ def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() 
         as_of=AUDIT_DATE,
     )
 
-    assert result["schema"] == "aios-bench/task-qa-report/v4"
+    assert result["schema"] == "aios-bench/task-qa-report/v5"
     assert result["ok"] is True
     assert result["promotion_ready_count"] == 0
     assert result["maintenance_due_count"] == 0
