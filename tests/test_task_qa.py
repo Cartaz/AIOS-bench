@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
 from aios_bench.tasks import load_tasks
 from core.benchmark.task_qa import (
+    QA_REVIEW_INTERVAL_DAYS,
     build_task_qa_report,
     load_task_qa,
     task_semantic_digest,
@@ -13,6 +15,7 @@ from core.benchmark.task_qa import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+AUDIT_DATE = date(2026, 8, 27)
 
 
 def _reviews(status: str = "pending") -> dict:
@@ -61,8 +64,21 @@ def _record(
         "lifecycle": lifecycle,
         "exposure": "public_repository",
         "known_issues": [],
-        "audited_at": "2026-08-27",
+        "audited_at": AUDIT_DATE.isoformat(),
         "reviews": _reviews(),
+    }
+
+
+def _automated(task_id: str = "task_a") -> dict:
+    return {
+        "ok": True,
+        "observations": [{
+            "task_id": task_id,
+            "same_seed_deterministic": True,
+            "different_seed_changes_variant": True,
+            "untouched_variant_fails": True,
+            "golden_variant_passes": True,
+        }],
     }
 
 
@@ -138,6 +154,17 @@ def test_missing_semantic_digest_is_rejected() -> None:
     assert any("task_semantic_digest must be" in item["error"] for item in result["errors"])
 
 
+def test_invalid_calendar_audit_date_is_rejected() -> None:
+    task = _task()
+    record = _record(task)
+    record["audited_at"] = "2026-02-31"
+
+    result = validate_task_qa_records([task], [record])
+
+    assert result["registry_ok"] is False
+    assert any("valid calendar date" in item["error"] for item in result["errors"])
+
+
 def test_stable_lifecycle_cannot_be_declared_with_pending_reviews() -> None:
     task = _task()
     result = validate_task_qa_records([task], [_record(task, lifecycle="stable")])
@@ -148,43 +175,72 @@ def test_stable_lifecycle_cannot_be_declared_with_pending_reviews() -> None:
 
 def test_qa_report_keeps_valid_pilot_green_without_faking_promotion_readiness() -> None:
     task = _task()
-    automated = {
-        "ok": True,
-        "observations": [{
-            "task_id": "task_a",
-            "same_seed_deterministic": True,
-            "different_seed_changes_variant": True,
-            "untouched_variant_fails": True,
-            "golden_variant_passes": True,
-        }],
-    }
 
-    result = build_task_qa_report([task], [_record(task)], automated)
+    result = build_task_qa_report(
+        [task],
+        [_record(task)],
+        _automated(),
+        as_of=AUDIT_DATE,
+    )
 
     assert result["ok"] is True
     assert result["promotion_ready_count"] == 0
+    assert result["maintenance_due_count"] == 0
     assert result["all_promotion_ready"] is False
     assert result["tasks"][0]["automated_validation_ready"] is True
     assert result["tasks"][0]["manual_reviews_ready"] is False
+    assert result["tasks"][0]["audit_age_days"] == 0
 
 
-def test_stable_promotion_requires_automated_and_manual_evidence() -> None:
+def test_stable_promotion_requires_automated_manual_and_fresh_evidence() -> None:
     task = _task()
     record = _record(task, lifecycle="stable")
     record["reviews"] = _reviews("passed")
-    automated = {
-        "ok": True,
-        "observations": [{
-            "task_id": "task_a",
-            "same_seed_deterministic": True,
-            "different_seed_changes_variant": True,
-            "untouched_variant_fails": True,
-            "golden_variant_passes": True,
-        }],
-    }
 
-    result = build_task_qa_report([task], [record], automated)
+    result = build_task_qa_report(
+        [task],
+        [record],
+        _automated(),
+        as_of=AUDIT_DATE,
+    )
 
     assert result["ok"] is True
     assert result["all_promotion_ready"] is True
     assert result["tasks"][0]["promotion_ready"] is True
+    assert result["tasks"][0]["maintenance_due"] is False
+
+
+def test_expired_pilot_audit_is_maintenance_due_without_breaking_registry_qa() -> None:
+    task = _task()
+    as_of = date.fromordinal(AUDIT_DATE.toordinal() + QA_REVIEW_INTERVAL_DAYS)
+
+    result = build_task_qa_report(
+        [task],
+        [_record(task)],
+        _automated(),
+        as_of=as_of,
+    )
+
+    assert result["ok"] is True
+    assert result["maintenance_due_count"] == 1
+    assert result["tasks"][0]["maintenance_due"] is True
+    assert result["tasks"][0]["promotion_ready"] is False
+
+
+def test_expired_stable_audit_breaks_current_promotion_contract() -> None:
+    task = _task()
+    record = _record(task, lifecycle="stable")
+    record["reviews"] = _reviews("passed")
+    as_of = date.fromordinal(AUDIT_DATE.toordinal() + QA_REVIEW_INTERVAL_DAYS)
+
+    result = build_task_qa_report(
+        [task],
+        [record],
+        _automated(),
+        as_of=as_of,
+    )
+
+    assert result["ok"] is False
+    assert result["maintenance_due_count"] == 1
+    assert result["tasks"][0]["promotion_ready"] is False
+    assert any("aging promotion prerequisites" in item["error"] for item in result["errors"])
