@@ -14,9 +14,14 @@ from .config_traversal import (
     generate_config_traversal_variant,
 )
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
+from .runtime_investigation import (
+    RuntimeInvestigationPressure,
+    check_runtime_investigation_variant,
+    generate_runtime_investigation_variant,
+)
 
 
-FAMILIES = {"expense_report", "config_traversal", "causal_gateway"}
+FAMILIES = {"expense_report", "config_traversal", "causal_gateway", "runtime_investigation"}
 
 
 def materialize_variant(
@@ -35,6 +40,9 @@ def materialize_variant(
     if family == "causal_gateway":
         pressure = CausalGatewayPressure.from_mapping(parameters or {})
         return generate_causal_gateway_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "runtime_investigation":
+        pressure = RuntimeInvestigationPressure.from_mapping(parameters or {})
+        return generate_runtime_investigation_variant(workspace, seed=int(seed), pressure=pressure)
     raise ValueError(f"unknown parametric family: {family}")
 
 
@@ -45,6 +53,8 @@ def check_variant(family: str, workspace: Path, oracle: Mapping[str, Any]) -> tu
         return check_config_traversal_variant(workspace, oracle)
     if family == "causal_gateway":
         return check_causal_gateway_variant(workspace, oracle)
+    if family == "runtime_investigation":
+        return check_runtime_investigation_variant(workspace, oracle)
     return False, f"unknown parametric family: {family}"
 
 
@@ -52,6 +62,7 @@ __all__ = [
     "CausalGatewayPressure",
     "ConfigTraversalPressure",
     "ExpensePressure",
+    "RuntimeInvestigationPressure",
     "FAMILIES",
     "check_variant",
     "materialize_variant",
