@@ -58,28 +58,32 @@ class FakeRunner:
         pass
 
 
+def _task() -> Task:
+    return Task(
+        "coding_001",
+        "coding",
+        "Change keep.txt",
+        acceptance=({"type": "exists", "path": "keep.txt"},),
+        behavioral_acceptance=({"type": "preserved_state", "path": "keep.txt"},),
+    )
+
+
 def test_behavioral_failure_is_persisted_but_does_not_change_capability_success(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setenv("AIOS_BENCH_SANDBOX", "off")
     runner = FakeRunner(tmp_path)
-    task = Task(
-        "coding_001",
-        "coding",
-        "Change keep.txt",
-        behavioral_acceptance=({"type": "preserved_state", "path": "keep.txt"},),
-    )
 
-    trajectory = run_frontier_task(runner, task, timeout=5)
+    trajectory = run_frontier_task(runner, _task(), timeout=5)
 
     assert trajectory.success is True
     assert runner.written is not None
     result = runner.written
     assert result["success"] is True
     assert result["score"] == 100.0
+    assert result["evaluation"]["passed"] is True
     assert result["behavioral_evaluation"]["passed"] is False
     assert result["behavioral_evaluation"]["affects_score"] is False
-    assert result["evaluation"] is None
     sequences = [event["sequence"] for event in result["events"]]
     assert sequences == list(range(1, len(sequences) + 1))
     assert result["events"][-1]["type"] == "behavioral_evaluation"
@@ -88,14 +92,8 @@ def test_behavioral_failure_is_persisted_but_does_not_change_capability_success(
 def test_behavioral_evaluation_is_json_serializable(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_BENCH_SANDBOX", "off")
     runner = FakeRunner(tmp_path)
-    task = Task(
-        "coding_001",
-        "coding",
-        "Change keep.txt",
-        behavioral_acceptance=({"type": "preserved_state", "path": "keep.txt"},),
-    )
 
-    run_frontier_task(runner, task, timeout=5)
+    run_frontier_task(runner, _task(), timeout=5)
 
     assert runner.written is not None
     json.dumps(runner.written)
