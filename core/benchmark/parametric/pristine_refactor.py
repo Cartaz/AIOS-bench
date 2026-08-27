@@ -255,6 +255,7 @@ def evaluate_pristine_refactor_variant(
                 "verifier_isolation_strategy": execution.isolation_strategy,
                 "verifier_filesystem_confined": execution.filesystem_confined,
                 "verifier_network_confined": execution.network_confined,
+                "verifier_isolation_error": execution.isolation_error,
             },
         }
     except (
