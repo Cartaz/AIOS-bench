@@ -1,5 +1,5 @@
 {
-  "schema": "aios-bench/task-qa/v3",
+  "schema": "aios-bench/task-qa/v4",
   "tasks": [
     {
       "task_id": "autonomy_expense_001",
