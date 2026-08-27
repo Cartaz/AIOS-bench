@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -35,6 +36,25 @@ def _config_traversal_golden(
     return []
 
 
+def _causal_gateway_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    template_relative = str(oracle.get("template_path", ""))
+    backend_port = oracle.get("backend_port")
+    if not template_relative or backend_port is None:
+        raise ValueError("invalid causal gateway oracle")
+
+    template_path = workspace / template_relative
+    template = json.loads(template_path.read_text(encoding="utf-8"))
+    template["backend_port"] = int(backend_port)
+    template_path.write_text(
+        json.dumps(template, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return []
+
+
 def materialize_parametric_golden(
     family: str,
     workspace: Path,
@@ -42,6 +62,7 @@ def materialize_parametric_golden(
 ) -> list[dict[str, Any]]:
     registry = {
         "config_traversal": _config_traversal_golden,
+        "causal_gateway": _causal_gateway_golden,
     }
     materializer = registry.get(family)
     if materializer is not None:
