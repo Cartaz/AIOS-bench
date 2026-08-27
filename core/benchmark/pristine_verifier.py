@@ -7,6 +7,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .bubblewrap import probe_bubblewrap
+
 
 @dataclass(frozen=True)
 class VerifierExecution:
@@ -16,6 +18,7 @@ class VerifierExecution:
     isolation_strategy: str
     filesystem_confined: bool
     network_confined: bool
+    isolation_error: str | None = None
 
 
 def _runtime_binding() -> tuple[tuple[str, ...], str]:
@@ -82,13 +85,7 @@ def run_pristine_verifier(
     timeout: float = 8.0,
     mode: str | None = None,
 ) -> VerifierExecution:
-    """Run hidden verification with no benchmark repository dependency.
-
-    Bubblewrap mode exposes only read-only system/runtime paths plus the writable
-    pristine tree and an ephemeral /tmp. Network and several process namespaces
-    are unshared. Auto mode falls back explicitly when Bubblewrap is unavailable;
-    callers persist the returned isolation metadata rather than assuming safety.
-    """
+    """Run hidden verification with an explicit, capability-tested boundary."""
     selected = (mode or os.environ.get("AIOS_BENCH_VERIFIER_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
         raise ValueError("AIOS_BENCH_VERIFIER_SANDBOX must be auto, required or off")
@@ -104,21 +101,32 @@ def run_pristine_verifier(
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONIOENCODING": "utf-8",
     }
+
     bwrap = shutil.which("bwrap") if selected != "off" else None
+    capability_error: str | None = None
+    usable_bwrap = False
     if bwrap is not None:
+        capability = probe_bubblewrap(bwrap)
+        usable_bwrap = capability.usable
+        capability_error = capability.error
+
+    if usable_bwrap and bwrap is not None:
         command = _sandbox_command(pristine, bootstrap, bwrap)
         cwd = None
         strategy = "bubblewrap_minimal_runtime"
         filesystem_confined = True
         network_confined = True
+        isolation_error = None
     else:
         if selected == "required":
-            raise RuntimeError("pristine verifier sandbox required but bubblewrap is unavailable")
+            reason = capability_error or "bubblewrap is unavailable"
+            raise RuntimeError(f"pristine verifier sandbox required but unavailable: {reason}")
         command = [sys.executable, "-I", "-S", "-c", bootstrap]
         cwd = pristine
         strategy = "isolated_python_unconfined" if selected == "auto" else "sandbox_disabled"
         filesystem_confined = False
         network_confined = False
+        isolation_error = capability_error if selected == "auto" else None
 
     process = subprocess.run(
         command,
@@ -136,6 +144,7 @@ def run_pristine_verifier(
         isolation_strategy=strategy,
         filesystem_confined=filesystem_confined,
         network_confined=network_confined,
+        isolation_error=isolation_error,
     )
 
 
