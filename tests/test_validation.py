@@ -75,6 +75,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         },
     )
 
+    assert result["schema"] == "aios-bench/parametric-validation/v3"
     assert result["ok"] is True, result["failures"]
     assert result["checked_tasks"] == 8
     assert {item["family"] for item in result["observations"]} == {
@@ -92,4 +93,6 @@ def test_parametric_preflight_checks_all_catalog_families():
         assert observation["different_seed_changes_variant"] is True
         assert observation["untouched_variant_fails"] is True
         assert observation["golden_variant_passes"] is True
+        assert observation["adversarial_witness_rejected"] is True
+        assert observation["adversarial_witness"] not in {"", "materializer_error"}
         assert observation["variant_digest"] != observation["comparison_variant_digest"]
