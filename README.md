@@ -49,6 +49,12 @@ Frontier v3 and v4 remain separate scientific catalogs so historical results and
 
 Materialization is a task/suite concern; harness execution, lifecycle, telemetry, scoring, persistence and scheduling are shared. A future catalog therefore does not require a new execution engine merely because its task materialization strategy changes.
 
+Frontier v4 may also use benchmark-owned loopback runtime fixtures when a task must distinguish static inspection from live state. These services are started by the materializer, bind only to `127.0.0.1`, have bounded startup/shutdown, and are always cleaned up by the runner even if task execution raises. Ephemeral endpoint files are operational state and are not treated as seeded semantic fixture content.
+
+The causal gateway family distinguishes source-of-truth repair from generated-state patching by reconstructing runtime state during verification. The runtime-investigation family exposes live state only through a read-only probe while static documentation contains a deliberately stale but plausible hypothesis.
+
+The adversarial tool-branching family materializes benchmark-owned tool wrappers backed by a stateful loopback service. The authoritative inspection result determines which branch-specific lookup is valid. Plausible legacy/cache/metrics/archive/directory tools are distractors, and broad probing or selection of the wrong branch contaminates that task session. The final artifact must contain branch-specific receipts verified by the deterministic oracle. This avoids using harness-specific textual log parsing as the ground truth for tool selection. Receipt/session hardening against an agent that deliberately escapes the benchmark workspace is part of the later contamination/anti-cheat work; current tools follow the same workspace trust boundary as the rest of Frontier.
+
 ### Deterministic behavioral oracles
 
 Task catalogs may define optional `behavioral_acceptance` checks in addition to their normal capability `acceptance` oracle. Behavioral checks are deterministic, task-owned observations used to characterize how an agent behaved; they do not change capability success or score.
