@@ -89,7 +89,15 @@ aiosbench --suite frontier_v4 qa-evidence
 
 The report includes only comparable attempts for the current task revision. It exposes observed profile/harness/model diversity, pass/fail distribution, score range, canonical `status`/`failure_kind` counts, pressure-coordinate diversity and canonical generated-variant identity from `variant_digest`, plus `collection_state` and `collection_gaps`. The four collection axes ask whether each task has at least one current-revision attempt and contrasting evidence from a second harness, second model and second generated variant identity. Cross-profile diversity remains visible as descriptive context but is not duplicated as a separate requirement. These are **collection gaps, not promotion thresholds**: an empty gap list does not automatically pass `multi_agent_pilot` or `saturation_review`, and the command never mutates the QA registry. Reviewers must inspect the failure taxonomy before treating failed attempts as model-capability evidence rather than runner/harness/infrastructure failures.
 
-Promotion requires current automated validation, completed manual review evidence, no known issues, a fresh audit and a non-retired lifecycle. Contamination risk remains descriptive rather than becoming a capability-score penalty. The scoped adversarial and contamination reviews do **not** claim protection against an agent escaping an unconfined workspace and reading public benchmark internals. Compatible-host proof of the strong Bubblewrap verifier/workspace boundary remains an M12 requirement.
+A compatible Linux host can exercise the actual strong verifier boundary with:
+
+```bash
+.venv/bin/python -m core.benchmark.qa_isolation
+```
+
+The diagnostic requests Bubblewrap in fail-closed `required` mode and returns machine-readable `aios-bench/qa-isolation-evidence/v1` JSON. It exits successfully only when the submitted workspace is writable, a sibling host secret is unreadable, the host loopback listener is unreachable, and the verifier reports both filesystem and network confinement through `bubblewrap_minimal_runtime`. An unavailable binary, denied namespaces, verifier timeout or incomplete probe returns `ok=false` and exit code 2. This command makes the M12 environment-specific proof reproducible; it does not automatically edit QA review state.
+
+Promotion requires current automated validation, completed manual review evidence, no known issues, a fresh audit and a non-retired lifecycle. Contamination risk remains descriptive rather than becoming a capability-score penalty. The scoped adversarial and contamination reviews do **not** claim protection against an agent escaping an unconfined workspace and reading public benchmark internals. Compatible-host proof of the strong Bubblewrap verifier/workspace boundary remains an M12 requirement until the diagnostic above is observed with `ok=true` on such a host.
 
 ### Semantic reference trajectories
 
