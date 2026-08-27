@@ -8,11 +8,18 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
-QA_SCHEMA = "aios-bench/task-qa/v3"
-QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v4"
+QA_SCHEMA = "aios-bench/task-qa/v4"
+QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v5"
 QA_REVIEW_INTERVAL_DAYS = 180
 LIFECYCLES = frozenset({"draft", "pilot", "stable", "retired"})
 REVIEW_STATUSES = frozenset({"pending", "passed", "failed", "not_applicable"})
+REVIEW_EVIDENCE_KINDS = frozenset({
+    "manual_review",
+    "ci_run",
+    "benchmark_run",
+    "document",
+    "external_reference",
+})
 REVIEW_KEYS = (
     "ambiguity_oracle_review",
     "cheat_adversarial_review",
@@ -34,6 +41,7 @@ AUTOMATED_CHECK_KEYS = (
 )
 _SAFE_ID = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 class TaskQAError(ValueError):
@@ -94,6 +102,42 @@ def load_task_qa(path: Path) -> list[dict[str, Any]]:
     return [dict(item) if isinstance(item, Mapping) else item for item in records]
 
 
+def _valid_date(value: object) -> bool:
+    if not isinstance(value, str) or not _DATE.fullmatch(value):
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _review_evidence_errors(key: str, status: str, evidence: object) -> list[str]:
+    if status == "pending":
+        return [] if evidence is None else [f"{key} pending status requires evidence=null"]
+    if not isinstance(evidence, Mapping):
+        return [f"{key} status {status} requires structured evidence"]
+
+    errors: list[str] = []
+    allowed = {"kind", "reference", "observed_at", "notes"}
+    unknown = sorted(set(str(item) for item in evidence) - allowed)
+    if unknown:
+        errors.append(f"{key} evidence has unknown keys: {unknown}")
+    kind = str(evidence.get("kind", ""))
+    if kind not in REVIEW_EVIDENCE_KINDS:
+        errors.append(f"{key} evidence has invalid kind {kind!r}")
+    reference = evidence.get("reference")
+    if not isinstance(reference, str) or not reference.strip():
+        errors.append(f"{key} evidence reference must be a non-empty string")
+    observed_at = evidence.get("observed_at")
+    if not _valid_date(observed_at):
+        errors.append(f"{key} evidence observed_at must be a valid YYYY-MM-DD date")
+    notes = evidence.get("notes")
+    if notes is not None and (not isinstance(notes, str) or not notes.strip()):
+        errors.append(f"{key} evidence notes must be null or a non-empty string")
+    return errors
+
+
 def _review_state(record: Mapping[str, Any]) -> tuple[bool, list[str], list[str]]:
     reviews = record.get("reviews")
     if not isinstance(reviews, Mapping):
@@ -113,14 +157,10 @@ def _review_state(record: Mapping[str, Any]) -> tuple[bool, list[str], list[str]
                 errors.append(f"{key} must be an object")
             continue
         status = str(raw.get("status", ""))
-        evidence = raw.get("evidence")
         if status not in REVIEW_STATUSES:
             errors.append(f"{key} has invalid status {status!r}")
             continue
-        if status in {"passed", "failed", "not_applicable"} and not (
-            isinstance(evidence, str) and evidence.strip()
-        ):
-            errors.append(f"{key} status {status} requires evidence")
+        errors.extend(_review_evidence_errors(key, status, raw.get("evidence")))
         if status == "pending":
             pending.append(key)
     ready = not errors and all(
@@ -198,13 +238,8 @@ def validate_task_qa_records(
             record_errors.append("known_issues must be an array of non-empty strings")
             known_issues = []
         audited_at = raw.get("audited_at")
-        if not isinstance(audited_at, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", audited_at):
-            record_errors.append("audited_at must be YYYY-MM-DD")
-        else:
-            try:
-                date.fromisoformat(audited_at)
-            except ValueError:
-                record_errors.append("audited_at must be a valid calendar date")
+        if not _valid_date(audited_at):
+            record_errors.append("audited_at must be a valid YYYY-MM-DD date")
         manual_ready, review_errors, pending = _review_state(raw)
         record_errors.extend(review_errors)
         if lifecycle == "stable" and not manual_ready:
@@ -389,6 +424,7 @@ __all__ = [
     "QA_REPORT_SCHEMA",
     "QA_REVIEW_INTERVAL_DAYS",
     "QA_SCHEMA",
+    "REVIEW_EVIDENCE_KINDS",
     "REVIEW_KEYS",
     "REVIEW_STATUSES",
     "TaskQAError",
