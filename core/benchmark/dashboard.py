@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from .report import build_summary, load_results, summarize_rows
-from .resource_reporting import resource_efficiency_groups
 from .statistics import (
     aggregate_repeat_rows,
     failure_distributions,
@@ -170,6 +169,27 @@ def _efficiency_rows(groups: list[dict[str, Any]]) -> str:
     )
 
 
+def _behavior_rows(groups: list[dict[str, Any]]) -> str:
+    return "".join(
+        '<tr>'
+        f'<td>{_display(item.get("harness"))}</td>'
+        f'<td>{_display(item.get("model"))}</td>'
+        f'<td>{int(item.get("tasks_with_behavior_telemetry", 0))}</td>'
+        f'<td>{_score(item.get("mean_assistant_turns"))}</td>'
+        f'<td>{_score(item.get("mean_tool_calls"))}</td>'
+        f'<td>{_score(item.get("mean_unique_tools"))}</td>'
+        f'<td>{_score(item.get("mean_consecutive_repeated_tool_calls"))}</td>'
+        f'<td>{_score(item.get("mean_tool_errors"))}</td>'
+        f'<td>{_score(item.get("mean_retries"))}</td>'
+        f'<td>{_score(item.get("mean_file_reads"))}</td>'
+        f'<td>{_score(item.get("mean_file_writes"))}</td>'
+        f'<td>{_score(item.get("mean_subagent_starts"))}</td>'
+        f'<td>{int(item.get("total_refusals", 0))}</td>'
+        '</tr>'
+        for item in groups
+    )
+
+
 def _resource_rows(groups: list[dict[str, Any]], side: str) -> str:
     rows: list[str] = []
     for item in groups:
@@ -307,7 +327,12 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     paired = paired_comparisons(raw_rows, **filters)
     failures = failure_distributions(raw_rows, **filters)
     efficiency = server_efficiency_groups(raw_rows, **filters)
-    resources = resource_efficiency_groups(raw_rows, **filters)
+    resources = summary.get("resource_efficiency") if isinstance(summary.get("resource_efficiency"), list) else []
+    behavior = (
+        summary.get("agent_behavior_efficiency")
+        if isinstance(summary.get("agent_behavior_efficiency"), list)
+        else []
+    )
     landscapes = summary.get("pressure_landscapes") if isinstance(summary.get("pressure_landscapes"), list) else []
     pressure_pairs = summary.get("pressure_paired_comparisons") if isinstance(summary.get("pressure_paired_comparisons"), list) else []
     selected = (
@@ -366,6 +391,7 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     paired_table = _paired_rows(paired)
     failure_table = _failure_rows(failures)
     efficiency_table = _efficiency_rows(efficiency)
+    behavior_table = _behavior_rows(behavior)
     client_resource_table = _resource_rows(resources, "client")
     server_resource_table = _resource_rows(resources, "server")
     pressure_axis_table = _pressure_axis_rows(landscapes)
@@ -383,9 +409,10 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIOS-bench Dashboard</title>
 <style>:root{{color-scheme:dark}}body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}}h1{{margin-bottom:4px}}.meta{{color:#999;margin-bottom:24px}}table{{border-collapse:collapse;width:100%;max-width:1400px}}th,td{{padding:12px;border-bottom:1px solid #333;text-align:left;vertical-align:top;white-space:nowrap}}th{{color:#aaa}}code{{font-size:.9em}}.panel{{margin-top:28px;max-width:1400px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}}.card{{border:1px solid #333;border-radius:12px;padding:16px}}.bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}}.fill{{height:100%;background:#aaa}}small{{color:#999}}</style></head><body><h1>AIOS-bench</h1>
-<div class="meta">Harness × model comparison — newest observed suite revision: {selected}. Capability, reliability, pressure response and efficiency are reported separately.</div>
+<div class="meta">Harness × model comparison — newest observed suite revision: {selected}. Capability, reliability, trajectory behavior, pressure response and efficiency are reported separately.</div>
 <div class="panel"><h2>Latest capability leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Suite</th><th>Revision</th><th>Profile</th><th>Run</th><th>Score</th><th>Passed</th><th>Unsupported</th><th>Blocked</th><th>Success</th><th>Runtime</th></tr></thead><tbody>{cards or '<tr><td colspan="12">No eligible benchmark results yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Reliability across repeats</h2><p><small>Attempt-level pass rate and Wilson 95% interval. Score range is descriptive; capability scoring is unchanged.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Repeats</th><th>Passed attempts</th><th>Pass rate</th><th>Wilson 95%</th><th>Median score</th><th>Score range</th></tr></thead><tbody>{reliability_table or '<tr><td colspan="8">No repeated observations yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Agent trajectory behavior</h2><p><small>Descriptive metrics derived only from canonical non-inferred events. Counts describe how the agent worked; they do not change capability score and do not label actions useful, harmful or unnecessary.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Measured tasks</th><th>Mean turns</th><th>Mean tool calls</th><th>Mean unique tools</th><th>Mean consecutive repeats</th><th>Mean tool errors</th><th>Mean retries</th><th>Mean file reads</th><th>Mean file writes</th><th>Mean subagents</th><th>Total refusals</th></tr></thead><tbody>{behavior_table or '<tr><td colspan="13">No reliable structured trajectory telemetry yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Paired harness comparisons</h2><p><small>Strict same-model matched observations only. Δ = score(A) − score(B); CI is task-cluster bootstrap; p is paired sign-flip.</small></p><table><thead><tr><th>A</th><th>B</th><th>Tasks</th><th>Observations</th><th>Mean Δ</th><th>95% CI</th><th>p</th><th>W/L/T</th><th>A-only pass / B-only pass</th></tr></thead><tbody>{paired_table or '<tr><td colspan="9">No strict matched comparisons yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Frontier v4 pressure response — marginal axes</h2><p><small>Each row conditions on one observed coordinate value and marginalizes over other observed coordinates. Coordinates are workload descriptors, not assumed monotonic difficulty levels.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Family</th><th>Axis</th><th>Value</th><th>Obs.</th><th>Variants</th><th>Pass rate</th><th>Wilson 95%</th><th>Mean score</th><th>Median</th><th>Failure mix</th></tr></thead><tbody>{pressure_axis_table or '<tr><td colspan="12">No selected Frontier v4 pressure observations yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Frontier v4 joint pressure cells</h2><p><small>Joint cells preserve the complete generated pressure vector; no interpolation is performed between unobserved cells.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Family</th><th>Pressure vector</th><th>Obs.</th><th>Variants</th><th>Pass rate</th><th>Wilson 95%</th><th>Mean score</th><th>Failure mix</th></tr></thead><tbody>{pressure_cell_table or '<tr><td colspan="10">No joint pressure cells yet.</td></tr>'}</tbody></table></div>
