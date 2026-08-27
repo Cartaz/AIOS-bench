@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from ..pristine import PristineArtifactError, pristine_overlay
+from ..pristine_verifier import run_pristine_verifier
 
 
 @dataclass(frozen=True)
@@ -241,34 +240,32 @@ def evaluate_pristine_refactor_variant(
             {str(key): str(value) for key, value in baseline.items()},
             [str(item) for item in artifact_paths],
         ) as (pristine, changes):
-            env = {
-                "PATH": os.environ.get("PATH", ""),
-                "PYTHONDONTWRITEBYTECODE": "1",
-                "PYTHONIOENCODING": "utf-8",
-            }
-            process = subprocess.run(
-                [sys.executable, "-c", _hidden_verifier(oracle)],
-                cwd=pristine,
-                env=env,
-                text=True,
-                capture_output=True,
-                timeout=8,
-                check=False,
-            )
-        passed = process.returncode == 0
-        detail_text = (process.stdout + "\n" + process.stderr).strip()[-2000:]
+            execution = run_pristine_verifier(pristine, _hidden_verifier(oracle), timeout=8)
+        passed = execution.returncode == 0
+        detail_text = (execution.stdout + "\n" + execution.stderr).strip()[-2000:]
         return {
             "passed": passed,
-            "detail": detail_text or f"pristine verifier exited {process.returncode}",
+            "detail": detail_text or f"pristine verifier exited {execution.returncode}",
             "metrics": {
-                "schema": "aios-bench/pristine-verification/v1",
+                "schema": "aios-bench/pristine-verification/v2",
                 "changed_artifact_count": len(changes),
                 "changed_artifacts": changes,
-                "verifier_returncode": process.returncode,
+                "verifier_returncode": execution.returncode,
                 "pristine_verification_passed": passed,
+                "verifier_isolation_strategy": execution.isolation_strategy,
+                "verifier_filesystem_confined": execution.filesystem_confined,
+                "verifier_network_confined": execution.network_confined,
             },
         }
-    except (OSError, TypeError, ValueError, KeyError, PristineArtifactError, subprocess.TimeoutExpired) as exc:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        PristineArtifactError,
+        subprocess.TimeoutExpired,
+    ) as exc:
         return {
             "passed": False,
             "detail": f"pristine refactor verifier error: {type(exc).__name__}: {exc}",
