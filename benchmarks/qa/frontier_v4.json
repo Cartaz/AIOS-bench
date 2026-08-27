@@ -20,7 +20,15 @@
             "notes": "Revision 5 makes the exact skipped-malformed-row count explicit; grader and public contract now agree."
           }
         },
-        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_adversarial_2026-08-27.md#autonomy_expense_001",
+            "observed_at": "2026-08-27",
+            "notes": "Generic correct totals with an off-by-one malformed-row audit count are rejected."
+          }
+        },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
         "saturation_review": {"status": "pending", "evidence": null}
@@ -45,7 +53,15 @@
             "notes": "Revision 5 explicitly protects service-registry and diagnostic/restart state already enforced by the grader."
           }
         },
-        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_adversarial_2026-08-27.md#autonomy_causal_gateway_001",
+            "observed_at": "2026-08-27",
+            "notes": "A symptom-only generated-runtime patch is rejected after benchmark-owned restart reconstruction."
+          }
+        },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
         "saturation_review": {"status": "pending", "evidence": null}
@@ -70,7 +86,15 @@
             "notes": "Prompt discloses the live-probe evidence and exact preservation/edit scope enforced by the oracle."
           }
         },
-        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_adversarial_2026-08-27.md#autonomy_runtime_investigation_001",
+            "observed_at": "2026-08-27",
+            "notes": "Correct live evidence paired with a stale-lane repair is rejected."
+          }
+        },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
         "saturation_review": {"status": "pending", "evidence": null}
@@ -95,7 +119,15 @@
             "notes": "Hidden verification checks the public behavioral contract without constraining internal architecture."
           }
         },
-        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_adversarial_2026-08-27.md#greenfield_registry_001",
+            "observed_at": "2026-08-27",
+            "notes": "An API-complete but in-memory-only registry is rejected by hidden persistence verification."
+          }
+        },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
         "saturation_review": {"status": "pending", "evidence": null}
@@ -120,7 +152,15 @@
             "notes": "Prompt/generated specification disclose protected files and integrated behavior verified from a pristine reconstruction."
           }
         },
-        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_adversarial_2026-08-27.md#long_horizon_pristine_001",
+            "observed_at": "2026-08-27",
+            "notes": "An all-but-one-module rollout is rejected by pristine hidden integration verification."
+          }
+        },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
         "saturation_review": {"status": "pending", "evidence": null}
@@ -145,7 +185,15 @@
             "notes": "Required settings, ordered chain, consumer path and decoy exclusion are all disclosed in the task contract."
           }
         },
-        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_adversarial_2026-08-27.md#tool_use_config_001",
+            "observed_at": "2026-08-27",
+            "notes": "Correct settings with incomplete provenance are rejected."
+          }
+        },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
         "saturation_review": {"status": "pending", "evidence": null}
@@ -170,7 +218,15 @@
             "notes": "Authority/freshness, session-contamination risk and exact report fields are public while command sequence remains unconstrained."
           }
         },
-        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_adversarial_2026-08-27.md#tool_use_branching_001",
+            "observed_at": "2026-08-27",
+            "notes": "Correct case data with a fabricated branch receipt is rejected; host escape remains a separate M12 boundary."
+          }
+        },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
         "saturation_review": {"status": "pending", "evidence": null}
@@ -195,7 +251,15 @@
             "notes": "The authoritative finite set, exact migration requirement and protected out-of-scope files are disclosed and match evaluator semantics."
           }
         },
-        "cheat_adversarial_review": {"status": "pending", "evidence": null},
+        "cheat_adversarial_review": {
+          "status": "passed",
+          "evidence": {
+            "kind": "document",
+            "reference": "benchmarks/qa/reviews/frontier_v4_adversarial_2026-08-27.md#tool_use_coverage_001",
+            "observed_at": "2026-08-27",
+            "notes": "A locally correct but partial finite-set migration is rejected."
+          }
+        },
         "multi_agent_pilot": {"status": "pending", "evidence": null},
         "contamination_review": {"status": "pending", "evidence": null},
         "saturation_review": {"status": "pending", "evidence": null}
