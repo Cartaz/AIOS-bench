@@ -43,11 +43,10 @@ class Trajectory:
     evaluation_score: float | None = None
 
     def append_event(self, event: dict[str, Any]) -> None:
-        """Append one event with stable ordering while preserving adapter metadata."""
+        """Append one ordered event without changing harness-telemetry availability."""
         normalized = dict(event)
         normalized.setdefault("sequence", len(self.events) + 1)
         self.events.append(normalized)
-        self.telemetry_available = True
 
     def apply_events(self, events: list[dict[str, Any]]) -> None:
         # Persist observation order explicitly so replay never has to infer it
@@ -56,6 +55,9 @@ class Trajectory:
         self.events = []
         for event in events:
             self.append_event(event)
+        # This flag describes structured agent/harness telemetry observed at
+        # parse time. Later runner-owned metric/evaluation events must not turn
+        # an otherwise unavailable trajectory stream into a reported one.
         self.telemetry_available = bool(self.events)
         counts: dict[str, int] = {}
         input_tokens = output_tokens = 0
