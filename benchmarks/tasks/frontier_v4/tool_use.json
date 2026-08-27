@@ -30,5 +30,17 @@
       {"type": "preserved_state", "path": "tools/billing_lookup.py"},
       {"type": "preserved_state", "path": "tools/access_lookup.py"}
     ]
+  },
+  {
+    "id": "tool_use_coverage_001",
+    "category": "tool_use",
+    "tier": 4,
+    "revision": 4,
+    "prompt": "Migrate the runtime configuration completely. Use README.md and config/runtime_index.json to determine the authoritative finite set of loaded fragments. Every loaded fragment that still uses the deprecated timeout_ms key must be migrated to request_timeout_ms while preserving its value and all unrelated fields. Already-current loaded fragments and retired files under config/history/ must remain unchanged. Partial migration is a failure, and modifying plausible out-of-scope files is also a failure.",
+    "mode": "cold",
+    "tags": ["tool_use", "frontier_v4", "parametric", "coverage", "completeness", "migration"],
+    "acceptance": [
+      {"type": "parametric_reference", "family": "coverage_migration", "task_id": "tool_use_coverage_001", "weight": 10, "fatal": true}
+    ]
   }
 ]
