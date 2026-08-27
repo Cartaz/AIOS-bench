@@ -16,7 +16,6 @@ REFERENCE = validate_reference_trajectory({
         {"id": "modify", "event_types": ["file_write"]},
         {"id": "verify", "event_types": ["tool_call"]},
     ],
-    "reference_events_to_completion": 4,
 })
 
 
@@ -40,8 +39,8 @@ def test_reference_trajectory_matches_ordered_semantic_milestones() -> None:
     assert result["available"] is True
     assert result["complete"] is True
     assert result["events_to_completion"] == 4
-    assert result["effort_multiple_of_reference"] == 1.0
     assert result["post_completion_events"] == 1
+    assert result["calibrated_reference_effort_available"] is False
     assert [item["id"] for item in result["milestones"]] == ["inspect", "modify", "verify"]
     assert result["affects_score"] is False
 
@@ -91,12 +90,11 @@ def test_reference_trajectory_can_be_available_but_incomplete() -> None:
     assert result["events_to_completion"] is None
 
 
-def test_reference_trajectory_validation_rejects_invalid_budget() -> None:
-    with pytest.raises(ReferenceTrajectoryError, match="cannot be smaller"):
+def test_reference_trajectory_validation_rejects_duplicate_milestones() -> None:
+    with pytest.raises(ReferenceTrajectoryError, match="unique"):
         validate_reference_trajectory({
             "milestones": [
-                {"id": "a", "event_types": ["file_read"]},
-                {"id": "b", "event_types": ["file_write"]},
+                {"id": "same", "event_types": ["file_read"]},
+                {"id": "same", "event_types": ["file_write"]},
             ],
-            "reference_events_to_completion": 1,
         })
