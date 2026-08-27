@@ -53,6 +53,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "autonomy_expense_001",
         "autonomy_causal_gateway_001",
         "autonomy_runtime_investigation_001",
+        "greenfield_registry_001",
         "long_horizon_pristine_001",
         "tool_use_config_001",
         "tool_use_branching_001",
