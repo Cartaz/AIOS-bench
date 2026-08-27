@@ -12,6 +12,7 @@ from typing import Any, Callable
 from core.cancellation import RunCancelled
 
 from .adapters import PiAgentAdapter
+from .behavioral_oracles import capture_behavioral_baseline, evaluate_behavioral_oracles
 from .evaluators import evaluate_artifacts
 from .failures import classify_failure
 from .goose_telemetry import parse_goose_stream_json
@@ -170,6 +171,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         raise RunCancelled("Benchmark run cancelled")
 
     workspace = runner._workspace(task)
+    behavioral_baseline = capture_behavioral_baseline(workspace, task.behavioral_acceptance)
     logs = runner.run_dir / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     stdout_path = logs / f"{task.id}.stdout.log"
@@ -383,17 +385,17 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         trajectory.success = False
     execution_success = bool(trajectory.success)
 
-    trajectory.events.append({
+    trajectory.append_event({
         "type": "server_metrics",
         "source": "runner",
         "data": server_usage,
     })
-    trajectory.events.append({
+    trajectory.append_event({
         "type": "client_resource_metrics",
         "source": "runner",
         "data": client_resources,
     })
-    trajectory.events.append({
+    trajectory.append_event({
         "type": "server_resource_metrics",
         "source": "runner",
         "data": server_resources,
@@ -418,7 +420,25 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         trajectory.success = trajectory.success and evaluation_passed
         if not trajectory.success and status == "completed":
             status = "failed"
-        trajectory.events.append({"type": "deterministic_evaluation", "result": evaluation})
+        trajectory.append_event({
+            "type": "deterministic_evaluation",
+            "source": "runner",
+            "data": evaluation,
+        })
+
+    behavioral_evaluation = None
+    if task.behavioral_acceptance:
+        behavioral_evaluation = evaluate_behavioral_oracles(
+            workspace,
+            task.behavioral_acceptance,
+            baseline=behavioral_baseline,
+            events=trajectory.events,
+        )
+        trajectory.append_event({
+            "type": "behavioral_evaluation",
+            "source": "runner",
+            "data": behavioral_evaluation,
+        })
 
     failure_kind = classify_failure(
         status=status,
@@ -432,6 +452,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "status": status,
         "failure_kind": failure_kind,
         "evaluation": evaluation,
+        "behavioral_evaluation": behavioral_evaluation,
         "score": overall_score(trajectory),
         **runner._result_identity(task),
         "comparable": True,
@@ -455,6 +476,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "score": result["score"],
         "usage_source": result["usage_source"],
         "telemetry_available": trajectory.telemetry_available,
+        "behavioral_evaluation_available": behavioral_evaluation is not None,
         "client_resource_telemetry_available": bool(client_resources.get("available")),
         "server_resource_telemetry_available": bool(server_resources.get("available")),
         "tier": task.tier,
