@@ -36,7 +36,7 @@ def _runner(
 
 
 def _workspace_snapshot(workspace: Path) -> dict[str, bytes]:
-    ephemeral = {"runtime/endpoint.json"}
+    ephemeral = {"runtime/endpoint.json", "runtime/tool_endpoint.json"}
     return {
         path.relative_to(workspace).as_posix(): path.read_bytes()
         for path in sorted(workspace.rglob("*"))
@@ -54,6 +54,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "autonomy_causal_gateway_001",
         "autonomy_runtime_investigation_001",
         "tool_use_config_001",
+        "tool_use_branching_001",
     ]
     assert all(task.revision == 4 for task in v4)
     assert all(any(check["type"] == "parametric_reference" for check in task.acceptance) for task in v4)
@@ -62,7 +63,6 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
 def test_frontier_v4_uses_scheduler_compatible_task_seed(tmp_path: Path) -> None:
     task = load_tasks(TASK_ROOT, "frontier_v4")[0]
     runner = _runner(tmp_path / "results", 123, "seed-check")
-
     assert runner._task_seed(task) == derive_seed(123, "task", task.id)
 
 
@@ -138,9 +138,7 @@ def test_landscape_profile_excludes_only_pressure_coordinates(tmp_path: Path) ->
     assert changed_guard.landscape_execution_fingerprint != second.landscape_execution_fingerprint
 
     task = load_tasks(TASK_ROOT, "frontier_v4")[0]
-    assert first._result_identity(task)["landscape_execution_fingerprint"] == (
-        first.landscape_execution_fingerprint
-    )
+    assert first._result_identity(task)["landscape_execution_fingerprint"] == first.landscape_execution_fingerprint
 
 
 def test_frontier_v4_semantic_fingerprint_auto_discovers_generators() -> None:
