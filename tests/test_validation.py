@@ -71,11 +71,12 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "historical_decoys": 4,
             },
             "pristine_refactor": {},
+            "greenfield_registry": {},
         },
     )
 
     assert result["ok"] is True, result["failures"]
-    assert result["checked_tasks"] == 7
+    assert result["checked_tasks"] == 8
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
@@ -84,6 +85,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         "tool_branching",
         "coverage_migration",
         "pristine_refactor",
+        "greenfield_registry",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
