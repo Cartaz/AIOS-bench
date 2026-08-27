@@ -194,6 +194,9 @@ Later evaluate reusable skill acquisition across related levels while explicitly
 - Completed ambiguity/oracle review across all eight Frontier v4 tasks. It found two real contract mismatches; `autonomy_expense_001` and `autonomy_causal_gateway_001` were clarified and bumped from revision 4 to 5 rather than preserving misleading comparability.
 - Completed scoped adversarial/cheat review across all eight tasks. The scope is task/grader-level bypass resistance; it explicitly does not claim that an unconfined process cannot escape the workspace and inspect public benchmark internals.
 - Contamination risk is derived from canonical exposure (`private` low, `limited` medium, `public_repository` high) and remains descriptive rather than becoming a second score.
+- Completed public-repository contamination review across all eight current tasks. The suite is explicitly classified as high-risk public/open rather than contamination-free; seeded variants protect concrete instance values but cannot restore novelty of public family semantics.
+- Added `qa-evidence` for empirical M12 evidence collection from local raw results. It accepts only comparable current-revision Frontier v4 attempts and reports profile/harness/model diversity, outcome distribution, score range and distinct pressure variants.
+- `qa-evidence` now also exposes per-task `collection_state`, ordered `collection_gaps` and aggregate gap counts for five minimum contrast axes: at least one current-revision attempt, a second profile, second harness, second model and second pressure variant. These are collection gaps only, not promotion or saturation thresholds, and they never mutate QA lifecycle state.
 - Added a shared pristine-verifier execution boundary for M8/M9. Strong mode uses Bubblewrap with minimal read-only runtime/system bindings, writable pristine workspace, ephemeral `/tmp` and separated network/process namespaces.
 - Bubblewrap availability is capability-tested rather than inferred from executable presence. `auto` records an explicit fallback reason when namespaces are denied; `required` fails closed. Harness workspace sandboxing uses the same capability principle.
 - Verifier/run metadata persist isolation strategy, filesystem/network confinement flags and fallback reason, so results cannot silently claim a stronger trust boundary than the host supplied.
@@ -207,17 +210,17 @@ Later evaluate reusable skill acquisition across related levels while explicitly
 - Sandbox regressions cover unavailable/unusable Bubblewrap, `required` fail-closed behavior, command-plan confinement metadata and harness fallback reporting.
 - Parametric validation schema `aios-bench/parametric-validation/v3` requires all eight adversarial witnesses to be rejected while the corresponding golden witnesses still pass.
 - QA report schema `aios-bench/task-qa-report/v6` exposes the five automated checks, exact missing/failed blockers and contamination-risk counts.
-- The adversarial preflight and QA-report integration were observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest before the review evidence/documentation checkpoint.
-- Ownership remains layered: task families own truth; `parametric_adversarials.py` owns negative-but-plausible witnesses; `validation.py` owns preflight orchestration; `task_qa.py` owns lifecycle/report semantics; review documents own human conclusions. No second capability score was introduced.
+- Empirical QA regressions reject stale revisions and non-comparable/other-suite attempts, preserve outcome/score/profile summaries, and verify deterministic collection-gap reporting without automatically passing manual review.
+- The empirical collection-gap checkpoint was observed green on Python 3.12, 3.13 and 3.14 for install, compile, Ruff and pytest.
+- Ownership remains layered: task families own truth; `parametric_adversarials.py` owns negative-but-plausible witnesses; `validation.py` owns preflight orchestration; `task_qa.py` owns lifecycle/report semantics; `qa_empirical.py` owns descriptive real-run evidence; review documents own human conclusions. No second capability score was introduced.
 - QA lifecycle/task review and runtime sandbox capability remain separate. A grader-level adversarial pass must not be interpreted as proof of host confinement.
 - The strong Bubblewrap verifier path is implemented and unit-covered, but GitHub-hosted runners cannot provide the namespaces needed for an end-to-end strong-isolation execution. Runtime proof remains required on a compatible Linux host before M12 can close.
-- All eight current Frontier v4 tasks remain `pilot`. Ambiguity/oracle and scoped adversarial reviews are passed; multi-agent, contamination and saturation reviews remain pending.
+- All eight current Frontier v4 tasks remain `pilot`. Ambiguity/oracle, scoped adversarial and contamination reviews are passed; multi-agent and saturation reviews remain pending.
 
 ### Remaining before DONE
 
-- run multi-agent pilots on representative local models/harnesses and record task-level evidence;
+- run multi-agent pilots on representative local models/harnesses, using `qa-evidence` collection gaps to prioritize experiments that add missing contrast rather than redundant repeats, and record task-level evidence;
 - perform empirical saturation checks using successful/failed run distributions rather than subjective difficulty labels;
-- perform contamination review appropriate to the public repository, including revision/retirement policy when exposure becomes unacceptable;
 - execute the strong verifier/harness sandbox contract on a Linux host where Bubblewrap namespaces are actually permitted and record that evidence;
 - complete the final milestone-wide strategic review after the empirical and environment-specific evidence exists.
 
@@ -227,8 +230,8 @@ Expose deterministic capability, reliability/confidence intervals, failure taxon
 
 ## Current execution order
 
-1. Complete M12 multi-agent pilot and saturation evidence on representative local models/harnesses.
-2. Complete M12 public-repository contamination review and compatible-host strong-isolation proof.
+1. Complete M12 multi-agent pilot and saturation evidence on representative local models/harnesses, guided by `qa-evidence` collection gaps.
+2. Complete M12 compatible-host strong-isolation proof.
 3. Calibrate M10 reference effort from successful real Frontier v4 trajectories gathered during those pilots.
 4. Expand M13 UX as each dimension stabilizes.
 
