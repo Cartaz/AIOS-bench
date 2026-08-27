@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from aios_bench.dashboard import build_dashboard
+from core.benchmark.dashboard import build_dashboard
 from core.benchmark.report import build_summary
 
 
