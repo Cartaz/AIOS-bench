@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
-QA_SCHEMA = "aios-bench/task-qa/v1"
+QA_SCHEMA = "aios-bench/task-qa/v2"
+QA_REPORT_SCHEMA = "aios-bench/task-qa-report/v2"
 LIFECYCLES = frozenset({"draft", "pilot", "stable", "retired"})
 REVIEW_STATUSES = frozenset({"pending", "passed", "failed", "not_applicable"})
 REVIEW_KEYS = (
@@ -18,10 +20,39 @@ REVIEW_KEYS = (
 )
 EXPOSURE_LEVELS = frozenset({"private", "limited", "public_repository"})
 _SAFE_ID = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class TaskQAError(ValueError):
     pass
+
+
+def task_semantic_payload(task: object) -> dict[str, Any]:
+    """Return the task-owned fields whose changes invalidate a prior QA audit."""
+    return {
+        "id": str(getattr(task, "id")),
+        "category": str(getattr(task, "category", "")),
+        "prompt": str(getattr(task, "prompt", "")),
+        "mode": str(getattr(task, "mode", "cold")),
+        "tier": int(getattr(task, "tier", 3)),
+        "revision": int(getattr(task, "revision", 1)),
+        "tags": list(getattr(task, "tags", ())),
+        "required_capabilities": list(getattr(task, "required_capabilities", ())),
+        "depends_on": list(getattr(task, "depends_on", ())),
+        "acceptance": list(getattr(task, "acceptance", ())),
+        "behavioral_acceptance": list(getattr(task, "behavioral_acceptance", ())),
+        "trajectory_reference": getattr(task, "trajectory_reference", None),
+    }
+
+
+def task_semantic_digest(task: object) -> str:
+    payload = json.dumps(
+        task_semantic_payload(task),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def load_task_qa(path: Path) -> list[dict[str, Any]]:
@@ -106,6 +137,17 @@ def validate_task_qa_records(
             record_errors.append(
                 f"stale task_revision {revision}; catalog has {int(getattr(task, 'revision'))}"
             )
+
+        semantic_digest = str(raw.get("task_semantic_digest", ""))
+        if not _SHA256.fullmatch(semantic_digest):
+            record_errors.append("task_semantic_digest must be a lowercase SHA-256 hex digest")
+        elif task is not None:
+            expected_digest = task_semantic_digest(task)
+            if semantic_digest != expected_digest:
+                record_errors.append(
+                    f"stale task_semantic_digest {semantic_digest}; catalog has {expected_digest}"
+                )
+
         lifecycle = str(raw.get("lifecycle", ""))
         if lifecycle not in LIFECYCLES:
             record_errors.append(f"invalid lifecycle {lifecycle!r}")
@@ -113,7 +155,9 @@ def validate_task_qa_records(
         if exposure not in EXPOSURE_LEVELS:
             record_errors.append(f"invalid exposure {exposure!r}")
         known_issues = raw.get("known_issues")
-        if not isinstance(known_issues, list) or not all(isinstance(item, str) and item.strip() for item in known_issues):
+        if not isinstance(known_issues, list) or not all(
+            isinstance(item, str) and item.strip() for item in known_issues
+        ):
             record_errors.append("known_issues must be an array of non-empty strings")
             known_issues = []
         audited_at = raw.get("audited_at")
@@ -129,6 +173,7 @@ def validate_task_qa_records(
         normalized_record = {
             "task_id": task_id,
             "task_revision": revision,
+            "task_semantic_digest": semantic_digest,
             "lifecycle": lifecycle,
             "exposure": exposure,
             "known_issues": list(known_issues),
@@ -163,12 +208,15 @@ def _automated_by_task(validation: Mapping[str, Any]) -> dict[str, bool]:
             continue
         task_id = str(item["task_id"])
         if "same_seed_deterministic" in item:
-            result[task_id] = all(bool(item.get(field)) for field in (
-                "same_seed_deterministic",
-                "different_seed_changes_variant",
-                "untouched_variant_fails",
-                "golden_variant_passes",
-            ))
+            result[task_id] = all(
+                bool(item.get(field))
+                for field in (
+                    "same_seed_deterministic",
+                    "different_seed_changes_variant",
+                    "untouched_variant_fails",
+                    "golden_variant_passes",
+                )
+            )
         else:
             result[task_id] = bool(
                 item.get("untouched_fixture_fails") and item.get("golden_solution_passes")
@@ -202,13 +250,19 @@ def build_task_qa_report(
         }
         rows.append(row)
         if record["lifecycle"] == "stable" and not promotion_ready:
-            stable_contract_errors.append({
-                "task_id": task_id,
-                "error": "stable task does not satisfy automated/manual promotion prerequisites",
-            })
+            stable_contract_errors.append(
+                {
+                    "task_id": task_id,
+                    "error": "stable task does not satisfy automated/manual promotion prerequisites",
+                }
+            )
     return {
-        "schema": "aios-bench/task-qa-report/v1",
-        "ok": bool(registry["registry_ok"] and automated_validation.get("ok") and not stable_contract_errors),
+        "schema": QA_REPORT_SCHEMA,
+        "ok": bool(
+            registry["registry_ok"]
+            and automated_validation.get("ok")
+            and not stable_contract_errors
+        ),
         "registry_ok": registry["registry_ok"],
         "automated_validation_ok": bool(automated_validation.get("ok")),
         "all_promotion_ready": bool(rows) and all(row["promotion_ready"] for row in rows),
@@ -222,11 +276,14 @@ def build_task_qa_report(
 __all__ = [
     "EXPOSURE_LEVELS",
     "LIFECYCLES",
+    "QA_REPORT_SCHEMA",
     "QA_SCHEMA",
     "REVIEW_KEYS",
     "REVIEW_STATUSES",
     "TaskQAError",
     "build_task_qa_report",
     "load_task_qa",
+    "task_semantic_digest",
+    "task_semantic_payload",
     "validate_task_qa_records",
 ]
