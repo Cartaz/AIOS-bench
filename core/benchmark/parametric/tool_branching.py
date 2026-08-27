@@ -91,9 +91,10 @@ def generate_tool_branching_variant(
 
     (workspace / "README.md").write_text(
         "# Case resolver\n\n"
-        "Resolve the live case using the smallest relevant tool path. Start by inspecting the case. "
-        "Then use the branch-specific lookup with the case id returned by inspection. Several plausible legacy/cache/metrics tools are intentionally present but are not authoritative. "
-        "The live tool session rejects broad distractor probing. Save `reports/case_resolution.json` with `case_type`, `case_id`, `value`, `inspection_receipt`, and `lookup_receipt`.\n",
+        "Resolve the live case using the smallest relevant path through the tools in `tools/`. "
+        "Current case metadata, billing records, access records, caches, legacy data, archives, directory data, and service metrics are represented by plausible tools with different authority and freshness. "
+        "The correct lookup depends on the live case type and must use the live case id. Broad non-authoritative probing can invalidate the live session. "
+        "Save `reports/case_resolution.json` with `case_type`, `case_id`, `value`, `inspection_receipt`, and `lookup_receipt`.\n",
         encoding="utf-8",
     )
     (workspace / "runtime").mkdir(parents=True, exist_ok=True)
