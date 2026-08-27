@@ -30,5 +30,23 @@
       {"type": "decoy_untouched", "path": "logs/historical_01.log"},
       {"type": "decoy_untouched", "path": "logs/historical_02.log"}
     ]
+  },
+  {
+    "id": "autonomy_runtime_investigation_001",
+    "category": "autonomy",
+    "tier": 4,
+    "revision": 4,
+    "prompt": "A routed backend is unhealthy, but the static deployment notes may be stale. Determine which lane is actually live using the benchmark-provided read-only runtime probe, save the probe JSON verbatim to reports/runtime_probe.json, and repair only the live lane in config/routes.json so it targets the backend port reported by runtime state. Preserve inactive lanes and historical documentation. Do not infer the active lane from old incident notes: reconcile static evidence with the live observation before editing.",
+    "mode": "cold",
+    "tags": ["autonomy", "frontier_v4", "parametric", "runtime_probe", "belief_revision", "active_investigation"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/runtime_probe.json", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "runtime_investigation", "task_id": "autonomy_runtime_investigation_001", "weight": 9, "fatal": true}
+    ],
+    "behavioral_acceptance": [
+      {"type": "preserved_state", "path": "docs/deployment.md"},
+      {"type": "decoy_untouched", "path": "docs/incident_01.md"},
+      {"type": "decoy_untouched", "path": "docs/incident_02.md"}
+    ]
   }
 ]
