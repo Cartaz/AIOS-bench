@@ -11,6 +11,9 @@ from aios_bench.publication import (
 )
 
 
+SECRET_SENTINEL = "AIOS_BENCH_HIDDEN_ORACLE_SENTINEL_9f3e7c"
+
+
 def _raw_run(root: Path) -> Path:
     directory = root / "piagent" / "ornith" / "runs" / "run-1"
     directory.mkdir(parents=True)
@@ -40,6 +43,13 @@ def _raw_run(root: Path) -> Path:
             "telemetry_available": True,
             "category": "coding",
             "tier": 3,
+            "evaluation": {
+                "results": [{
+                    "detail": SECRET_SENTINEL,
+                    "hidden_oracle_value": SECRET_SENTINEL,
+                }],
+            },
+            "agent_artifact_excerpt": SECRET_SENTINEL,
         }) + "\n",
         encoding="utf-8",
     )
@@ -66,6 +76,18 @@ def test_publication_seal_verifies_full_regeneration(tmp_path: Path) -> None:
     assert result["ok"] is True
     assert result["errors"] == []
     assert result["actual_outputs"] == result["regenerated_outputs"]
+
+
+def test_publication_does_not_transit_raw_oracle_or_artifact_payloads(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    published = tmp_path / "published"
+    _raw_run(raw)
+
+    manifest_path = _publish(raw, published)
+
+    assert SECRET_SENTINEL in next(raw.rglob("results.jsonl")).read_text(encoding="utf-8")
+    for path in (published / "summary.json", published / "dashboard.html", manifest_path):
+        assert SECRET_SENTINEL not in path.read_text(encoding="utf-8")
 
 
 def test_publication_verification_detects_tampered_derived_output(tmp_path: Path) -> None:
