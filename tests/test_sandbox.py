@@ -37,6 +37,7 @@ def test_bubblewrap_hides_repository_and_rebinds_only_workspace(monkeypatch, tmp
     command = plan.wrap(["pi", "--mode", "rpc"])
 
     assert plan.strategy == "bubblewrap_repo_hidden_workspace_only"
+    assert plan.write_confined is True
     assert plan.grader_hidden is True
     assert _has_sequence(command, ["--ro-bind", "/", "/"])
     assert _has_sequence(command, ["--bind", str(workspace.resolve()), "/workspace"])
@@ -118,6 +119,8 @@ def test_agentzero_transport_masks_golden_and_benchmark_content(monkeypatch, tmp
     command = plan.wrap(["python", "-m", "core.benchmark.agentzero_client", "prompt"])
 
     assert plan.strategy == "bubblewrap_remote_transport_grader_hidden"
+    assert plan.write_confined is True
+    assert plan.grader_hidden is True
     assert _has_sequence(command, ["--tmpfs", str((repo / "benchmarks").resolve())])
     assert _has_sequence(command, ["--tmpfs", str((repo / "tests").resolve())])
     assert _has_sequence(command, ["--tmpfs", str((repo / "docs").resolve())])
@@ -125,6 +128,28 @@ def test_agentzero_transport_masks_golden_and_benchmark_content(monkeypatch, tmp
     assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "golden_solutions.py").resolve())])
     assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "parametric_goldens.py").resolve())])
     assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "reference_checks.py").resolve())])
+
+
+def test_agentzero_writable_projects_bridge_is_not_reported_write_confined(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    package = repo / "core" / "benchmark"
+    package.mkdir(parents=True)
+    workspace = repo / "results" / ".local" / "agentzero" / "model" / "runs" / "run" / "workspaces" / "task"
+    workspace.mkdir(parents=True)
+    projects_root = tmp_path / "agentzero-projects"
+    projects_root.mkdir()
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("core.benchmark.sandbox.BENCHMARK_PACKAGE_ROOT", package)
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", str(projects_root))
+    _mock_usable_bwrap(monkeypatch)
+
+    plan = workspace_sandbox("agentzero", workspace, "required")
+    command = plan.wrap(["python", "-m", "core.benchmark.agentzero_client", "prompt"])
+
+    assert plan.strategy == "bubblewrap_remote_transport_grader_hidden_agentzero_project_bridge"
+    assert plan.write_confined is False
+    assert plan.grader_hidden is True
+    assert _has_sequence(command, ["--bind", str(projects_root.resolve()), str(projects_root.resolve())])
 
 
 def test_historical_results_sibling_workspaces_and_oracles_are_hidden(tmp_path: Path):
