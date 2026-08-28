@@ -6,7 +6,7 @@ import json
 import random
 import re
 from dataclasses import asdict, dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import InvalidOperation
 from pathlib import Path
 from typing import Any, Mapping
 
