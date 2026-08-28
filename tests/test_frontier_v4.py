@@ -51,16 +51,29 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
     assert [task.id for task in v4] == [
         "autonomy_expense_001",
         "stateful_support_001",
+        "support_dependency_001",
         "tool_use_config_001",
     ]
     assert {task.id: task.revision for task in v4} == {
         "autonomy_expense_001": 4,
         "stateful_support_001": 5,
+        "support_dependency_001": 4,
         "tool_use_config_001": 4,
     }
-    stateful = next(task for task in v4 if task.id == "stateful_support_001")
-    assert stateful.required_capabilities == ("benchmark_local_runtime",)
-    assert all(any(check["type"] == "parametric_reference" for check in task.acceptance) for task in v4)
+    runtime_tasks = {
+        task.id: task
+        for task in v4
+        if task.id in {"stateful_support_001", "support_dependency_001"}
+    }
+    assert set(runtime_tasks) == {"stateful_support_001", "support_dependency_001"}
+    assert all(
+        task.required_capabilities == ("benchmark_local_runtime",)
+        for task in runtime_tasks.values()
+    )
+    assert all(
+        any(check["type"] == "parametric_reference" for check in task.acceptance)
+        for task in v4
+    )
 
 
 def test_frontier_v4_uses_scheduler_compatible_task_seed(tmp_path: Path) -> None:
@@ -80,8 +93,12 @@ def test_same_v4_seed_materializes_identical_variant_across_runners_for_every_ac
 
         workspace_a = first._workspace(task)
         workspace_b = second._workspace(task)
-        oracle_a = json.loads((first.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8"))
-        oracle_b = json.loads((second.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8"))
+        oracle_a = json.loads(
+            (first.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8")
+        )
+        oracle_b = json.loads(
+            (second.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8")
+        )
 
         expected_seed = derive_seed(42, "task", task.id)
         assert oracle_a["variant_digest"] == oracle_b["variant_digest"]
@@ -148,6 +165,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
     paths = semantic_source_paths(ROOT)
     names = {path.name for path in paths}
     assert {
+        "dependency_world.py",
         "materialization.py",
         "suites.py",
         "task_runtime.py",
