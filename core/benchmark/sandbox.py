@@ -172,7 +172,12 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
         prefix += ("--proc", "/proc", "--dev", "/dev", "--")
         if agentzero_bridge:
             strategy += "_agentzero_project_bridge"
-        return SandboxPlan(strategy, prefix, write_confined=True, grader_hidden=grader_hidden)
+        return SandboxPlan(
+            strategy,
+            prefix,
+            write_confined=not agentzero_bridge,
+            grader_hidden=grader_hidden,
+        )
 
     if selected == "required":
         reason = capability_error or "bubblewrap is unavailable"
