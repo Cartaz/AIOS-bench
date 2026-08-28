@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlparse
 from .task_runtime import TaskRuntime
 from .world_service import (
     API_CONTRACT_SCHEMA,
+    SupportDependencyWorldService,
     SupportWorldService,
     WorldAPIError,
     world_action_log_path,
@@ -84,6 +85,8 @@ def main() -> None:
     commands.add_parser("list", help="list support tickets")
     get_parser = commands.add_parser("get", help="read one support ticket")
     get_parser.add_argument("ticket_id")
+    account_parser = commands.add_parser("account", help="read one account profile")
+    account_parser.add_argument("account_id")
     escalate = commands.add_parser("escalate", help="apply the escalation action to one ticket")
     escalate.add_argument("ticket_id")
     escalate.add_argument("--idempotency-key", required=True)
@@ -95,6 +98,8 @@ def main() -> None:
         result = _request("GET", "/v1/tickets")
     elif args.command == "get":
         result = _request("GET", f"/v1/tickets/{args.ticket_id}")
+    elif args.command == "account":
+        result = _request("GET", f"/v1/accounts/{args.account_id}")
     else:
         result = _request(
             "POST",
@@ -122,11 +127,13 @@ class _RuntimeOwner:
         hidden_database: Path,
         config_path: Path,
         action_log: Path,
+        service_class: type[SupportWorldService],
     ) -> None:
         self.workspace_database = workspace_database
         self.hidden_database = hidden_database
         self.config_path = config_path
         self.action_log = action_log
+        self.service_class = service_class
         self.token = secrets.token_urlsafe(32)
         self.service: SupportWorldService | None = None
         self.server: _WorldHTTPServer | None = None
@@ -141,7 +148,7 @@ class _RuntimeOwner:
         self.action_log.unlink(missing_ok=True)
         shutil.move(str(self.workspace_database), str(self.hidden_database))
         try:
-            self.service = SupportWorldService(self.hidden_database, self.action_log)
+            self.service = self.service_class(self.hidden_database, self.action_log)
             handler = _handler_factory(self.service, self.token)
             self.server = _WorldHTTPServer(("127.0.0.1", 0), handler)
             port = int(self.server.server_address[1])
@@ -273,12 +280,27 @@ def _handler_factory(
                         {"tickets": service.list_tickets()},
                     )
                     return
-                prefix = "/v1/tickets/"
-                if path.startswith(prefix) and len(path) > len(prefix):
-                    ticket_id = unquote(path[len(prefix):])
+                ticket_prefix = "/v1/tickets/"
+                if path.startswith(ticket_prefix) and len(path) > len(ticket_prefix):
+                    ticket_id = unquote(path[len(ticket_prefix):])
                     self._send(
                         HTTPStatus.OK,
                         {"ticket": service.get_ticket(ticket_id)},
+                    )
+                    return
+                account_prefix = "/v1/accounts/"
+                if path.startswith(account_prefix) and len(path) > len(account_prefix):
+                    lookup = getattr(service, "get_account", None)
+                    if lookup is None:
+                        raise WorldAPIError(
+                            HTTPStatus.NOT_FOUND,
+                            "not_found",
+                            "API route does not exist",
+                        )
+                    account_id = unquote(path[len(account_prefix):])
+                    self._send(
+                        HTTPStatus.OK,
+                        {"account": lookup(account_id)},
                     )
                     return
                 raise WorldAPIError(
@@ -365,11 +387,13 @@ def write_world_api_client(workspace: Path) -> None:
     path.write_text(WORLD_API_CLIENT_SOURCE, encoding="utf-8")
 
 
-def start_support_world_runtime(
+def _start_world_runtime(
     workspace: Path,
     run_dir: Path,
     task_id: str,
     oracle: Mapping[str, Any],
+    *,
+    service_class: type[SupportWorldService],
 ) -> TaskRuntime:
     interface = oracle.get("mutation_interface")
     if not isinstance(interface, Mapping) or interface.get("schema") != API_CONTRACT_SCHEMA:
@@ -384,5 +408,36 @@ def start_support_world_runtime(
         hidden_database=hidden_root / f"{task_id}.db",
         config_path=Path(workspace) / "world" / "api.json",
         action_log=world_action_log_path(run_dir, task_id),
+        service_class=service_class,
     )
     return owner.start()
+
+
+def start_support_world_runtime(
+    workspace: Path,
+    run_dir: Path,
+    task_id: str,
+    oracle: Mapping[str, Any],
+) -> TaskRuntime:
+    return _start_world_runtime(
+        workspace,
+        run_dir,
+        task_id,
+        oracle,
+        service_class=SupportWorldService,
+    )
+
+
+def start_dependency_world_runtime(
+    workspace: Path,
+    run_dir: Path,
+    task_id: str,
+    oracle: Mapping[str, Any],
+) -> TaskRuntime:
+    return _start_world_runtime(
+        workspace,
+        run_dir,
+        task_id,
+        oracle,
+        service_class=SupportDependencyWorldService,
+    )
