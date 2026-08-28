@@ -16,13 +16,7 @@ class AgentConfig:
     runtime_capabilities: frozenset[str] = field(default_factory=frozenset)
 
     def assess_task(self, task: object) -> CapabilityAssessment:
-        base = self.adapter.assess_task(task)
-        supported = base.supported.union(self.runtime_capabilities)
-        return CapabilityAssessment(
-            required=base.required,
-            supported=supported,
-            missing=base.required.difference(supported),
-        )
+        return self.adapter.assess_task(task)
 
 
 _DISPLAY_NAMES = {
@@ -35,19 +29,38 @@ _DISPLAY_NAMES = {
     "claude": "Claude Code",
 }
 
-# These harnesses execute their workspace tools on the benchmark host and can
-# therefore reach task-scoped loopback services. Agent Zero executes tools in
-# an external service/project and needs a separate bridge before this contract
-# can be considered comparable.
+# These harnesses execute workspace tools on the benchmark host and can reach
+# task-scoped loopback services. Agent Zero executes tools in an external
+# service/project and needs a separate bridge before this contract is fair.
 _LOCAL_RUNTIME_HARNESSES = frozenset(_DISPLAY_NAMES).difference({"agentzero"})
 
+
+def _configured_adapter(name: str, runtime_capabilities: frozenset[str]) -> Adapter:
+    """Clone the stateless adapter and bind capabilities of this deployment.
+
+    Existing runner code deliberately asks the configured adapter for task
+    support. Cloning keeps deployment-only capabilities out of the canonical
+    ADAPTERS registry while preserving concrete adapter types (notably the Pi
+    RPC isinstance dispatch).
+    """
+
+    source = ADAPTERS[name]
+    adapter = type(source)()
+    adapter.capabilities = source.capabilities.union(runtime_capabilities)
+    return adapter
+
+
 ACTIVE_HARNESS_NAMES = tuple(_DISPLAY_NAMES)
-AGENTS = {
-    name: AgentConfig(
+AGENTS = {}
+for name in ACTIVE_HARNESS_NAMES:
+    runtime_capabilities = (
+        frozenset({BENCHMARK_LOCAL_RUNTIME})
+        if name in _LOCAL_RUNTIME_HARNESSES
+        else frozenset()
+    )
+    AGENTS[name] = AgentConfig(
         name,
         _DISPLAY_NAMES[name],
-        ADAPTERS[name],
-        frozenset({BENCHMARK_LOCAL_RUNTIME}) if name in _LOCAL_RUNTIME_HARNESSES else frozenset(),
+        _configured_adapter(name, runtime_capabilities),
+        runtime_capabilities,
     )
-    for name in ACTIVE_HARNESS_NAMES
-}
