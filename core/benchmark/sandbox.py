@@ -110,6 +110,29 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
     return args
 
 
+def _remote_workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
+    """Restore only the current workspace after the remote transport masks results."""
+    workspace = workspace.resolve()
+    results_root = (REPO_ROOT / "results").resolve()
+    try:
+        relative = workspace.relative_to(results_root)
+    except ValueError:
+        return ("--chdir", str(workspace))
+
+    args: tuple[str, ...] = (
+        "--bind", str(workspace), str(_WORKSPACE_ALIAS),
+    )
+    current = results_root
+    for part in relative.parts[:-1]:
+        current /= part
+        args += ("--dir", str(current))
+    args += (
+        "--bind", str(_WORKSPACE_ALIAS), str(workspace),
+        "--chdir", str(workspace),
+    )
+    return args
+
+
 def _remote_transport_args(workspace: Path) -> tuple[tuple[str, ...], bool]:
     prefix: tuple[str, ...] = ()
     hidden_directories, hidden_files = _benchmark_owned_paths(workspace)
@@ -146,6 +169,7 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
         if adapter_name == "agentzero":
             masks, grader_hidden = _remote_transport_args(workspace)
             prefix += masks
+            prefix += _remote_workspace_rebind_args(workspace)
             strategy = "bubblewrap_remote_transport_grader_hidden"
         else:
             prefix += _workspace_rebind_args(workspace)
@@ -167,7 +191,6 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
                     bridge = str(projects_root.resolve())
                     prefix += ("--bind", bridge, bridge)
                     agentzero_bridge = True
-            prefix += ("--chdir", str(workspace),)
 
         prefix += ("--proc", "/proc", "--dev", "/dev", "--")
         if agentzero_bridge:
