@@ -13,6 +13,7 @@ from typing import Any, Mapping
 ACTION_LOG_SCHEMA = "aios-bench/world-api-action/v1"
 API_CONTRACT_SCHEMA = "aios-bench/world-api-contract/v1"
 _TICKET_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_ACCOUNT_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
@@ -199,6 +200,48 @@ class SupportWorldService:
             handle.write(json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+
+
+class SupportDependencyWorldService(SupportWorldService):
+    """Support world service with account facts intentionally separated from tickets."""
+
+    @staticmethod
+    def contract() -> dict[str, Any]:
+        contract = SupportWorldService.contract()
+        contract["read_operations"] = {
+            **contract["read_operations"],
+            "get_account": {
+                "method": "GET",
+                "path": "/v1/accounts/{account_id}",
+                "account_id": "string[1..128]",
+            },
+        }
+        contract["information_dependency"] = (
+            "ticket rows reference account_id; support_plan and region require "
+            "get_account before applying the workspace policy and coverage map"
+        )
+        return contract
+
+    def get_account(self, account_id: str) -> dict[str, Any]:
+        if not isinstance(account_id, str) or _ACCOUNT_ID.fullmatch(account_id) is None:
+            raise WorldAPIError(
+                HTTPStatus.BAD_REQUEST,
+                "invalid_account_id",
+                "account_id must be a non-empty identifier up to 128 characters",
+            )
+        with self._lock, sqlite3.connect(self.database) as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                "SELECT * FROM accounts WHERE id = ?",
+                (account_id,),
+            ).fetchone()
+            if row is None:
+                raise WorldAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    "account_not_found",
+                    "account does not exist",
+                )
+            return self._row_dict(row)
 
 
 def world_action_log_path(run_dir: Path, task_id: str) -> Path:
