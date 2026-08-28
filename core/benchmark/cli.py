@@ -11,7 +11,7 @@ from .experiments import annotate_repeat, make_experiment_id
 from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
 from .models import Trajectory
-from .parametric import ConfigTraversalPressure, ExpensePressure
+from .parametric import ConfigTraversalPressure, ExpensePressure, StatefulWorldPressure
 from .paths import REPO_ROOT, RESULTS_ROOT, TASKS_ROOT
 from .publication import render_derived, verify_publication, write_publication_manifest
 from .report import write_summary
@@ -85,9 +85,19 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 config pressure: {exc}") from exc
+    try:
+        stateful = StatefulWorldPressure(
+            entity_count=args.v4_stateful_entities,
+            required_mutations=args.v4_stateful_mutations,
+            distractor_policies=args.v4_stateful_policy_distractors,
+            negative_constraints=args.v4_stateful_negative_constraints,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 stateful pressure: {exc}") from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
+        "stateful_world": stateful.to_dict(),
     }
 
 
@@ -198,6 +208,10 @@ def main() -> None:
     parser.add_argument("--v4-config-chain-depth", type=int, default=3, help="Frontier v4 config-family reference-chain depth coordinate")
     parser.add_argument("--v4-config-distractors", type=int, default=3, help="Frontier v4 config-family distractor-file coordinate")
     parser.add_argument("--v4-config-extra-settings", type=int, default=2, help="Frontier v4 config-family extra-setting coordinate")
+    parser.add_argument("--v4-stateful-entities", type=int, default=24, help="Frontier v4 stateful-world entity-count coordinate")
+    parser.add_argument("--v4-stateful-mutations", type=int, default=5, help="Frontier v4 stateful-world required-mutation coordinate")
+    parser.add_argument("--v4-stateful-policy-distractors", type=int, default=3, help="Frontier v4 stateful-world archived-policy distractor coordinate")
+    parser.add_argument("--v4-stateful-negative-constraints", type=int, default=4, help="Frontier v4 stateful-world near-miss preservation coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
