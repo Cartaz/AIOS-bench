@@ -45,6 +45,22 @@ def test_frontier_v4_rejects_invalid_pressure_coordinates(monkeypatch):
         cli.main()
 
 
+def test_frontier_v4_rejects_invalid_dependency_pressure(monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "aiosbench",
+            "--suite",
+            "frontier_v4",
+            "--v4-dependency-accounts",
+            "2",
+            "validate",
+        ],
+    )
+    with pytest.raises(SystemExit, match="invalid Frontier v4 dependency pressure"):
+        cli.main()
+
+
 def test_publish_reads_local_results_writes_sealed_snapshots_and_verifies(monkeypatch, tmp_path: Path, capsys):
     local = tmp_path / "results" / ".local"
     published = tmp_path / "results"
