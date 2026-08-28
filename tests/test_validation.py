@@ -60,15 +60,23 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "distractor_policies": 2,
                 "negative_constraints": 6,
             },
+            "dependency_world": {
+                "entity_count": 36,
+                "account_count": 16,
+                "required_mutations": 6,
+                "distractor_policies": 3,
+                "negative_constraints": 8,
+            },
         },
     )
 
     assert result["ok"] is True
-    assert result["checked_tasks"] == 3
+    assert result["checked_tasks"] == 4
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
         "stateful_world",
+        "dependency_world",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
