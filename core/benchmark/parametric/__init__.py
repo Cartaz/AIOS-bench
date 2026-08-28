@@ -6,12 +6,25 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..task_runtime import TaskRuntime
-from ..world_api import start_support_world_runtime, write_world_api_client
-from ..world_service import SupportWorldService, verify_support_action_log
+from ..world_api import (
+    start_dependency_world_runtime,
+    start_support_world_runtime,
+    write_world_api_client,
+)
+from ..world_service import (
+    SupportDependencyWorldService,
+    SupportWorldService,
+    verify_support_action_log,
+)
 from .config_traversal import (
     ConfigTraversalPressure,
     check_config_traversal_variant,
     generate_config_traversal_variant,
+)
+from .dependency_world import (
+    DependencyWorldPressure,
+    check_dependency_world_variant,
+    generate_dependency_world_variant,
 )
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
 from .stateful_world import (
@@ -21,7 +34,12 @@ from .stateful_world import (
 )
 
 
-FAMILIES = {"expense_report", "config_traversal", "stateful_world"}
+FAMILIES = {
+    "expense_report",
+    "config_traversal",
+    "stateful_world",
+    "dependency_world",
+}
 
 
 def _reseal_variant(oracle: dict[str, Any]) -> dict[str, Any]:
@@ -50,6 +68,12 @@ def materialize_variant(
         write_world_api_client(workspace)
         oracle["mutation_interface"] = SupportWorldService.contract()
         return _reseal_variant(oracle)
+    if family == "dependency_world":
+        pressure = DependencyWorldPressure.from_mapping(parameters or {})
+        oracle = generate_dependency_world_variant(workspace, seed=int(seed), pressure=pressure)
+        write_world_api_client(workspace)
+        oracle["mutation_interface"] = SupportDependencyWorldService.contract()
+        return _reseal_variant(oracle)
     raise ValueError(f"unknown parametric family: {family}")
 
 
@@ -63,7 +87,34 @@ def start_variant_runtime(
 ) -> TaskRuntime:
     if family == "stateful_world":
         return start_support_world_runtime(workspace, run_dir, task_id, oracle)
+    if family == "dependency_world":
+        return start_dependency_world_runtime(workspace, run_dir, task_id, oracle)
     return TaskRuntime()
+
+
+def _check_mediated_world(
+    family: str,
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    *,
+    run_dir: Path | None,
+    task_id: str | None,
+) -> tuple[bool, str]:
+    checker = {
+        "stateful_world": check_stateful_world_variant,
+        "dependency_world": check_dependency_world_variant,
+    }[family]
+    passed, detail = checker(workspace, oracle)
+    if not passed:
+        return passed, detail
+    provenance_ok, provenance_detail = verify_support_action_log(
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+    if not provenance_ok:
+        return False, provenance_detail
+    return True, f"{detail}; {provenance_detail}"
 
 
 def check_variant(
@@ -78,23 +129,20 @@ def check_variant(
         return check_expense_variant(workspace, oracle)
     if family == "config_traversal":
         return check_config_traversal_variant(workspace, oracle)
-    if family == "stateful_world":
-        passed, detail = check_stateful_world_variant(workspace, oracle)
-        if not passed:
-            return passed, detail
-        provenance_ok, provenance_detail = verify_support_action_log(
+    if family in {"stateful_world", "dependency_world"}:
+        return _check_mediated_world(
+            family,
+            workspace,
             oracle,
             run_dir=run_dir,
             task_id=task_id,
         )
-        if not provenance_ok:
-            return False, provenance_detail
-        return True, f"{detail}; {provenance_detail}"
     return False, f"unknown parametric family: {family}"
 
 
 __all__ = [
     "ConfigTraversalPressure",
+    "DependencyWorldPressure",
     "ExpensePressure",
     "StatefulWorldPressure",
     "FAMILIES",
