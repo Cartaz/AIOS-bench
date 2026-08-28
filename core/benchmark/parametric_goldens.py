@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .golden_solutions import materialize_parametric_golden as _legacy_materializer
-from .world_api import SupportWorldService, world_action_log_path
+from .world_service import SupportWorldService, world_action_log_path
 
 
 def _write(workspace: Path, relative: str, content: str) -> None:
