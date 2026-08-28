@@ -23,6 +23,16 @@ class SandboxPlan:
     def wrap(self, command: list[str]) -> list[str]:
         return [*self.command_prefix, *command]
 
+    def to_dict(self) -> dict[str, object]:
+        """Return public boundary metadata without exposing command/path details."""
+        return {
+            "strategy": self.strategy,
+            "write_confined": self.write_confined,
+            "grader_hidden": self.grader_hidden,
+            "network_isolation_claimed": False,
+            "isolation_error": self.isolation_error,
+        }
+
 
 def _result_history_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
     """Return result/oracle paths that must not be visible to an agent."""
