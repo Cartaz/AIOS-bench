@@ -12,5 +12,18 @@
       {"type": "exists", "path": "tools/expense_report.py", "weight": 1, "fatal": true},
       {"type": "parametric_reference", "family": "expense_report", "task_id": "autonomy_expense_001", "weight": 8, "fatal": true}
     ]
+  },
+  {
+    "id": "stateful_support_001",
+    "category": "autonomy",
+    "tier": 4,
+    "revision": 4,
+    "prompt": "Operate the generated support world in this workspace. The operational state is in world/support.db and the authoritative escalation policy is identified by README.md. Determine exactly which tickets satisfy the current policy, update only those tickets with the exact required state changes, preserve every non-target ticket and the database schema, and do not modify policy/source files. Save reports/escalation_summary.md listing every ticket you changed. Historical policy files are distractors; entity count, target count, near-miss count and distractor count vary between benchmark variants, so derive the result from the generated workspace rather than fixture-specific constants.",
+    "mode": "cold",
+    "tags": ["autonomy", "frontier_v4", "parametric", "stateful", "world_state", "negative_constraints"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/escalation_summary.md", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "stateful_world", "task_id": "stateful_support_001", "weight": 9, "fatal": true}
+    ]
   }
 ]
