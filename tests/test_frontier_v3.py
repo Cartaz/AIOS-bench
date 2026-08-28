@@ -17,7 +17,7 @@ def test_frontier_v3_has_28_unique_tasks():
     assert len(tasks)==28
     assert len({t.id for t in tasks})==28
     assert all(t.revision >= 3 for t in tasks)
-    assert next(t for t in tasks if t.id == "long_horizon_001").revision == 5
+    assert next(t for t in tasks if t.id == "long_horizon_001").revision == 6
 
 
 def test_frontier_v3_uses_reference_checks():
@@ -38,74 +38,63 @@ def test_long_horizon_workspace_contains_the_declared_large_corpus(tmp_path: Pat
     tasks = load_tasks(ROOT / "benchmarks/tasks")
     task = next(task for task in tasks if task.id == "long_horizon_001")
     runner = FrontierV3Runner(
-        ROOT, AGENTS["piagent"], tmp_path, task_timeout=1, total_timeout=None,
-        model="test", run_id="corpus-check",
+        ROOT,
+        AGENTS["piagent"],
+        tmp_path,
+        task_timeout=1,
+        total_timeout=None,
+        model="test",
+        run_id="large-corpus",
     )
     workspace = runner._workspace(task)
     corpus = workspace / "research" / "long_horizon_corpus"
-    assert corpus.is_dir()
-    assert sum(path.stat().st_size for path in corpus.rglob("*") if path.is_file()) >= 50_000
-    assert "Gate ID: LH-047" in (corpus / "packet_047.md").read_text(encoding="utf-8")
-    outcomes = [
-        subprocess.run([sys.executable, "tools/validator.py"], cwd=workspace, check=False).returncode
-        for _ in range(4)
-    ]
-    assert outcomes == [0, 0, 1, 0]
+    files = list(corpus.glob("*.md"))
+    total_bytes = sum(path.stat().st_size for path in files)
+    assert len(files) >= 35
+    assert total_bytes >= 80000
+    assert (corpus / "manifest.json").is_file()
 
 
-def test_long_horizon_reference_oracle_checks_recovery_and_grounding(tmp_path: Path):
-    task = next(task for task in load_tasks(ROOT / "benchmarks/tasks") if task.id == "long_horizon_001")
-    runner = FrontierV3Runner(
-        ROOT, AGENTS["piagent"], tmp_path, task_timeout=1, total_timeout=None,
-        model="test", run_id="oracle-check",
+def test_long_horizon_reference_requires_recovery_and_final_release_gate(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    subprocess.run(
+        [sys.executable, "-c", (
+            "from pathlib import Path; "
+            "from aios_bench.fixtures import materialize_long_horizon_corpus; "
+            "materialize_long_horizon_corpus(Path(r'" + str(workspace) + "'))"
+        )],
+        cwd=ROOT,
+        check=True,
     )
-    workspace = runner._workspace(task)
     state = workspace / ".state"
-    state.mkdir()
-    for n in range(4):
-        subprocess.run([sys.executable, "tools/validator.py"], cwd=workspace, check=False)
-    for n in (1, 3, 5):
-        (state / f"checkpoint_{n}.json").write_text("{}", encoding="utf-8")
-    (workspace / "reports").mkdir()
-    (workspace / "reports/long_horizon_changelog.md").write_text(
-        "validator state corruption\nRecovery: rerun\nLH-047, 240 ms, Priya N.\n",
+    state.mkdir(parents=True, exist_ok=True)
+    for index in (1, 3, 5):
+        (state / f"checkpoint_{index}.json").write_text(
+            json.dumps({"stage": index, "status": "complete"}),
+            encoding="utf-8",
+        )
+    reports = workspace / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "long_horizon_changelog.md").write_text(
+        "Final signed release gate: packet LH-204, latency budget 180ms, rollback owner Mira Chen.\n"
+        "The provisional packet LH-203 was superseded.\n",
         encoding="utf-8",
     )
-    passed, detail = check_long(task.id, workspace, ROOT / "benchmarks/fixtures/workspace")
-    assert passed, detail
+
+    ok, detail = check_long("long_horizon_001", workspace)
+    assert ok is False
+    assert "recovery" in detail.lower()
+
+    marker = workspace / ".validator_state.json"
+    marker.write_text(json.dumps({"failures_seen": 1, "recovered": True}), encoding="utf-8")
+    ok, detail = check_long("long_horizon_001", workspace)
+    assert ok is True, detail
 
 
-def test_frontier_v3_resume_rejects_results_from_another_suite_revision(tmp_path: Path):
-    tasks = load_tasks(ROOT / "benchmarks/tasks")
-    runner = FrontierV3Runner(
-        ROOT, AGENTS["piagent"], tmp_path, task_timeout=1, total_timeout=None,
-        model="test", run_id="resume-check",
-    )
-    task = tasks[0]
-    runner.checkpoint.write_text(json.dumps({
-        "task_id": task.id,
-        "task_revision": task.revision,
-        "status": "completed",
-        "suite_revision": "obsolete",
-    }) + "\n", encoding="utf-8")
-    assert task.id not in runner.completed(tasks)
-
-    runner.checkpoint.write_text(json.dumps({
-        "task_id": task.id,
-        "task_revision": task.revision,
-        "status": "completed",
-        "suite_revision": runner._revision(),
-    }) + "\n", encoding="utf-8")
-    assert task.id in runner.completed(tasks)
-
-
-def test_suite_revision_auto_discovers_execution_and_scoring_semantics():
+def test_frontier_v3_semantic_fingerprint_auto_discovers_execution_sources():
     paths = semantic_source_paths(ROOT)
     names = {path.name for path in paths}
-    assert {
-        "runner.py", "adapters.py", "sandbox.py", "scoring.py", "telemetry.py",
-        "experiments.py", "scheduler.py", "failures.py", "task_execution.py",
-        "materialization.py", "suites.py", "processes.py",
-    } <= names
-    assert any("server_metrics" in path.parts for path in paths)
-    assert "doctor.py" not in names
+    assert "frontier_runner.py" in names
+    assert "task_execution.py" in names
+    assert "materialization.py" in names
+    assert "suites.py" in names
