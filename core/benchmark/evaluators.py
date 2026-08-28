@@ -143,10 +143,17 @@ def evaluate_artifacts(
                     )
                 passed, detail = reference_result
             elif kind == "parametric_reference":
-                oracle = _load_parametric_oracle(run_dir, str(check["task_id"]))
+                task_id = str(check["task_id"])
+                oracle = _load_parametric_oracle(run_dir, task_id)
                 if oracle.get("family") != check.get("family"):
                     raise EvaluationError("parametric family/oracle mismatch")
-                passed, detail = check_variant(str(check["family"]), workspace, oracle)
+                passed, detail = check_variant(
+                    str(check["family"]),
+                    workspace,
+                    oracle,
+                    run_dir=run_dir,
+                    task_id=task_id,
+                )
             elif kind == "max_files":
                 candidate = _safe_path(workspace, path or ".")
                 count = sum(1 for item in candidate.rglob("*") if item.is_file()) if candidate.exists() else 0
