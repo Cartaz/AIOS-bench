@@ -26,5 +26,19 @@
       {"type": "exists", "path": "reports/escalation_summary.md", "weight": 1, "fatal": true},
       {"type": "parametric_reference", "family": "stateful_world", "task_id": "stateful_support_001", "weight": 9, "fatal": true}
     ]
+  },
+  {
+    "id": "support_dependency_001",
+    "category": "autonomy",
+    "tier": 5,
+    "revision": 4,
+    "prompt": "Resolve and execute the generated support entitlement workflow. No single source contains the full decision. Read README.md, the authoritative current escalation policy, and routing/current_coverage.json. Inspect the world API schema, list ticket state through the API, and resolve each relevant ticket's account facts with `python tools/world_api.py account <account_id>`; account support plan and region are intentionally absent from ticket rows. Join those tool results with the policy and current coverage map to determine exactly which open tickets qualify. Apply each required mutation only through `python tools/world_api.py escalate <ticket_id> --idempotency-key <key>`, preserve every non-target ticket, every account, the database schema, and all source files, then save reports/escalation_summary.md listing exactly the tickets actually changed. The operational database is benchmark-owned during execution, historical policies are distractors, and ticket count, account count, target count, near-miss count, and distractor count vary by seed and pressure coordinates, so do not rely on fixture-specific constants.",
+    "mode": "cold",
+    "tags": ["autonomy", "frontier_v4", "parametric", "stateful", "world_state", "information_gap", "tool_gap", "multi_source_join", "negative_constraints", "world_api", "tool_mediated"],
+    "required_capabilities": ["benchmark_local_runtime"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/escalation_summary.md", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "dependency_world", "task_id": "support_dependency_001", "weight": 9, "fatal": true}
+    ]
   }
 ]
