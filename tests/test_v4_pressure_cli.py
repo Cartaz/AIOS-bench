@@ -22,6 +22,10 @@ def _args(**overrides):
         "v4_config_chain_depth": 3,
         "v4_config_distractors": 3,
         "v4_config_extra_settings": 2,
+        "v4_stateful_entities": 24,
+        "v4_stateful_mutations": 5,
+        "v4_stateful_policy_distractors": 3,
+        "v4_stateful_negative_constraints": 4,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -56,6 +60,12 @@ def test_v4_parameters_include_every_active_family():
             "distractor_files": 3,
             "extra_settings": 2,
         },
+        "stateful_world": {
+            "entity_count": 24,
+            "required_mutations": 5,
+            "distractor_policies": 3,
+            "negative_constraints": 4,
+        },
     }
 
 
@@ -74,6 +84,29 @@ def test_v4_config_pressure_is_configurable():
 def test_v4_config_pressure_rejects_invalid_coordinates():
     with pytest.raises(SystemExit, match="invalid Frontier v4 config pressure"):
         cli._v4_parameters(_args(v4_config_chain_depth=1))
+
+
+def test_v4_stateful_pressure_is_configurable():
+    parameters = cli._v4_parameters(
+        _args(
+            v4_stateful_entities=40,
+            v4_stateful_mutations=8,
+            v4_stateful_policy_distractors=6,
+            v4_stateful_negative_constraints=10,
+        )
+    )
+
+    assert parameters["stateful_world"] == {
+        "entity_count": 40,
+        "required_mutations": 8,
+        "distractor_policies": 6,
+        "negative_constraints": 10,
+    }
+
+
+def test_v4_stateful_pressure_rejects_invalid_coordinates():
+    with pytest.raises(SystemExit, match="invalid Frontier v4 stateful pressure"):
+        cli._v4_parameters(_args(v4_stateful_entities=4))
 
 
 def test_config_pressure_changes_execution_fingerprint_not_landscape_profile(tmp_path: Path):
@@ -106,5 +139,33 @@ def test_config_variant_identity_records_effective_pressure(tmp_path: Path):
         "chain_depth": 5,
         "distractor_files": 7,
         "extra_settings": 4,
+    }
+    assert identity["variant_digest"]
+
+
+def test_stateful_variant_identity_records_effective_pressure(tmp_path: Path):
+    parameters = cli._v4_parameters(
+        _args(
+            v4_stateful_entities=36,
+            v4_stateful_mutations=7,
+            v4_stateful_policy_distractors=5,
+            v4_stateful_negative_constraints=9,
+        )
+    )
+    runner = _runner(tmp_path / "stateful-identity", parameters)
+    task = next(
+        task for task in load_tasks(TASK_ROOT, "frontier_v4")
+        if task.id == "stateful_support_001"
+    )
+
+    runner._workspace(task)
+    identity = runner._result_identity(task)
+
+    assert identity["variant_family"] == "stateful_world"
+    assert identity["variant_parameters"] == {
+        "entity_count": 36,
+        "required_mutations": 7,
+        "distractor_policies": 5,
+        "negative_constraints": 9,
     }
     assert identity["variant_digest"]
