@@ -6,12 +6,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..task_runtime import TaskRuntime
-from ..world_api import (
-    SupportWorldService,
-    start_support_world_runtime,
-    verify_support_action_log,
-    write_world_api_client,
-)
+from ..world_api import start_support_world_runtime, write_world_api_client
+from ..world_service import SupportWorldService, verify_support_action_log
 from .config_traversal import (
     ConfigTraversalPressure,
     check_config_traversal_variant,
