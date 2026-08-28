@@ -22,7 +22,7 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
     service = BenchmarkService(ROOT)
     catalog = service.catalog("frontier_v4")
     assert {item["id"] for item in catalog["tasks"]} == {
-        "autonomy_expense_001", "tool_use_config_001"
+        "autonomy_expense_001", "stateful_support_001", "tool_use_config_001"
     }
 
 
