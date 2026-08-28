@@ -53,7 +53,13 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "stateful_support_001",
         "tool_use_config_001",
     ]
-    assert all(task.revision == 4 for task in v4)
+    assert {task.id: task.revision for task in v4} == {
+        "autonomy_expense_001": 4,
+        "stateful_support_001": 5,
+        "tool_use_config_001": 4,
+    }
+    stateful = next(task for task in v4 if task.id == "stateful_support_001")
+    assert stateful.required_capabilities == ("benchmark_local_runtime",)
     assert all(any(check["type"] == "parametric_reference" for check in task.acceptance) for task in v4)
 
 
@@ -138,9 +144,13 @@ def test_landscape_profile_excludes_only_pressure_coordinates(tmp_path: Path) ->
     )
 
 
-def test_frontier_v4_semantic_fingerprint_auto_discovers_generators() -> None:
+def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime() -> None:
     paths = semantic_source_paths(ROOT)
     names = {path.name for path in paths}
-    assert "materialization.py" in names
-    assert "suites.py" in names
+    assert {
+        "materialization.py",
+        "suites.py",
+        "task_runtime.py",
+        "world_api.py",
+    } <= names
     assert any("parametric" in path.parts for path in paths)
