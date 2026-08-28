@@ -29,6 +29,43 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
     }
 
 
+def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_path: Path):
+    service = BenchmarkService(ROOT)
+    service.results_root = tmp_path / "results"
+    request = RunRequest(
+        suite="frontier_v4",
+        harnesses=("piagent",),
+        task_ids=("support_dependency_001",),
+        model="test",
+    )
+    tasks = service.validate_request(request)
+    runner = service._build_runner(
+        request,
+        "piagent",
+        "pressure-defaults",
+        42,
+        lambda event: None,
+    )
+    try:
+        assert runner.suite.parametric is not None
+        coordinates = runner.suite.parametric["pressure_coordinates"]
+        assert set(coordinates) == {
+            "expense_report",
+            "config_traversal",
+            "stateful_world",
+            "dependency_world",
+        }
+        assert coordinates["dependency_world"] == {
+            "entity_count": 30,
+            "account_count": 12,
+            "required_mutations": 5,
+            "distractor_policies": 3,
+            "negative_constraints": 6,
+        }
+    finally:
+        runner.abort(tasks)
+
+
 def test_gui_request_requires_selected_dependencies():
     service = BenchmarkService(ROOT)
     catalog = service.catalog("frontier_v3")
