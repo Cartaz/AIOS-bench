@@ -9,9 +9,14 @@ from .config_traversal import (
     generate_config_traversal_variant,
 )
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
+from .stateful_world import (
+    StatefulWorldPressure,
+    check_stateful_world_variant,
+    generate_stateful_world_variant,
+)
 
 
-FAMILIES = {"expense_report", "config_traversal"}
+FAMILIES = {"expense_report", "config_traversal", "stateful_world"}
 
 
 def materialize_variant(
@@ -27,6 +32,9 @@ def materialize_variant(
     if family == "config_traversal":
         pressure = ConfigTraversalPressure.from_mapping(parameters or {})
         return generate_config_traversal_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "stateful_world":
+        pressure = StatefulWorldPressure.from_mapping(parameters or {})
+        return generate_stateful_world_variant(workspace, seed=int(seed), pressure=pressure)
     raise ValueError(f"unknown parametric family: {family}")
 
 
@@ -35,12 +43,15 @@ def check_variant(family: str, workspace: Path, oracle: Mapping[str, Any]) -> tu
         return check_expense_variant(workspace, oracle)
     if family == "config_traversal":
         return check_config_traversal_variant(workspace, oracle)
+    if family == "stateful_world":
+        return check_stateful_world_variant(workspace, oracle)
     return False, f"unknown parametric family: {family}"
 
 
 __all__ = [
     "ConfigTraversalPressure",
     "ExpensePressure",
+    "StatefulWorldPressure",
     "FAMILIES",
     "check_variant",
     "materialize_variant",
