@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from core.benchmark.sandbox import (
-    REPO_ROOT,
     _benchmark_owned_paths,
     _result_history_paths,
     workspace_sandbox,
