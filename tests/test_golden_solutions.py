@@ -42,16 +42,24 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
                 "distractor_policies": 3,
                 "negative_constraints": 4,
             },
+            "dependency_world": {
+                "entity_count": 30,
+                "account_count": 12,
+                "required_mutations": 5,
+                "distractor_policies": 3,
+                "negative_constraints": 6,
+            },
         },
     )
 
     assert result["schema"] == "aios-bench/parametric-validation/v2"
-    assert result["checked_tasks"] == 3
+    assert result["checked_tasks"] == 4
     assert result["ok"] is True, result["failures"]
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
         "stateful_world",
+        "dependency_world",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
