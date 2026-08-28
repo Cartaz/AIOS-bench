@@ -23,6 +23,7 @@ from .processes import spawn_owned, terminate_owned
 from .sandbox import workspace_sandbox
 from .scoring import overall_score
 from .server_metrics import NullServerMetricsClient, OutputTokenGuard
+from .task_runtime import TaskRuntime
 from .telemetry import parse_output
 
 
@@ -40,6 +41,8 @@ class TaskExecutionRunner(Protocol):
     cancellation_check: Callable[[], bool] | None
 
     def prepare_workspace(self, task: Task) -> Path: ...
+
+    def start_task_runtime(self, task: Task, workspace: Path) -> TaskRuntime: ...
 
     def record_event(self, event: dict) -> None: ...
 
@@ -185,6 +188,8 @@ def run_frontier_task(
         poll_interval=runner.metrics_poll_interval,
     )
 
+    runtime = runner.start_task_runtime(task, workspace)
+    env.update(runtime.environment)
     runner.record_event({
         "event": "task_started",
         "task_id": task.id,
@@ -288,6 +293,8 @@ def run_frontier_task(
             "source": "runner",
             "data": {"kind": "runner_error", "error": repr(exc)},
         })
+    finally:
+        runtime.close()
     trajectory.duration_seconds = time.monotonic() - started
 
     if cancellation_check is not None and cancellation_check():
