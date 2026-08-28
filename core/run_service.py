@@ -10,7 +10,12 @@ from core.benchmark.config import AGENTS
 from core.benchmark.experiments import make_experiment_id
 from core.benchmark.frontier_runner import FrontierRunner
 from core.benchmark.models import Task
-from core.benchmark.parametric import ConfigTraversalPressure, ExpensePressure
+from core.benchmark.parametric import (
+    ConfigTraversalPressure,
+    DependencyWorldPressure,
+    ExpensePressure,
+    StatefulWorldPressure,
+)
 from core.benchmark.report import write_summary
 from core.benchmark.scheduler import MatchedInterleavedScheduler
 from core.benchmark.statistics import augment_summary_file
@@ -251,6 +256,8 @@ class BenchmarkService:
                 parametric_parameters={
                     "expense_report": ExpensePressure().to_dict(),
                     "config_traversal": ConfigTraversalPressure().to_dict(),
+                    "stateful_world": StatefulWorldPressure().to_dict(),
+                    "dependency_world": DependencyWorldPressure().to_dict(),
                 },
             )
         else:
