@@ -117,6 +117,7 @@ def test_agentzero_transport_masks_golden_and_benchmark_content(monkeypatch, tmp
 
     plan = workspace_sandbox("agentzero", workspace, "required")
     command = plan.wrap(["python", "-m", "core.benchmark.agentzero_client", "prompt"])
+    canonical_workspace = str(workspace.resolve())
 
     assert plan.strategy == "bubblewrap_remote_transport_grader_hidden"
     assert plan.write_confined is True
@@ -125,9 +126,54 @@ def test_agentzero_transport_masks_golden_and_benchmark_content(monkeypatch, tmp
     assert _has_sequence(command, ["--tmpfs", str((repo / "tests").resolve())])
     assert _has_sequence(command, ["--tmpfs", str((repo / "docs").resolve())])
     assert _has_sequence(command, ["--tmpfs", str((repo / "results").resolve())])
+    assert _has_sequence(command, ["--bind", canonical_workspace, "/workspace"])
+    assert _has_sequence(command, ["--bind", "/workspace", canonical_workspace])
+    assert _has_sequence(command, ["--chdir", canonical_workspace])
     assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "golden_solutions.py").resolve())])
     assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "parametric_goldens.py").resolve())])
     assert _has_sequence(command, ["--ro-bind", "/dev/null", str((package / "reference_checks.py").resolve())])
+
+
+def test_agentzero_remote_transport_contract_executes(monkeypatch, tmp_path: Path):
+    executable = shutil.which("bwrap")
+    if executable is None:
+        pytest.skip("bubblewrap is unavailable")
+    capability = probe_bubblewrap(executable)
+    if not capability.usable:
+        pytest.skip(f"bubblewrap namespaces unavailable: {capability.error}")
+
+    repo = tmp_path / "repo"
+    package = repo / "core" / "benchmark"
+    package.mkdir(parents=True)
+    workspace = repo / "results" / ".local" / "agentzero" / "model" / "runs" / "run" / "workspaces" / "task"
+    workspace.mkdir(parents=True)
+    visible = workspace / "visible.txt"
+    visible.write_text("workspace-visible", encoding="utf-8")
+    benchmarks = repo / "benchmarks"
+    benchmarks.mkdir()
+    secret = benchmarks / "grader-secret.txt"
+    secret.write_text("must-not-leak", encoding="utf-8")
+    projects_root = tmp_path / "agentzero-projects"
+    projects_root.mkdir()
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("core.benchmark.sandbox.BENCHMARK_PACKAGE_ROOT", package)
+    monkeypatch.setenv("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT", str(projects_root))
+
+    plan = workspace_sandbox("agentzero", workspace, "required")
+    command = plan.wrap([
+        "/bin/sh",
+        "-c",
+        (
+            f"test \"$(cat {visible})\" = workspace-visible && "
+            f"test ! -e {secret} && "
+            "printf agentzero-sandbox-write > created-inside.txt"
+        ),
+    ])
+    completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=10)
+
+    assert completed.returncode == 0, completed.stderr
+    assert (workspace / "created-inside.txt").read_text(encoding="utf-8") == "agentzero-sandbox-write"
+    assert secret.read_text(encoding="utf-8") == "must-not-leak"
 
 
 def test_agentzero_writable_projects_bridge_is_not_reported_write_confined(monkeypatch, tmp_path: Path):
