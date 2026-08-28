@@ -13,6 +13,7 @@ from .models import Task
 from .runner import BenchmarkRunner
 from .server_metrics import build_server_metrics_client
 from .task_execution import run_frontier_task
+from .task_runtime import TaskRuntime
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,10 @@ class FrontierRunner(BenchmarkRunner):
     def prepare_workspace(self, task: Task) -> Path:
         """Materialize the isolated workspace for one task."""
         return self.suite.materializer.prepare(self, task)
+
+    def start_task_runtime(self, task: Task, workspace: Path) -> TaskRuntime:
+        """Start benchmark-owned services required only while a task executes."""
+        return self.suite.materializer.start_runtime(self, task, workspace)
 
     def _workspace(self, task: Task) -> Path:
         """Compatibility alias for existing tests/internal consumers."""
