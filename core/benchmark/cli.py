@@ -11,7 +11,12 @@ from .experiments import annotate_repeat, make_experiment_id
 from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
 from .models import Trajectory
-from .parametric import ConfigTraversalPressure, ExpensePressure, StatefulWorldPressure
+from .parametric import (
+    ConfigTraversalPressure,
+    DependencyWorldPressure,
+    ExpensePressure,
+    StatefulWorldPressure,
+)
 from .paths import REPO_ROOT, RESULTS_ROOT, TASKS_ROOT
 from .publication import render_derived, verify_publication, write_publication_manifest
 from .report import write_summary
@@ -94,10 +99,21 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 stateful pressure: {exc}") from exc
+    try:
+        dependency = DependencyWorldPressure(
+            entity_count=args.v4_dependency_entities,
+            account_count=args.v4_dependency_accounts,
+            required_mutations=args.v4_dependency_mutations,
+            distractor_policies=args.v4_dependency_policy_distractors,
+            negative_constraints=args.v4_dependency_negative_constraints,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 dependency pressure: {exc}") from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
         "stateful_world": stateful.to_dict(),
+        "dependency_world": dependency.to_dict(),
     }
 
 
@@ -212,6 +228,11 @@ def main() -> None:
     parser.add_argument("--v4-stateful-mutations", type=int, default=5, help="Frontier v4 stateful-world required-mutation coordinate")
     parser.add_argument("--v4-stateful-policy-distractors", type=int, default=3, help="Frontier v4 stateful-world archived-policy distractor coordinate")
     parser.add_argument("--v4-stateful-negative-constraints", type=int, default=4, help="Frontier v4 stateful-world near-miss preservation coordinate")
+    parser.add_argument("--v4-dependency-entities", type=int, default=30, help="Frontier v4 dependency-world ticket-count coordinate")
+    parser.add_argument("--v4-dependency-accounts", type=int, default=12, help="Frontier v4 dependency-world account-count coordinate")
+    parser.add_argument("--v4-dependency-mutations", type=int, default=5, help="Frontier v4 dependency-world required-mutation coordinate")
+    parser.add_argument("--v4-dependency-policy-distractors", type=int, default=3, help="Frontier v4 dependency-world archived-policy distractor coordinate")
+    parser.add_argument("--v4-dependency-negative-constraints", type=int, default=6, help="Frontier v4 dependency-world near-miss preservation coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
