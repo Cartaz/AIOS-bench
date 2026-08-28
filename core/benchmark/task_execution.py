@@ -294,8 +294,8 @@ def run_frontier_task(
             "data": {"kind": "runner_error", "error": repr(exc)},
         })
     finally:
+        trajectory.duration_seconds = time.monotonic() - started
         runtime.close()
-    trajectory.duration_seconds = time.monotonic() - started
 
     if cancellation_check is not None and cancellation_check():
         raise RunCancelled("Benchmark run cancelled")
