@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -13,6 +14,8 @@ from .agentzero_workspace import EphemeralAgentZeroProject
 
 _TOOL_HEADING_RE = re.compile(r"Using tool '([^']+)'", re.IGNORECASE)
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+DEFAULT_TASK_TIMEOUT_SECONDS = 900.0
+CONTROL_REQUEST_TIMEOUT_SECONDS = 15.0
 
 
 def _api_key() -> str:
@@ -26,6 +29,26 @@ def _base_url() -> str:
     return os.environ.get("AIOS_BENCH_AGENTZERO_URL", "http://127.0.0.1:80").rstrip("/")
 
 
+def _task_timeout_seconds() -> float:
+    raw = os.environ.get("AIOS_BENCH_TASK_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return DEFAULT_TASK_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise RuntimeError("AIOS_BENCH_TASK_TIMEOUT_SECONDS must be a positive number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise RuntimeError("AIOS_BENCH_TASK_TIMEOUT_SECONDS must be a positive number")
+    return value
+
+
+def _request_timeout(path: str) -> float:
+    task_timeout = _task_timeout_seconds()
+    if path == "/api_message":
+        return task_timeout
+    return min(task_timeout, CONTROL_REQUEST_TIMEOUT_SECONDS)
+
+
 def _request_json(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     request = urllib.request.Request(
         _base_url() + path,
@@ -33,7 +56,7 @@ def _request_json(path: str, payload: dict[str, Any]) -> dict[str, Any]:
         headers={"Content-Type": "application/json", "X-API-KEY": _api_key()},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=None) as response:
+    with urllib.request.urlopen(request, timeout=_request_timeout(path)) as response:
         body = response.read().decode("utf-8", errors="replace")
     value = json.loads(body)
     if not isinstance(value, dict):
@@ -53,8 +76,14 @@ def _tool_name(item: dict[str, Any]) -> str | None:
     return match.group(1).split(":", 1)[0].strip()[:200] or None
 
 
-def _event(event_type: str, *, event_id: str | None = None, tool: str | None = None,
-           status: str | None = None, error: str | None = None) -> dict[str, Any]:
+def _event(
+    event_type: str,
+    *,
+    event_id: str | None = None,
+    tool: str | None = None,
+    status: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
     event: dict[str, Any] = {"type": event_type, "inferred": False}
     if event_id:
         event["id"] = event_id[:200]
@@ -97,22 +126,48 @@ def normalize_log_items(items: object) -> list[dict[str, Any]]:
             tool = _tool_name(raw) or "agentzero_tool"
             events.append(_event("tool_call", event_id=event_id, tool=tool, status="started"))
             if completed:
-                events.append(_event("tool_result", event_id=event_id, tool=tool, status="observed"))
+                events.append(
+                    _event("tool_result", event_id=event_id, tool=tool, status="observed")
+                )
         elif kind == "subagent":
             tool = "call_subordinate"
             events.append(_event("tool_call", event_id=event_id, tool=tool, status="started"))
-            events.append(_event("subagent_start", event_id=event_id, tool=tool, status="started"))
+            events.append(
+                _event("subagent_start", event_id=event_id, tool=tool, status="started")
+            )
             if completed:
-                events.append(_event("tool_result", event_id=event_id, tool=tool, status="observed"))
-                events.append(_event("subagent_end", event_id=event_id, tool=tool, status="observed"))
+                events.append(
+                    _event("tool_result", event_id=event_id, tool=tool, status="observed")
+                )
+                events.append(
+                    _event("subagent_end", event_id=event_id, tool=tool, status="observed")
+                )
         elif kind == "browser":
-            events.append(_event("tool_call", event_id=event_id, tool="browser", status="started"))
+            events.append(
+                _event("tool_call", event_id=event_id, tool="browser", status="started")
+            )
             if completed:
-                events.append(_event("tool_result", event_id=event_id, tool="browser", status="observed"))
+                events.append(
+                    _event("tool_result", event_id=event_id, tool="browser", status="observed")
+                )
         elif kind == "code_exe":
-            events.append(_event("tool_call", event_id=event_id, tool="code_execution", status="started"))
+            events.append(
+                _event(
+                    "tool_call",
+                    event_id=event_id,
+                    tool="code_execution",
+                    status="started",
+                )
+            )
             if completed:
-                events.append(_event("tool_result", event_id=event_id, tool="code_execution", status="observed"))
+                events.append(
+                    _event(
+                        "tool_result",
+                        event_id=event_id,
+                        tool="code_execution",
+                        status="observed",
+                    )
+                )
         elif kind == "error":
             events.append(_event("error", event_id=event_id, error="agentzero_structured_error"))
         elif kind == "response":

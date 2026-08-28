@@ -9,6 +9,7 @@ from typing import Callable
 from core.benchmark.config import AGENTS
 from core.benchmark.experiments import make_experiment_id
 from core.benchmark.frontier_runner import FrontierRunner
+from core.benchmark.models import Task
 from core.benchmark.parametric import ConfigTraversalPressure, ExpensePressure
 from core.benchmark.report import write_summary
 from core.benchmark.scheduler import MatchedInterleavedScheduler
@@ -39,6 +40,14 @@ class RunRequest:
     keep_raw: bool = False
 
 
+@dataclass(frozen=True)
+class PreparedRun:
+    """Validated run request plus its already-loaded task selection."""
+
+    request: RunRequest
+    tasks: tuple[Task, ...]
+
+
 class BenchmarkService:
     """Application-facing API for catalog discovery and benchmark execution."""
 
@@ -48,6 +57,8 @@ class BenchmarkService:
         self.results_root = repo_root / "results" / ".local"
 
     def catalog(self, suite: str = "frontier_v3") -> dict[str, object]:
+        if suite not in SUITES:
+            raise ValueError(f"Unknown suite: {suite}")
         tasks = load_tasks(self.tasks_root, suite)
         return {
             "suite": suite,
@@ -86,7 +97,7 @@ class BenchmarkService:
             raise ValueError(f"{label} must be greater than 0")
         return number
 
-    def validate_request(self, request: RunRequest) -> list:
+    def validate_request(self, request: RunRequest) -> list[Task]:
         if not isinstance(request.suite, str) or request.suite not in SUITES:
             raise ValueError(f"Unknown suite: {request.suite}")
         if not request.harnesses:
@@ -134,8 +145,11 @@ class BenchmarkService:
                 )
         return [task for task in catalog if task.id in selected]
 
+    def prepare(self, request: RunRequest) -> PreparedRun:
+        return PreparedRun(request=request, tasks=tuple(self.validate_request(request)))
+
     @staticmethod
-    def _abort_runners(runners: dict[str, "ObservableFrontierRunner"], tasks: list) -> None:
+    def _abort_runners(runners: dict[str, "ObservableFrontierRunner"], tasks: list[Task]) -> None:
         """Best-effort cleanup that never prevents another runner from being aborted."""
         for name, runner in runners.items():
             try:
@@ -145,14 +159,16 @@ class BenchmarkService:
 
     def run(
         self,
-        request: RunRequest,
+        request: RunRequest | PreparedRun,
         on_event: EventCallback | None = None,
         cancellation_token: CancellationToken | None = None,
     ) -> dict[str, object]:
-        tasks = self.validate_request(request)
+        prepared = request if isinstance(request, PreparedRun) else self.prepare(request)
+        run_request = prepared.request
+        tasks = list(prepared.tasks)
         callback = on_event or (lambda event: None)
         token = cancellation_token or CancellationToken()
-        total_units = len(tasks) * len(request.harnesses) * request.repeats
+        total_units = len(tasks) * len(run_request.harnesses) * run_request.repeats
         completed_units = 0
         active_runners: dict[str, ObservableFrontierRunner] = {}
 
@@ -163,24 +179,24 @@ class BenchmarkService:
             callback({**event, "completed_units": completed_units, "total_units": total_units})
 
         exit_code = 0
-        experiment_id = make_experiment_id(request.suite)
+        experiment_id = make_experiment_id(run_request.suite)
         try:
-            for repeat in range(1, request.repeats + 1):
+            for repeat in range(1, run_request.repeats + 1):
                 token.raise_if_cancelled()
-                orchestration_seed = request.seed + repeat - 1
-                run_id = experiment_id if request.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
+                orchestration_seed = run_request.seed + repeat - 1
+                run_id = experiment_id if run_request.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
                 active_runners = {
                     name: self._build_runner(
-                        request,
+                        run_request,
                         name,
                         run_id,
                         orchestration_seed,
                         emit,
                         token,
                     )
-                    for name in request.harnesses
+                    for name in run_request.harnesses
                 }
-                emit({"type": "repeat_started", "repeat": repeat, "repeats": request.repeats})
+                emit({"type": "repeat_started", "repeat": repeat, "repeats": run_request.repeats})
                 if len(active_runners) == 1:
                     runner = next(iter(active_runners.values()))
                     exit_code = max(exit_code, runner.run(tasks))
@@ -194,14 +210,14 @@ class BenchmarkService:
                     )
                     exit_code = max(exit_code, scheduler.run().exit_code)
                 token.raise_if_cancelled()
-                emit({"type": "repeat_finished", "repeat": repeat, "repeats": request.repeats})
+                emit({"type": "repeat_finished", "repeat": repeat, "repeats": run_request.repeats})
         except RunCancelled:
             self._abort_runners(active_runners, tasks)
             result = {
                 "exit_code": 2,
                 "cancelled": True,
                 "summary": None,
-                "request": asdict(request),
+                "request": asdict(run_request),
             }
             emit({"type": "run_cancelled", **result})
             return result
@@ -215,7 +231,7 @@ class BenchmarkService:
             "exit_code": exit_code,
             "cancelled": False,
             "summary": str(summary),
-            "request": asdict(request),
+            "request": asdict(run_request),
         }
         emit({"type": "run_finished", **result})
         return result

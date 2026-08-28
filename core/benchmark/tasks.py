@@ -11,6 +11,13 @@ TASK_DIR = "frontier_v3"
 SAFE_ID = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
+def _string_list(item: dict, field: str, task_id: str) -> list[str]:
+    values = item.get(field, [])
+    if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
+        raise ValueError(f"Invalid {field} for {task_id}")
+    return values
+
+
 def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
     """Load one explicit benchmark catalog.
 
@@ -55,12 +62,17 @@ def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
         if (
             not isinstance(acceptance, list)
             or not acceptance
-            or not all(isinstance(check, dict) and isinstance(check.get("type"), str) for check in acceptance)
+            or not all(
+                isinstance(check, dict) and isinstance(check.get("type"), str)
+                for check in acceptance
+            )
         ):
             raise ValueError(f"Task {task_id} needs valid acceptance checks")
         authoritative = [
-            check for check in acceptance
-            if isinstance(check, dict) and check.get("type") in {"reference", "parametric_reference"}
+            check
+            for check in acceptance
+            if isinstance(check, dict)
+            and check.get("type") in {"reference", "parametric_reference"}
         ]
         if len(authoritative) != 1:
             raise ValueError(f"Task {task_id} needs exactly one authoritative oracle")
@@ -72,21 +84,17 @@ def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
         if oracle.get("type") == "parametric_reference" and not oracle.get("family"):
             raise ValueError(f"Task {task_id} parametric oracle needs a family")
 
-        capabilities = item.get("required_capabilities", [])
-        if not isinstance(capabilities, list) or not all(isinstance(x, str) and x for x in capabilities):
-            raise ValueError(f"Invalid required_capabilities for {task_id}")
-        tags = item.get("tags", [])
-        if not isinstance(tags, list) or not all(isinstance(x, str) for x in tags):
-            raise ValueError(f"Invalid tags for {task_id}")
+        capabilities = _string_list(item, "required_capabilities", task_id)
+        tags = _string_list(item, "tags", task_id)
         mode = item.get("mode", "cold")
         if mode not in {"cold", "warm"}:
             raise ValueError(f"Invalid mode for {task_id}: {mode}")
-        dependencies = item.get("depends_on", [])
-        if (
-            not isinstance(dependencies, list)
-            or not all(isinstance(x, str) and SAFE_ID.fullmatch(x) for x in dependencies)
-        ):
+        dependencies = _string_list(item, "depends_on", task_id)
+        if not all(SAFE_ID.fullmatch(value) for value in dependencies):
             raise ValueError(f"Invalid dependencies for {task_id}")
+        setup = _string_list(item, "setup", task_id)
+        if len(set(setup)) != len(setup) or not all(SAFE_ID.fullmatch(value) for value in setup):
+            raise ValueError(f"Invalid setup for {task_id}")
 
         tasks.append(Task(
             id=task_id,
@@ -99,15 +107,19 @@ def load_tasks(root: str | Path, task_dir: str = TASK_DIR) -> list[Task]:
             required_capabilities=tuple(capabilities),
             depends_on=tuple(dependencies),
             acceptance=tuple(acceptance),
+            setup=tuple(setup),
         ))
 
     positions = {task.id: index for index, task in enumerate(tasks)}
     for task in tasks:
         unknown = [dependency for dependency in task.depends_on if dependency not in positions]
         forward = [
-            dependency for dependency in task.depends_on
+            dependency
+            for dependency in task.depends_on
             if positions.get(dependency, -1) >= positions[task.id]
         ]
         if unknown or forward:
-            raise ValueError(f"Task {task.id} has invalid dependency order: {unknown or forward}")
+            raise ValueError(
+                f"Task {task.id} has invalid dependency order: {unknown or forward}"
+            )
     return tasks

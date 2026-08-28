@@ -14,11 +14,17 @@ function parseObject(raw) {
 export class BackendClient {
   constructor(backend, handlers = {}) {
     this.backend = backend;
+    this.doctorWaiters = [];
     const connect = (signal, handler) => {
       if (typeof handler === 'function') signal.connect(handler);
     };
     connect(backend.errorOccurred, handlers.errorOccurred);
-    connect(backend.doctorChanged, raw => handlers.doctorChanged?.(parseObject(raw)));
+    backend.doctorChanged.connect(raw => {
+      const value = parseObject(raw);
+      handlers.doctorChanged?.(value);
+      const waiters = this.doctorWaiters.splice(0);
+      waiters.forEach(resolve => resolve(value));
+    });
     connect(backend.runStateChanged, raw => handlers.runStateChanged?.(parseObject(raw)));
     connect(backend.progressChanged, raw => handlers.progressChanged?.(parseObject(raw)));
     connect(backend.runFinished, raw => handlers.runFinished?.(parseObject(raw)));
@@ -29,17 +35,29 @@ export class BackendClient {
     return parseObject(raw);
   }
 
-  async getDoctor() {
-    const raw = await callWithResult(done => this.backend.getDoctor(done));
-    return parseObject(raw);
+  _doctorAction(invoker) {
+    return new Promise(resolve => {
+      const waiter = value => resolve(value);
+      this.doctorWaiters.push(waiter);
+      invoker(ok => {
+        if (ok) return;
+        const index = this.doctorWaiters.indexOf(waiter);
+        if (index >= 0) this.doctorWaiters.splice(index, 1);
+        resolve({});
+      });
+    });
+  }
+
+  getDoctor() {
+    return this._doctorAction(done => this.backend.getDoctor(done));
   }
 
   saveDoctorProfile(profile) {
-    return callWithResult(done => this.backend.saveDoctorProfile(JSON.stringify(profile), done));
+    return this._doctorAction(done => this.backend.saveDoctorProfile(JSON.stringify(profile), done));
   }
 
   installHarness(name) {
-    return callWithResult(done => this.backend.installHarness(name, done));
+    return this._doctorAction(done => this.backend.installHarness(name, done));
   }
 
   startRun(request) {

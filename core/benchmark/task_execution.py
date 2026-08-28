@@ -7,7 +7,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from core.cancellation import RunCancelled
 
@@ -24,6 +24,28 @@ from .sandbox import workspace_sandbox
 from .scoring import overall_score
 from .server_metrics import NullServerMetricsClient, OutputTokenGuard
 from .telemetry import parse_output
+
+
+class TaskExecutionRunner(Protocol):
+    """Minimal public runner surface required by the task executor."""
+
+    repo_root: Path
+    run_dir: Path
+    run_id: str
+    model: str
+    agent: Any
+    server_metrics: Any
+    max_output_tokens: int
+    metrics_poll_interval: float
+    cancellation_check: Callable[[], bool] | None
+
+    def prepare_workspace(self, task: Task) -> Path: ...
+
+    def record_event(self, event: dict) -> None: ...
+
+    def result_identity(self, task: Task) -> dict: ...
+
+    def record_result(self, item: dict) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -112,13 +134,17 @@ def _parse_harness_output(
     return [event.to_dict() for event in events]
 
 
-def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
+def run_frontier_task(
+    runner: TaskExecutionRunner,
+    task: Task,
+    timeout: float,
+) -> Trajectory:
     """Execute one Frontier task with optional server-verified telemetry."""
-    cancellation_check = getattr(runner, "cancellation_check", None)
+    cancellation_check = runner.cancellation_check
     if cancellation_check is not None and cancellation_check():
         raise RunCancelled("Benchmark run cancelled")
 
-    workspace = runner._workspace(task)
+    workspace = runner.prepare_workspace(task)
     logs = runner.run_dir / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     stdout_path = logs / f"{task.id}.stdout.log"
@@ -142,19 +168,24 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "AIOS_BENCH_AGENT": runner.agent.name,
         "AIOS_BENCH_MODEL": runner.model,
         "AIOS_BENCH_RUN_ID": runner.run_id,
-        "AIOS_BENCH_FIXTURE_ROOT": str(runner.repo_root / "benchmarks" / "fixtures" / "workspace"),
+        "AIOS_BENCH_FIXTURE_ROOT": str(
+            runner.repo_root / "benchmarks" / "fixtures" / "workspace"
+        ),
+        # Remote harness clients use the same active task budget as the local
+        # process owner rather than introducing an unbounded network wait.
+        "AIOS_BENCH_TASK_TIMEOUT_SECONDS": str(timeout),
     })
 
-    metrics_client = getattr(runner, "server_metrics", NullServerMetricsClient())
+    metrics_client = runner.server_metrics or NullServerMetricsClient()
     metrics_before = metrics_client.snapshot()
     guard = OutputTokenGuard(
         metrics_client,
         metrics_before,
-        getattr(runner, "max_output_tokens", None),
-        poll_interval=getattr(runner, "metrics_poll_interval", 1.0),
+        runner.max_output_tokens,
+        poll_interval=runner.metrics_poll_interval,
     )
 
-    runner._log({
+    runner.record_event({
         "event": "task_started",
         "task_id": task.id,
         "command": command,
@@ -277,8 +308,16 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "runaway_triggered": bool(guard.triggered),
     })
 
-    stdout = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
-    stderr = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
+    stdout = (
+        stdout_path.read_text(encoding="utf-8", errors="replace")
+        if stdout_path.exists()
+        else ""
+    )
+    stderr = (
+        stderr_path.read_text(encoding="utf-8", errors="replace")
+        if stderr_path.exists()
+        else ""
+    )
     hermes_usage = ""
     if runner.agent.name == "hermes":
         usage_value = invocation.environment.get("AIOS_BENCH_HERMES_USAGE_FILE")
@@ -286,7 +325,10 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
             usage_path = Path(usage_value)
             try:
                 if usage_path.is_file():
-                    hermes_usage = usage_path.read_text(encoding="utf-8", errors="replace")
+                    hermes_usage = usage_path.read_text(
+                        encoding="utf-8",
+                        errors="replace",
+                    )
             finally:
                 usage_path.unlink(missing_ok=True)
 
@@ -343,7 +385,7 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "failure_kind": failure_kind,
         "evaluation": evaluation,
         "score": overall_score(trajectory),
-        **runner._result_identity(task),
+        **runner.result_identity(task),
         "comparable": True,
         "capability_assessment": runner.agent.adapter.assess_task(task).to_dict(),
         "stdout": str(stdout_path),
@@ -352,8 +394,8 @@ def run_frontier_task(runner: Any, task: Task, timeout: float) -> Trajectory:
         "efficiency_comparable": bool(server_usage.get("trusted_for_efficiency")),
         "server_usage": server_usage,
     })
-    runner._write_result(result)
-    runner._log({
+    runner.record_result(result)
+    runner.record_event({
         "event": "task_finished",
         "task_id": task.id,
         "success": trajectory.success,

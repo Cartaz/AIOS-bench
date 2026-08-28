@@ -38,7 +38,7 @@ class BackgroundWorker(QObject):
 
 
 class DesktopRuntime(QObject):
-    """Owns Qt worker lifecycle and translates long-running core work into signals."""
+    """Own Qt worker lifecycle and translate long-running core work into signals."""
 
     doctorChanged = Signal(str)
     runStateChanged = Signal(str)
@@ -62,12 +62,22 @@ class DesktopRuntime(QObject):
     def is_running(self) -> bool:
         return self._operation == "benchmark" and self.is_busy
 
+    def inspect_doctor(self) -> None:
+        token = CancellationToken()
+        self._start(
+            "doctor_inspect",
+            lambda _emit: self._controller.doctor_json(
+                lambda: token.is_cancelled,
+            ),
+            cancellation_token=token,
+        )
+
     def start_run(self, payload: str) -> None:
-        request = self._controller.prepare_run(payload)
+        prepared = self._controller.prepare_run(payload)
         token = CancellationToken()
         self._start(
             "benchmark",
-            lambda emit: self._controller.run_benchmark(request, emit, token),
+            lambda emit: self._controller.run_benchmark(prepared, emit, token),
             cancellation_token=token,
         )
 
@@ -143,11 +153,15 @@ class DesktopRuntime(QObject):
     def _on_finished(self, result: object) -> None:
         if self._operation == "benchmark":
             self.runFinished.emit(json.dumps(result, ensure_ascii=False))
-        elif self._operation == "doctor_install":
-            self.doctorChanged.emit(self._controller.doctor_json())
+        elif self._operation in {"doctor_inspect", "doctor_install"}:
+            self.doctorChanged.emit(str(result))
 
     @Slot(str)
     def _on_failed(self, message: str) -> None:
+        if self._operation in {"doctor_inspect", "doctor_install"}:
+            # Resolve frontend waiters even when a Doctor worker fails. The
+            # separate error signal carries the human-readable failure.
+            self.doctorChanged.emit("{}")
         self.errorOccurred.emit(message)
 
     @Slot()

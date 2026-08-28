@@ -110,6 +110,8 @@ class BenchmarkRunner:
         self.checkpoint = self.run_dir / "results.jsonl"
         self.events = self.run_dir / "events.jsonl"
         self.metadata_path = self.run_dir / "run.json"
+        self._checkpoint_cache: dict[str, dict] = {}
+        self._checkpoint_cache_signature: tuple[int, int] | None = None
         self.suite_revision = self._current_suite_revision()
         self.git_commit = _git_commit(self.repo_root)
         self.git_dirty = _git_is_dirty(self.repo_root)
@@ -256,10 +258,24 @@ class BenchmarkRunner:
         except OSError:
             logger.debug("Could not clear latest fallback", exc_info=True)
 
+    def _checkpoint_signature(self) -> tuple[int, int] | None:
+        try:
+            stat = self.checkpoint.stat()
+        except FileNotFoundError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
     def _latest_results(self) -> dict[str, dict]:
+        """Return the latest row per task, re-reading only after file changes."""
+        signature = self._checkpoint_signature()
+        if signature == self._checkpoint_cache_signature:
+            return dict(self._checkpoint_cache)
+        if signature is None:
+            self._checkpoint_cache = {}
+            self._checkpoint_cache_signature = None
+            return {}
+
         latest: dict[str, dict] = {}
-        if not self.checkpoint.is_file():
-            return latest
         for line_number, line in enumerate(
             self.checkpoint.read_text(encoding="utf-8", errors="replace").splitlines(),
             1,
@@ -269,11 +285,13 @@ class BenchmarkRunner:
             try:
                 item = json.loads(line)
             except json.JSONDecodeError:
-                self._log({"event": "checkpoint_line_ignored", "line": line_number})
+                self.record_event({"event": "checkpoint_line_ignored", "line": line_number})
                 continue
             if item.get("suite_revision") == self.suite_revision and item.get("task_id"):
                 latest[str(item["task_id"])] = item
-        return latest
+        self._checkpoint_cache = latest
+        self._checkpoint_cache_signature = signature
+        return dict(latest)
 
     def completed(self, tasks: list[Task]) -> set[str]:
         if not self.resume or not self.checkpoint.exists():
@@ -286,7 +304,8 @@ class BenchmarkRunner:
             and revisions.get(task_id) == item.get("task_revision", 1)
         }
 
-    def _log(self, event: dict) -> None:
+    def record_event(self, event: dict) -> None:
+        """Append one runner lifecycle event to the durable event stream."""
         with self.events.open("a", encoding="utf-8") as handle:
             handle.write(
                 json.dumps(
@@ -296,13 +315,28 @@ class BenchmarkRunner:
                 + "\n"
             )
 
-    def _write_result(self, item: dict) -> None:
+    def _log(self, event: dict) -> None:
+        """Compatibility alias for older internal callers."""
+        self.record_event(event)
+
+    def record_result(self, item: dict) -> None:
+        """Append one result row and keep the in-memory checkpoint index coherent."""
+        # Synchronize with any external checkpoint mutation before appending.
+        self._latest_results()
         with self.checkpoint.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(item, ensure_ascii=False) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+        if item.get("suite_revision") == self.suite_revision and item.get("task_id"):
+            self._checkpoint_cache[str(item["task_id"])] = item
+        self._checkpoint_cache_signature = self._checkpoint_signature()
 
-    def _result_identity(self, task: Task) -> dict:
+    def _write_result(self, item: dict) -> None:
+        """Compatibility alias for older internal callers and tests."""
+        self.record_result(item)
+
+    def result_identity(self, task: Task) -> dict:
+        """Return the stable run/task identity persisted with a result."""
         return {
             "model": self.model,
             "harness": self.agent.name,
@@ -318,6 +352,10 @@ class BenchmarkRunner:
             "git_dirty": self.git_dirty,
         }
 
+    def _result_identity(self, task: Task) -> dict:
+        """Compatibility alias for older internal callers and tests."""
+        return self.result_identity(task)
+
     def _write_noncomparable(
         self,
         task: Task,
@@ -326,7 +364,7 @@ class BenchmarkRunner:
         assessment=None,
     ) -> None:
         item = {
-            **self._result_identity(task),
+            **self.result_identity(task),
             "agent": self.agent.name,
             "success": False,
             "status": status,
@@ -340,8 +378,8 @@ class BenchmarkRunner:
         }
         if assessment is not None:
             item["capability_assessment"] = assessment.to_dict()
-        self._write_result(item)
-        self._log({"event": f"task_{status}", "task_id": task.id, **reason})
+        self.record_result(item)
+        self.record_event({"event": f"task_{status}", "task_id": task.id, **reason})
 
     def _write_unsupported(self, task: Task, assessment) -> None:
         self._write_noncomparable(

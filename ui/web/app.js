@@ -26,6 +26,8 @@ function setRunState(value) {
   state.cancelling = Boolean(value.cancelling);
   $('start').disabled = state.busy;
   $('cancel').disabled = !state.running || state.cancelling;
+  $('refreshDoctor').disabled = state.busy;
+  $('saveProfile').disabled = state.busy;
   $('runBadge').textContent = state.cancelling
     ? 'Annullamento…'
     : state.running
@@ -34,6 +36,7 @@ function setRunState(value) {
         ? 'Operazione in corso'
         : 'Pronto';
   $('runBadge').classList.toggle('running', state.busy);
+  if (state.doctor?.report) renderDoctor();
 }
 
 function showView(name) {
@@ -42,7 +45,7 @@ function showView(name) {
   document.querySelectorAll('[data-view]').forEach(button => {
     button.classList.toggle('selected', button.dataset.view === name);
   });
-  if (name === 'doctor') void loadDoctor();
+  if (name === 'doctor' && !state.busy) void loadDoctor();
 }
 
 function renderHarnesses() {
@@ -95,7 +98,7 @@ function renderDoctor() {
         ${install.note ? `<div class="task-meta">${esc(install.note)}</div>` : ''}
       </div>
       <div class="doctor-actions">
-        ${!item.installed && install.automatic ? `<button data-install="${esc(item.name)}">Installa</button>` : ''}
+        ${!item.installed && install.automatic ? `<button data-install="${esc(item.name)}" ${state.busy ? 'disabled' : ''}>Installa</button>` : ''}
         <a class="button-link" href="${esc(install.docs || item.docs)}">Istruzioni</a>
       </div>
     </article>`;
@@ -105,6 +108,8 @@ function renderDoctor() {
   $('openaiUrl').value = profile.openai_url || '';
   $('anthropicUrl').value = profile.anthropic_url || '';
   if (!$('model').value && profile.model) $('model').value = profile.model;
+  $('refreshDoctor').disabled = state.busy;
+  $('saveProfile').disabled = state.busy;
   renderHarnesses();
 }
 
@@ -166,10 +171,13 @@ function bindUiEvents() {
       renderTasks();
     }
     const install = event.target.dataset?.install;
-    if (install) {
+    if (install && !state.busy) {
       $('doctorError').textContent = '';
-      void state.backend.installHarness(install).then(ok => {
-        if (ok) void loadDoctor();
+      void state.backend.installHarness(install).then(value => {
+        if (value.report) {
+          state.doctor = value;
+          renderDoctor();
+        }
       });
     }
   });
@@ -184,18 +192,22 @@ function bindUiEvents() {
   });
 
   $('suite').addEventListener('change', () => void loadCatalog());
-  $('refreshDoctor').addEventListener('click', () => void loadDoctor());
+  $('refreshDoctor').addEventListener('click', () => {
+    if (!state.busy) void loadDoctor();
+  });
   $('saveProfile').addEventListener('click', () => {
+    if (state.busy) return;
     $('doctorError').textContent = '';
     const payload = {
       model: $('profileModel').value,
       openai_url: $('openaiUrl').value,
       anthropic_url: $('anthropicUrl').value,
     };
-    void state.backend.saveDoctorProfile(payload).then(ok => {
-      if (ok) {
+    void state.backend.saveDoctorProfile(payload).then(value => {
+      if (value.report) {
+        state.doctor = value;
         $('model').value = payload.model.trim();
-        void loadDoctor();
+        renderDoctor();
       }
     });
   });

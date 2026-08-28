@@ -27,7 +27,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._runtime = runtime
         self.setWindowTitle("AIOS-Bench")
-        self.setMinimumSize(1200, 800)
+        # Keep the desktop shell usable on smaller laptop displays while letting
+        # the web frontend's responsive breakpoint actually become reachable.
+        self.setMinimumSize(920, 700)
         self.resize(1440, 920)
 
         view = QWebEngineView(self)

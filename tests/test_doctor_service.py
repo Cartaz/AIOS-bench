@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from config.settings import SettingsStore
 from core.doctor_service import DoctorProfile, DoctorService
-from aios_bench import doctor
+from core.benchmark import doctor
 
 
 def test_doctor_service_marks_remote_shell_installers_manual(monkeypatch):
@@ -43,7 +43,11 @@ def test_doctor_service_uses_public_install_contract(monkeypatch):
         "install_harness",
         lambda name, **kwargs: called.append((name, kwargs.get("cancellation_check"))) or True,
     )
-    monkeypatch.setattr(service, "inspect", lambda: {"ready": True})
+    monkeypatch.setattr(
+        service,
+        "inspect",
+        lambda cancellation_check=None: {"ready": True},
+    )
     cancellation = lambda: False
 
     assert service.install_harness("piagent", cancellation) == {"ready": True}

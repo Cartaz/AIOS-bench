@@ -9,7 +9,7 @@ from config.settings import SettingsStore
 
 from .cancellation import CancellationToken
 from .doctor_service import DoctorProfile, DoctorService
-from .run_service import BenchmarkService, RunRequest
+from .run_service import BenchmarkService, PreparedRun, RunRequest
 
 EventCallback = Callable[[dict[str, object]], None]
 
@@ -24,8 +24,13 @@ class AppController:
     def catalog_json(self, suite: str = "frontier_v3") -> str:
         return json.dumps(self._benchmark.catalog(suite), ensure_ascii=False)
 
-    def doctor_json(self) -> str:
-        report = self._doctor.inspect()
+    def doctor_json(
+        self,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> str:
+        return self._doctor_payload_json(self._doctor.inspect(cancellation_check))
+
+    def _doctor_payload_json(self, report: dict) -> str:
         profile = self._doctor.load_profile()
         payload = {
             "report": report,
@@ -57,10 +62,11 @@ class AppController:
         self,
         name: str,
         cancellation_check: Callable[[], bool] | None = None,
-    ) -> dict:
-        return self._doctor.install_harness(name, cancellation_check)
+    ) -> str:
+        report = self._doctor.install_harness(name, cancellation_check)
+        return self._doctor_payload_json(report)
 
-    def prepare_run(self, payload: str) -> RunRequest:
+    def prepare_run(self, payload: str) -> PreparedRun:
         raw = self._json_object(payload, "Run configuration")
         allowed = {field.name for field in fields(RunRequest)}
         unknown = sorted(set(raw) - allowed)
@@ -69,17 +75,16 @@ class AppController:
         raw["harnesses"] = self._string_tuple(raw.get("harnesses"), "Harnesses")
         raw["task_ids"] = self._string_tuple(raw.get("task_ids"), "Task ids")
         request = RunRequest(**raw)
-        self._benchmark.validate_request(request)
-        return request
+        return self._benchmark.prepare(request)
 
     def run_benchmark(
         self,
-        request: RunRequest,
+        prepared: PreparedRun,
         on_event: EventCallback,
         cancellation_token: CancellationToken | None = None,
     ) -> dict[str, object]:
         self._doctor.apply_runtime_environment()
-        return self._benchmark.run(request, on_event, cancellation_token)
+        return self._benchmark.run(prepared, on_event, cancellation_token)
 
     @staticmethod
     def _json_object(payload: str, label: str) -> dict:

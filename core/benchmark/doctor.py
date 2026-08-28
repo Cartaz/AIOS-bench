@@ -11,11 +11,12 @@ from typing import Callable
 from config.settings import AppSettings, SettingsStore
 
 from .config import AGENTS
-from .processes import run_owned
+from .processes import run_owned, spawn_owned, terminate_owned
 
 PROFILE_SCHEMA = "aios-bench/settings/v1"
 DEFAULT_PROFILE = SettingsStore().path
 INSTALL_TIMEOUT_SECONDS = 600.0
+PROFILE_ENV_KEYS = frozenset({"AIOS_BENCH_ENDPOINT", "AIOS_BENCH_CLAUDE_BASE_URL"})
 
 
 @dataclass(frozen=True)
@@ -124,12 +125,23 @@ def _probe(executable: str | None) -> tuple[bool, str | None, str | None]:
     path = shutil.which(executable)
     if not path:
         return False, None, None
+
+    process: subprocess.Popen[str] | None = None
     try:
-        proc = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=4, check=False)
-        output = (proc.stdout.strip() or proc.stderr.strip()).splitlines()
+        process = spawn_owned(
+            [path, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        stdout, stderr = process.communicate(timeout=4)
+        output = (stdout.strip() or stderr.strip()).splitlines()
         version = output[0][:200] if output else None
     except (OSError, subprocess.SubprocessError):
         version = None
+    finally:
+        if process is not None:
+            terminate_owned(process)
     return True, path, version
 
 
@@ -137,9 +149,19 @@ def _agentzero_ready() -> bool:
     return bool(os.environ.get("AIOS_BENCH_AGENTZERO_URL") or os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT"))
 
 
-def inspect() -> dict:
+def inspect(
+    cancellation_check: Callable[[], bool] | None = None,
+) -> dict:
+    """Inspect system and harness readiness with cooperative cancellation.
+
+    Individual version probes remain bounded by their four-second subprocess
+    timeout. Cancellation is checked before and after each probe, so shutdown
+    never has to wait for a full multi-harness inspection cycle.
+    """
     harnesses = []
     for name in AGENTS:
+        if cancellation_check is not None and cancellation_check():
+            raise RuntimeError("Doctor inspection cancelled")
         spec = SPECS[name]
         if name == "agentzero":
             installed = _agentzero_ready()
@@ -147,6 +169,8 @@ def inspect() -> dict:
             version = os.environ.get("AIOS_BENCH_AGENTZERO_REVISION") or None
         else:
             installed, path, version = _probe(spec.executable)
+        if cancellation_check is not None and cancellation_check():
+            raise RuntimeError("Doctor inspection cancelled")
         harnesses.append({
             "name": name,
             "display_name": AGENTS[name].display_name,
@@ -173,18 +197,49 @@ def inspect() -> dict:
     }
 
 
-def _profile_dict(settings: AppSettings) -> dict:
+def settings_environment(settings: AppSettings) -> dict[str, str]:
+    """Translate persisted gateway settings into the benchmark environment contract."""
     environment: dict[str, str] = {}
     if settings.openai_url:
         environment["AIOS_BENCH_ENDPOINT"] = settings.openai_url
     if settings.anthropic_url:
         environment["AIOS_BENCH_CLAUDE_BASE_URL"] = settings.anthropic_url
+    return environment
+
+
+def apply_settings_environment(
+    settings: AppSettings,
+    *,
+    protected_keys: frozenset[str] = frozenset(),
+) -> dict[str, str]:
+    """Apply profile-owned gateway keys while preserving explicit process overrides.
+
+    Keys present in ``protected_keys`` are considered externally owned and are
+    never modified. Unprotected profile keys are updated or removed so editing a
+    saved desktop profile takes effect immediately instead of leaving stale
+    process values behind.
+    """
+    desired = settings_environment(settings)
+    applied: dict[str, str] = {}
+    for key in PROFILE_ENV_KEYS:
+        if key in protected_keys:
+            continue
+        value = desired.get(key)
+        if value:
+            os.environ[key] = value
+            applied[key] = value
+        else:
+            os.environ.pop(key, None)
+    return applied
+
+
+def _profile_dict(settings: AppSettings) -> dict:
     return {
         "schema": PROFILE_SCHEMA,
         "model": settings.model,
         "openai_compatible_url": settings.openai_url,
         "anthropic_compatible_url": settings.anthropic_url,
-        "environment": environment,
+        "environment": settings_environment(settings),
     }
 
 
@@ -195,11 +250,10 @@ def load_profile(path: Path = DEFAULT_PROFILE) -> dict:
 
 
 def apply_profile_environment(path: Path = DEFAULT_PROFILE) -> dict:
-    profile = load_profile(path)
-    environment = profile.get("environment") if isinstance(profile.get("environment"), dict) else {}
-    for key, value in environment.items():
-        if isinstance(key, str) and isinstance(value, str) and value and key not in os.environ:
-            os.environ[key] = value
+    settings = SettingsStore(path).load()
+    profile = _profile_dict(settings) if path.is_file() else {}
+    protected = frozenset(key for key in PROFILE_ENV_KEYS if key in os.environ)
+    apply_settings_environment(settings, protected_keys=protected)
     return profile
 
 

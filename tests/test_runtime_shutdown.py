@@ -22,13 +22,18 @@ class _Thread:
         return self.wait_result
 
 
-def test_shutdown_cancels_benchmark_and_waits_bounded() -> None:
+def _active_runtime(operation: str) -> tuple[DesktopRuntime, _Thread, CancellationToken]:
     runtime = DesktopRuntime(_Controller())
     thread = _Thread()
     token = CancellationToken()
     runtime._thread = thread
-    runtime._operation = "benchmark"
+    runtime._operation = operation
     runtime._cancellation_token = token
+    return runtime, thread, token
+
+
+def test_shutdown_cancels_benchmark_and_waits_bounded() -> None:
+    runtime, thread, token = _active_runtime("benchmark")
 
     runtime.shutdown()
 
@@ -37,12 +42,16 @@ def test_shutdown_cancels_benchmark_and_waits_bounded() -> None:
 
 
 def test_shutdown_cancels_doctor_install_and_waits_bounded() -> None:
-    runtime = DesktopRuntime(_Controller())
-    thread = _Thread()
-    token = CancellationToken()
-    runtime._thread = thread
-    runtime._operation = "doctor_install"
-    runtime._cancellation_token = token
+    runtime, thread, token = _active_runtime("doctor_install")
+
+    runtime.shutdown()
+
+    assert token.is_cancelled is True
+    assert thread.wait_calls == [SHUTDOWN_WAIT_MS]
+
+
+def test_shutdown_cancels_doctor_inspection_and_waits_bounded() -> None:
+    runtime, thread, token = _active_runtime("doctor_inspect")
 
     runtime.shutdown()
 

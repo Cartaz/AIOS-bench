@@ -21,9 +21,17 @@ class DoctorService:
 
     def __init__(self, settings: SettingsStore | None = None) -> None:
         self._settings = settings or SettingsStore()
+        # Environment values supplied before the service starts are explicit
+        # operator overrides. Saved desktop settings own only the remaining keys.
+        self._protected_environment = frozenset(
+            key for key in doctor.PROFILE_ENV_KEYS if key in os.environ
+        )
 
-    def inspect(self) -> dict:
-        report = doctor.inspect()
+    def inspect(
+        self,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> dict:
+        report = doctor.inspect(cancellation_check=cancellation_check)
         for item in report["harnesses"]:
             recipe = doctor.SPECS[item["name"]].install()
             item["install"] = {
@@ -41,33 +49,25 @@ class DoctorService:
         return DoctorProfile(value.model, value.openai_url, value.anthropic_url)
 
     def save_profile(self, profile: DoctorProfile) -> Path:
-        path = self._settings.save(
-            AppSettings(
-                model=profile.model,
-                openai_url=profile.openai_url,
-                anthropic_url=profile.anthropic_url,
-            )
-        )
+        path = self._settings.save(self._settings_value(profile))
         self.apply_runtime_environment(profile)
         return path
 
     def apply_runtime_environment(self, profile: DoctorProfile | None = None) -> dict[str, str]:
-        """Apply configured gateway endpoints before adapters build their invocations.
-
-        Adapter configuration historically reads namespaced environment variables.
-        Keeping that compatibility at this boundary makes the saved desktop profile
-        operational without letting JavaScript mutate process configuration.
-        Empty profile values deliberately leave an externally supplied environment
-        untouched.
-        """
+        """Apply the profile without overriding process-level operator settings."""
         current = profile or self.load_profile()
-        environment: dict[str, str] = {}
-        if current.openai_url:
-            environment["AIOS_BENCH_ENDPOINT"] = current.openai_url
-        if current.anthropic_url:
-            environment["AIOS_BENCH_CLAUDE_BASE_URL"] = current.anthropic_url
-        os.environ.update(environment)
-        return environment
+        return doctor.apply_settings_environment(
+            self._settings_value(current),
+            protected_keys=self._protected_environment,
+        )
+
+    @staticmethod
+    def _settings_value(profile: DoctorProfile) -> AppSettings:
+        return AppSettings(
+            model=profile.model,
+            openai_url=profile.openai_url,
+            anthropic_url=profile.anthropic_url,
+        )
 
     def validate_install(self, name: str) -> None:
         if name not in doctor.SPECS:
@@ -88,4 +88,4 @@ class DoctorService:
             if cancellation_check is not None and cancellation_check():
                 raise RuntimeError(f"Installation cancelled for {name}")
             raise RuntimeError(f"Installation command failed for {name}")
-        return self.inspect()
+        return self.inspect(cancellation_check)

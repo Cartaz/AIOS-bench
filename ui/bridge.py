@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.app_controller import AppController
+
 from .runtime import DesktopRuntime
 
 
@@ -32,20 +33,24 @@ class Bridge(QObject):
             self.errorOccurred.emit(str(exc))
             return "{}"
 
-    @Slot(result=str)
-    def getDoctor(self) -> str:
+    @Slot(result=bool)
+    def getDoctor(self) -> bool:
         try:
-            return self._controller.doctor_json()
-        except (ValueError, OSError) as exc:
+            self._runtime.inspect_doctor()
+        except (ValueError, RuntimeError, OSError) as exc:
             self.errorOccurred.emit(str(exc))
-            return "{}"
+            return False
+        return True
 
     @Slot(str, result=bool)
     def saveDoctorProfile(self, payload: str) -> bool:
+        if self._runtime.is_busy:
+            self.errorOccurred.emit("Another background operation is already active")
+            return False
         try:
             self._controller.save_doctor_profile(payload)
-            self.doctorChanged.emit(self._controller.doctor_json())
-        except (TypeError, ValueError, OSError) as exc:
+            self._runtime.inspect_doctor()
+        except (TypeError, ValueError, RuntimeError, OSError) as exc:
             self.errorOccurred.emit(str(exc))
             return False
         return True

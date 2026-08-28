@@ -1,7 +1,7 @@
 target-version = "py312"
 
 [lint]
-# M2 establishes a correctness-oriented lint gate while preserving the benchmark
-# engine's existing style. Broader cleanup belongs to the strategic-programming
-# review, where semantic changes can be evaluated deliberately.
-select = ["E9", "F63", "F7", "F82"]
+# Catch the complete Pyflakes correctness family in addition to syntax-level
+# errors. Import ordering and pyupgrade are intentionally separate future style
+# gates so this change tightens correctness without mixing unrelated churn.
+select = ["E9", "F"]

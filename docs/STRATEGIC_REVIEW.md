@@ -41,3 +41,36 @@ The complete pre-merge audit identified three concrete gaps and all were resolve
 ### Review conclusion
 
 No known high-impact tactical workaround remains in the desktop/core boundary. Remaining compatibility shims are narrow, explicit and non-authoritative. New benchmark suites should be added as catalog/materialization definitions over the shared runner rather than by creating another version-specific execution engine.
+
+## Post-audit corrective milestone — complete conformance pass
+
+### Correctness and responsiveness
+
+- **Resolved:** Doctor inspection no longer executes executable/version probes on the Qt GUI thread. Discovery, installation and post-install reinspection share the existing worker lifecycle and return through Qt signals. Doctor inspection is cooperatively cancellable between its individually bounded probes, and those probes use the shared owned-process lifecycle so timeout cleanup covers descendants as well as the direct child.
+- **Resolved:** desktop and CLI gateway environment precedence now use one helper. Process-level values present before startup are protected; GUI-owned values can be updated or cleared without leaving stale environment state.
+- **Resolved:** `BenchmarkService.catalog()` rejects suites outside the canonical registry before touching the filesystem.
+- **Resolved:** Agent Zero HTTP calls have explicit bounded timeouts. The message request uses the active task budget and control/log/cleanup requests use a shorter bounded timeout.
+- **Resolved:** Pi RPC validates its required stdio pipes with an explicit runtime error instead of relying on a production `assert`.
+- **Resolved:** Ruff now enables the complete Pyflakes `F` correctness family rather than only a narrow subset.
+
+### Complexity and ownership
+
+- **Resolved:** GUI validation now produces an immutable `PreparedRun`; the worker consumes that validated task set directly instead of reloading and revalidating the catalog.
+- **Resolved:** checkpoint latest-result lookup uses a file-signature-aware in-memory index. Normal runner writes update the index incrementally, while external test/recovery edits still invalidate and reload it.
+- **Resolved:** `task_execution.py` depends on a small public runner protocol (`prepare_workspace`, `record_event`, `result_identity`, `record_result`) instead of reaching into private runner methods.
+- **Resolved:** static fixture setup is catalog-declared through `Task.setup`; the materializer maps setup capabilities to handlers and no longer contains task-ID dispatch logic.
+- **Resolved:** reference-oracle helpers were normalized into readable, typed modules with descriptive parameter names while preserving deterministic semantics.
+
+### UI, operations and documentation
+
+- **Resolved:** keyboard focus for custom task/harness selectors now has a dedicated visible orange focus state. The native minimum size and CSS minimum width no longer make the responsive desktop breakpoint unreachable.
+- **Resolved:** neumorphic radius usage is brought back to the 28/22/16/12 scale; pill-only `999px` rounding was removed from the run badge.
+- **Resolved:** application diagnostics now use console plus bounded rotating-file logging under the XDG state directory, with a console-only fallback if file setup fails.
+- **Resolved:** README now declares the Italian desktop UI, environment precedence, log location, one-pass prepared-run validation and active catalog layout. `benchmarks/tasks/README.md` explicitly separates active versioned catalogs from historical root-level assets; `results/README.md` distinguishes verified publications from historical derived snapshots.
+- **Resolved:** the README now documents the sensitive harness environment boundary: benchmark-specific Agent Zero/Claude credentials, inherited Anthropic credentials, and Claude subprocess credential scrubbing are explicit operational assumptions rather than hidden dependencies.
+
+### Review conclusion
+
+The corrective patch addresses the audit findings at their source rather than patching the presentation layer. No new event bus, DI container, framework or speculative abstraction was introduced. Compatibility aliases remain only where they preserve existing tests/CLI imports without owning behavior. Future task-specific fixture preparation should be added as catalog setup capabilities, and future task execution needs should extend the public runner protocol only when a concrete requirement appears.
+
+This milestone is not considered closed until the patch is applied to the complete repository and the canonical compileall/pytest/Ruff gates plus Qt/WebEngine smoke and native desktop checks have been observed successfully. The per-finding validation state is tracked in `docs/AUDIT_2026-08-28_REMEDIATION.md`.

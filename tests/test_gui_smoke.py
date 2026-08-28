@@ -43,7 +43,7 @@ def _wait_for_web_content(view, timeout_ms: int = 8000) -> bool:
     return bool(loaded and loaded[-1]) and _javascript(view, "document.readyState") == "complete"
 
 
-def _wait_for_app_ready(view, timeout_ms: int = 3000) -> str:
+def _wait_for_app_ready(view, timeout_ms: int = 12000) -> str:
     waited = 0
     while waited < timeout_ms:
         value = _javascript(view, "document.documentElement.dataset.appReady || ''")
@@ -63,24 +63,22 @@ def test_desktop_shell_constructs_with_loaded_local_web_content():
     view = window.centralWidget()
     window.show()
 
-    assert window.minimumWidth() == 1200
-    assert window.minimumHeight() == 800
+    assert window.minimumWidth() == 920
+    assert window.minimumHeight() == 700
     assert view.url().isLocalFile()
 
-    # Exercise the actual Chromium/QWebChannel path rather than only checking
-    # that a local URL was assigned to the view.
+    # Exercise the actual Chromium/QWebChannel path, including the asynchronous
+    # Doctor worker used during frontend initialization.
     assert _wait_for_web_content(view)
     assert _wait_for_app_ready(view) == "true"
     assert _javascript(view, "document.querySelectorAll('[data-harness]').length") > 0
     assert _javascript(view, "document.querySelectorAll('[data-task]').length") > 0
+    assert _javascript(view, "document.querySelectorAll('.doctor-item').length") > 0
 
     catalog = json.loads(bridge.getCatalog("frontier_v3"))
     assert catalog["suite"] == "frontier_v3"
     assert catalog["harnesses"]
     assert catalog["tasks"]
-    doctor = json.loads(bridge.getDoctor())
-    assert doctor["report"]["harnesses"]
-    assert "profile" in doctor
 
     window.close()
     app.processEvents()

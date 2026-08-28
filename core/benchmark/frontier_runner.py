@@ -78,7 +78,10 @@ class FrontierRunner(BenchmarkRunner):
         self.metrics_poll_interval = metrics_poll_interval
         self.cancellation_check = cancellation_check
         if run_id is None:
-            run_id = datetime.now().astimezone().strftime("%Y-%m-%d_%H%M%S_%f") + f"_{suite.name.replace('_', '-')}"
+            run_id = (
+                datetime.now().astimezone().strftime("%Y-%m-%d_%H%M%S_%f")
+                + f"_{suite.name.replace('_', '-')}"
+            )
         super().__init__(
             repo_root,
             agent,
@@ -137,7 +140,12 @@ class FrontierRunner(BenchmarkRunner):
             parametric.pop("pressure_coordinates", None)
             parametric["pressure_coordinates_excluded_from_profile"] = True
         return hashlib.sha256(
-            json.dumps(profile_manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            json.dumps(
+                profile_manifest,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
         ).hexdigest()
 
     def _current_suite_revision(self) -> str:
@@ -156,14 +164,22 @@ class FrontierRunner(BenchmarkRunner):
         task_ids: list[str] = []
         catalog = self.repo_root / "benchmarks" / "tasks" / self.suite.catalog_dir
         for path in sorted(catalog.glob("*.json")):
-            task_ids.extend(str(item["id"]) for item in json.loads(path.read_text(encoding="utf-8")))
+            task_ids.extend(
+                str(item["id"])
+                for item in json.loads(path.read_text(encoding="utf-8"))
+            )
         return task_ids
 
-    def _workspace(self, task: Task) -> Path:
+    def prepare_workspace(self, task: Task) -> Path:
+        """Materialize the isolated workspace for one task."""
         return self.suite.materializer.prepare(self, task)
 
-    def _result_identity(self, task: Task) -> dict:
-        identity = super()._result_identity(task)
+    def _workspace(self, task: Task) -> Path:
+        """Compatibility alias for existing tests/internal consumers."""
+        return self.prepare_workspace(task)
+
+    def result_identity(self, task: Task) -> dict:
+        identity = super().result_identity(task)
         identity.update(self.suite.materializer.identity(self, task))
         if self.suite.parametric is not None:
             identity["landscape_execution_fingerprint"] = self.landscape_execution_fingerprint
@@ -178,7 +194,7 @@ class FrontierRunner(BenchmarkRunner):
             events=(),
         )
         item = {
-            **self._result_identity(task),
+            **self.result_identity(task),
             "agent": self.agent.name,
             "success": False,
             "status": status,
@@ -196,8 +212,13 @@ class FrontierRunner(BenchmarkRunner):
         }
         if assessment is not None:
             item["capability_assessment"] = assessment.to_dict()
-        self._write_result(item)
-        self._log({"event": f"task_{status}", "task_id": task.id, "failure_kind": failure_kind, **reason})
+        self.record_result(item)
+        self.record_event({
+            "event": f"task_{status}",
+            "task_id": task.id,
+            "failure_kind": failure_kind,
+            **reason,
+        })
 
     def run_task(self, task: Task, timeout: float):
         trajectory = run_frontier_task(self, task, timeout)
@@ -207,8 +228,11 @@ class FrontierRunner(BenchmarkRunner):
     def _hash_files(self, digest, roots: Iterable[Path]) -> None:
         for root in roots:
             for path in sorted(
-                item for item in root.rglob("*")
-                if item.is_file() and "__pycache__" not in item.parts and item.suffix != ".pyc"
+                item
+                for item in root.rglob("*")
+                if item.is_file()
+                and "__pycache__" not in item.parts
+                and item.suffix != ".pyc"
             ):
                 self._hash_path(digest, path)
 

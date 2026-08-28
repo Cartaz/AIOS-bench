@@ -20,7 +20,9 @@ class RunnerContext(Protocol):
 
 class TaskMaterializer(Protocol):
     def prepare(self, runner: RunnerContext, task: Task) -> Path: ...
+
     def identity(self, runner: RunnerContext, task: Task) -> dict[str, Any]: ...
+
     def after_task(self, runner: RunnerContext, task: Task) -> None: ...
 
 
@@ -33,7 +35,7 @@ def _fresh_workspace(run_dir: Path, task_id: str) -> Path:
 
 
 class StaticTaskMaterializer:
-    """Materializes the frozen Frontier v3 fixtures and owns their stateful setup rules."""
+    """Materialize frozen Frontier v3 fixtures and their declarative setup steps."""
 
     _STATE_DIR = {"memory": ".agent_memory", "learning": "skills"}
 
@@ -79,13 +81,16 @@ class StaticTaskMaterializer:
         return path
 
     def _apply_task_setup(self, task: Task, workspace: Path) -> None:
-        setup = {
-            "long_horizon_001": self._setup_long_horizon,
-            "learning_003": self._setup_learning_regression,
-            "memory_004": self._setup_git_fixture,
-        }.get(task.id)
-        if setup is not None:
-            setup(workspace)
+        handlers = {
+            "long_horizon_corpus": self._setup_long_horizon,
+            "learning_regression": self._setup_learning_regression,
+            "git_fixture": self._setup_git_fixture,
+        }
+        for setup_name in task.setup:
+            handler = handlers.get(setup_name)
+            if handler is None:
+                raise ValueError(f"Unknown static task setup: {setup_name}")
+            handler(workspace)
 
     @staticmethod
     def _setup_long_horizon(workspace: Path) -> None:
@@ -94,7 +99,11 @@ class StaticTaskMaterializer:
     @staticmethod
     def _setup_learning_regression(workspace: Path) -> None:
         path = workspace / "skills" / "reporting_workflow.md"
-        text = path.read_text(encoding="utf-8") if path.is_file() else "# Reporting workflow\n"
+        text = (
+            path.read_text(encoding="utf-8")
+            if path.is_file()
+            else "# Reporting workflow\n"
+        )
         text = text.replace(
             "Total revenue = sum of `revenue`",
             "Total revenue = sum of the `units` column",
@@ -120,7 +129,7 @@ class StaticTaskMaterializer:
 
 @dataclass
 class ParametricTaskMaterializer:
-    """Materializes deterministic seeded task families and keeps grader oracles outside workspaces."""
+    """Materialize deterministic variants and keep grader oracles outside workspaces."""
 
     base_seed: int = 42
     parameters: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
@@ -166,9 +175,15 @@ class ParametricTaskMaterializer:
 
     @staticmethod
     def family(task: Task) -> str:
-        checks = [check for check in task.acceptance if check.get("type") == "parametric_reference"]
+        checks = [
+            check
+            for check in task.acceptance
+            if check.get("type") == "parametric_reference"
+        ]
         if len(checks) != 1:
-            raise ValueError(f"Parametric task {task.id} needs exactly one parametric_reference")
+            raise ValueError(
+                f"Parametric task {task.id} needs exactly one parametric_reference"
+            )
         return str(checks[0]["family"])
 
     def task_seed(self, task: Task) -> int:

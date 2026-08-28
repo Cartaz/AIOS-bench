@@ -77,6 +77,10 @@ class PiRPCClient:
             text=True,
             bufsize=1,
         )
+        if proc.stdin is None or proc.stdout is None or proc.stderr is None:
+            terminate_owned(proc)
+            raise RuntimeError("Pi RPC process did not expose the required stdio pipes")
+
         started = time.monotonic()
         lines: list[str] = []
         stderr_chunks: list[str] = []
@@ -88,7 +92,6 @@ class PiRPCClient:
         selector = selectors.DefaultSelector()
         stderr_thread: threading.Thread | None = None
         try:
-            assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
             stderr_thread = threading.Thread(
                 target=self._drain_stream,
                 args=(proc.stderr, stderr_chunks),
@@ -141,7 +144,7 @@ class PiRPCClient:
                     break
         finally:
             selector.close()
-            if proc.stdin and not proc.stdin.closed:
+            if not proc.stdin.closed:
                 proc.stdin.close()
             terminate_owned(proc)
             if stderr_thread is not None:

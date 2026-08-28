@@ -16,6 +16,7 @@ class Task:
     required_capabilities: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     acceptance: tuple[dict[str, Any], ...] = ()
+    setup: tuple[str, ...] = ()
 
 
 @dataclass
@@ -55,7 +56,8 @@ class Trajectory:
         self.output_tokens = max(self.output_tokens, output_tokens)
         self.tool_calls = counts.get("tool_call", 0)
         reliable_errors = sum(
-            event.get("type") == "error" and not (event.get("data") or {}).get("inferred", False)
+            event.get("type") == "error"
+            and not (event.get("data") or {}).get("inferred", False)
             for event in events
         )
         self.errors = max(self.errors, reliable_errors)
