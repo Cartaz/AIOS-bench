@@ -378,4 +378,5 @@ def test_agentzero_sandbox_adds_only_shared_projects_root_write_bridge(
     assert "agentzero_project_bridge" in plan.strategy
     pairs = list(zip(prefix, prefix[1:]))
     assert ("--bind", bridge) in pairs
-    assert plan.write_confined is True
+    assert plan.write_confined is False
+    assert plan.grader_hidden is True
