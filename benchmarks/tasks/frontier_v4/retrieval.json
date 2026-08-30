@@ -1,0 +1,15 @@
+[
+  {
+    "id": "retrieval_wide_001",
+    "category": "retrieval",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Perform exhaustive retrieval over the generated local corpus. Read README.md, query/current.json and corpus/AUTHORITY.json; inspect every authoritative shard needed to find every and only record satisfying all current criteria. Ignore mirrors, retired archives and conflicting stale records even when they look plausible. Preserve all generated inputs unchanged. Write reports/wide_retrieval.json exactly as specified, including every required semantic field and the exact authoritative JSONL path plus 1-based source line for each returned record. Corpus size, target-set size, duplicate count, stale-conflict count and authoritative source depth vary by seed and pressure coordinates, so derive the complete answer from the generated workspace rather than fixture-specific assumptions.",
+    "mode": "cold",
+    "tags": ["retrieval", "frontier_v4", "parametric", "exhaustive", "provenance", "authority", "stale_sources", "structured_output"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/wide_retrieval.json", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "wide_retrieval", "task_id": "retrieval_wide_001", "weight": 9, "fatal": true}
+    ]
+  }
+]
