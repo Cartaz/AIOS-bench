@@ -178,6 +178,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
     names = {path.name for path in paths}
     assert {
         "dependency_world.py",
+        "interventions.py",
         "materialization.py",
         "suites.py",
         "task_runtime.py",
@@ -187,4 +188,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
         "workspace_lineage.py",
         "world_api.py",
     } <= names
+    assert "ablations.py" not in names
+    assert "report.py" not in names
+    assert "dashboard.py" not in names
     assert any("parametric" in path.parts for path in paths)
