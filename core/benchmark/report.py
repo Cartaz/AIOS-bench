@@ -31,12 +31,31 @@ def _text(value: Any, default: str) -> str:
     return str(value) if value not in (None, "") else default
 
 
+def _intervention_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    manifest = metadata.get("manifest")
+    if not isinstance(manifest, dict):
+        return {}
+    intervention = manifest.get("intervention")
+    if not isinstance(intervention, dict):
+        return {}
+    return {
+        key: intervention[key]
+        for key in ("schema", "skill_mode", "skill_catalog_digest")
+        if key in intervention
+    }
+
+
 def _enrich(row: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     """Attach authoritative run metadata without exposing an internal wrapper."""
     enriched = dict(row)
     for field in _METADATA_FIELDS:
         if field in metadata:
             enriched[field] = metadata[field]
+    intervention = _intervention_metadata(metadata)
+    if intervention:
+        enriched["intervention_schema"] = intervention.get("schema")
+        enriched["skill_mode"] = intervention.get("skill_mode")
+        enriched["skill_catalog_digest"] = intervention.get("skill_catalog_digest")
     if "status" in metadata:
         enriched["run_status"] = metadata["status"]
     enriched.setdefault("harness", enriched.get("agent", "unknown"))
@@ -50,6 +69,21 @@ def _enrich(row: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
 def load_results(root: Path) -> list[dict[str, Any]]:
     """Derived compatibility view: keep only the latest attempt per run/task."""
     return latest_attempts(load_attempts(root))
+
+
+def canonical_capability_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return baseline rows suitable for capability/reliability leaderboards.
+
+    `no_skill` is the Frontier v4 baseline condition. Curated guidance is an
+    experimental intervention and is analyzed only through the dedicated
+    matched-ablation path so it cannot inflate canonical capability metrics.
+    Legacy rows without intervention metadata remain baseline-compatible.
+    """
+    return [
+        row
+        for row in rows
+        if row.get("skill_mode") in {None, "", "no_skill"}
+    ]
 
 
 def _run_key(item: dict[str, Any]) -> tuple[str, str, str, str, str]:
@@ -135,11 +169,18 @@ def _summarize_run(metadata: dict[str, Any], items: list[dict[str, Any]]) -> dic
     suite_revision = _text(metadata.get("suite_revision"), "legacy")
     legacy = suite.lower() == "legacy" or suite_revision.lower() == "legacy"
     dry_run = _is_dry_run(metadata)
-    eligible = complete and not legacy and not dry_run
+    skill_mode_raw = metadata.get("skill_mode")
+    if skill_mode_raw in (None, "") and items:
+        skill_mode_raw = items[0].get("skill_mode")
+    skill_mode = str(skill_mode_raw) if skill_mode_raw not in (None, "") else None
+    experimental_intervention = skill_mode not in {None, "no_skill"}
+    eligible = complete and not legacy and not dry_run and not experimental_intervention
     if legacy:
         eligibility_reason = "legacy"
     elif dry_run:
         eligibility_reason = "dry_run"
+    elif experimental_intervention:
+        eligibility_reason = "experimental_intervention"
     elif not complete:
         eligibility_reason = "incomplete"
     else:
@@ -159,6 +200,8 @@ def _summarize_run(metadata: dict[str, Any], items: list[dict[str, Any]]) -> dic
         "git_commit": _text(metadata.get("git_commit"), "unknown"),
         "git_dirty": metadata.get("git_dirty"),
         "execution_fingerprint": metadata.get("execution_fingerprint"),
+        "skill_mode": skill_mode,
+        "skill_catalog_digest": metadata.get("skill_catalog_digest"),
         "started_at": metadata.get("started_at"),
         "finished_at": metadata.get("finished_at"),
         "status": declared_status,
@@ -274,6 +317,7 @@ def latest_eligible(runs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 def build_summary(root: Path) -> dict[str, Any]:
     attempts = load_attempts(root)
     rows = latest_attempts(attempts)
+    canonical_rows = canonical_capability_rows(rows)
     runs = summarize_rows(rows, _manifests(root))
     selected = selected_suite_revision(runs)
     sources = source_index(root)
@@ -289,10 +333,11 @@ def build_summary(root: Path) -> dict[str, Any]:
         "selected_suite_revision": selected[1] if selected else None,
         "raw_attempt_count": len(attempts),
         "result_count": len(rows),
+        "canonical_result_count": len(canonical_rows),
         "raw_source_digest": sources["digest"],
         "raw_source_file_count": sources["file_count"],
-        "pressure_landscapes": pressure_landscapes(rows, **filters),
-        "pressure_paired_comparisons": pressure_paired_comparisons(rows, **filters),
+        "pressure_landscapes": pressure_landscapes(canonical_rows, **filters),
+        "pressure_paired_comparisons": pressure_paired_comparisons(canonical_rows, **filters),
         "skill_ablations": skill_ablation_pairs(rows, **filters),
     }
 
