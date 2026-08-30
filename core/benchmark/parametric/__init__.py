@@ -47,6 +47,34 @@ FAMILIES = {
     "workspace_lineage",
 }
 
+_PRESSURE_TYPES = {
+    "expense_report": ExpensePressure,
+    "config_traversal": ConfigTraversalPressure,
+    "stateful_world": StatefulWorldPressure,
+    "dependency_world": DependencyWorldPressure,
+    "workspace_lineage": WorkspaceLineagePressure,
+}
+
+
+def normalize_parameters(
+    parameters: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Return validated effective coordinates for every registered family.
+
+    Suite manifests must record defaults too; otherwise adding a family can make
+    two GUI/CLI runs look comparable even though one path silently relied on an
+    unrecorded default. Keeping this registry here makes family ownership deep
+    and prevents every caller from maintaining its own default map.
+    """
+    supplied = parameters or {}
+    unknown = set(supplied) - FAMILIES
+    if unknown:
+        raise ValueError(f"unknown parametric families: {sorted(unknown)}")
+    return {
+        family: pressure_type.from_mapping(supplied.get(family, {})).to_dict()
+        for family, pressure_type in _PRESSURE_TYPES.items()
+    }
+
 
 def _reseal_variant(oracle: dict[str, Any]) -> dict[str, Any]:
     core = {key: value for key, value in oracle.items() if key != "variant_digest"}
@@ -160,5 +188,6 @@ __all__ = [
     "FAMILIES",
     "check_variant",
     "materialize_variant",
+    "normalize_parameters",
     "start_variant_runtime",
 ]
