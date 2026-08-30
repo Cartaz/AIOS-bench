@@ -60,29 +60,68 @@ def _pair_rejection(
     no_skill: list[dict[str, Any]],
     curated: list[dict[str, Any]],
 ) -> str | None:
-    model_ids = {
-        str(row["model_identity_fingerprint"])
-        for row in [*no_skill, *curated]
-        if row.get("model_identity_fingerprint")
-    }
+    rows = [*no_skill, *curated]
+    if any(not row.get("model_identity_fingerprint") for row in rows):
+        return "model_identity_mismatch_or_unverified"
+    model_ids = {str(row["model_identity_fingerprint"]) for row in rows}
     if len(model_ids) != 1:
         return "model_identity_mismatch_or_unverified"
-    if not all(bool(row.get("model_strictly_comparable")) for row in [*no_skill, *curated]):
+    if not all(bool(row.get("model_strictly_comparable")) for row in rows):
         return "strict_model_comparability_missing"
-    profiles = {
-        str(row["ablation_execution_fingerprint"])
-        for row in [*no_skill, *curated]
-        if row.get("ablation_execution_fingerprint")
-    }
+
+    if any(not row.get("ablation_execution_fingerprint") for row in rows):
+        return "ablation_execution_profile_mismatch"
+    profiles = {str(row["ablation_execution_fingerprint"]) for row in rows}
     if len(profiles) != 1:
         return "ablation_execution_profile_mismatch"
-    skill_ids = {str(row.get("skill_id")) for row in [*no_skill, *curated]}
-    skill_digests = {str(row.get("skill_digest")) for row in [*no_skill, *curated]}
+
+    if any(row.get("skill_applied") is not False for row in no_skill):
+        return "skill_application_identity_invalid"
+    if any(row.get("skill_applied") is not True for row in curated):
+        return "skill_application_identity_invalid"
+
+    skill_ids = {str(row.get("skill_id")) for row in rows}
+    skill_digests = {str(row.get("skill_digest")) for row in rows}
     if len(skill_ids) != 1 or "None" in skill_ids:
         return "curated_skill_identity_missing"
     if len(skill_digests) != 1 or "None" in skill_digests:
         return "curated_skill_digest_mismatch"
+
+    no_execution = {
+        str(row["execution_fingerprint"])
+        for row in no_skill
+        if row.get("execution_fingerprint")
+    }
+    curated_execution = {
+        str(row["execution_fingerprint"])
+        for row in curated
+        if row.get("execution_fingerprint")
+    }
+    if len(no_execution) != 1 or len(curated_execution) != 1:
+        return "execution_arm_identity_invalid"
+    if no_execution == curated_execution:
+        return "execution_arm_identity_invalid"
     return None
+
+
+def _indexed_arm(
+    source: list[dict[str, Any]],
+) -> tuple[dict[tuple[int, str, int, str, str], dict[str, Any]], bool]:
+    result: dict[tuple[int, str, int, str, str], dict[str, Any]] = {}
+    duplicate = False
+    for row in source:
+        if row.get("status") == "unsupported" or row.get("comparable") is False:
+            continue
+        if _number(row.get("score")) is None:
+            continue
+        key = _row_key(row)
+        if key is None:
+            continue
+        if key in result:
+            duplicate = True
+            continue
+        result[key] = row
+    return result, duplicate
 
 
 def skill_ablation_pairs(
@@ -151,20 +190,16 @@ def skill_ablation_pairs(
             })
             continue
 
-        def indexed(source: list[dict[str, Any]]) -> dict[tuple[int, str, int, str, str], dict[str, Any]]:
-            result: dict[tuple[int, str, int, str, str], dict[str, Any]] = {}
-            for row in source:
-                if row.get("status") == "unsupported" or row.get("comparable") is False:
-                    continue
-                if _number(row.get("score")) is None:
-                    continue
-                key = _row_key(row)
-                if key is not None:
-                    result[key] = row
-            return result
-
-        no_index = indexed(arms["no_skill"])
-        curated_index = indexed(arms["curated_skill"])
+        no_index, no_duplicate = _indexed_arm(arms["no_skill"])
+        curated_index, curated_duplicate = _indexed_arm(arms["curated_skill"])
+        if no_duplicate or curated_duplicate:
+            output.append({
+                **base,
+                "comparable": False,
+                "reason": "duplicate_ablation_cell",
+                "matched_observations": 0,
+            })
+            continue
         matched = sorted(set(no_index) & set(curated_index))
 
         score_lifts: list[float] = []
