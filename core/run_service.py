@@ -320,6 +320,11 @@ class _ObservableRunnerMixin:
         self._event_callback = event_callback or (lambda event: None)
         super().__init__(*args, **kwargs)
 
+    def _condition_event(self) -> dict[str, object]:
+        condition = getattr(self, "execution_condition", None)
+        skill_mode = getattr(condition, "skill_mode", None)
+        return {"skill_mode": skill_mode} if skill_mode else {}
+
     def run_task(self, task, timeout):
         self._event_callback({
             "type": "task_started",
@@ -327,6 +332,7 @@ class _ObservableRunnerMixin:
             "task_id": task.id,
             "category": task.category,
             "tier": task.tier,
+            **self._condition_event(),
         })
         trajectory = super().run_task(task, timeout)
         self._event_callback({
@@ -336,6 +342,7 @@ class _ObservableRunnerMixin:
             "success": bool(trajectory.success),
             "score": float(trajectory.evaluation_score or 0.0),
             "duration_seconds": float(trajectory.duration_seconds),
+            **self._condition_event(),
         })
         return trajectory
 
@@ -349,6 +356,7 @@ class _ObservableRunnerMixin:
             "success": False,
             "score": None,
             "duration_seconds": 0.0,
+            **self._condition_event(),
         })
 
 
