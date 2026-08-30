@@ -277,7 +277,6 @@ def generate_wide_retrieval_variant(
 
     conflict_pool = list(rows)
     target_rows = [row for row in conflict_pool if str(row["record_id"]) in target_ids]
-    non_target_rows = [row for row in conflict_pool if str(row["record_id"]) not in target_ids]
     chosen: list[dict[str, Any]] = []
     # At least one target receives a stale conflicting representation so
     # provenance mistakes are observable in every valid variant.
@@ -514,10 +513,10 @@ def grade_wide_retrieval_variant(
             "stale_source_count": stale_source_count,
             "mirror_source_count": mirror_source_count,
         }
-        if provenance_recall < 1.0:
-            failure_kind = "WRONG_AUTHORITY"
-        elif record_recall < 1.0:
+        if record_recall < 1.0:
             failure_kind = "INCOMPLETE_RETRIEVAL"
+        elif provenance_recall < 1.0:
+            failure_kind = "WRONG_AUTHORITY"
         else:
             failure_kind = None
         detail = (
