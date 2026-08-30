@@ -33,6 +33,7 @@ NON_SEMANTIC_MODULES = frozenset({
     "cross_artifact_analysis.py",
     "dashboard.py",
     "doctor.py",
+    "epistemic_analysis.py",
     "frontier_v3_runner.py",
     "frontier_v4_runner.py",
     "golden_solutions.py",
