@@ -145,15 +145,21 @@ function activateSelector(selector, attr, set, render, event) {
   render();
 }
 
+function progressIdentity(event) {
+  return event.skill_mode
+    ? `${event.harness} · ${event.skill_mode} · ${event.task_id}`
+    : `${event.harness} · ${event.task_id}`;
+}
+
 function handleProgress(event) {
   const done = event.completed_units || 0;
   const total = event.total_units || 0;
   $('counter').textContent = `${done} / ${total}`;
   $('progressBar').style.width = total ? `${Math.min(100, done / total * 100)}%` : '0%';
-  if (event.type === 'task_started') $('current').textContent = `${event.harness} · ${event.task_id}`;
+  if (event.type === 'task_started') $('current').textContent = progressIdentity(event);
   if (event.type === 'task_finished') {
     const line = document.createElement('div');
-    line.textContent = `${event.harness} · ${event.task_id} · ${event.status || (event.success ? 'PASS' : 'FAIL')}`;
+    line.textContent = `${progressIdentity(event)} · ${event.status || (event.success ? 'PASS' : 'FAIL')}`;
     $('events').prepend(line);
   }
   if (event.type === 'run_cancelled') $('current').textContent = 'Run annullata.';
