@@ -14,6 +14,7 @@ from .interventions import SKILL_MODES
 from .models import Trajectory
 from .parametric import (
     ConfigTraversalPressure,
+    CrossArtifactPressure,
     DependencyWorldPressure,
     ExpensePressure,
     StatefulWorldPressure,
@@ -154,6 +155,16 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 retrieval pressure: {exc}") from exc
+    try:
+        cross_artifact = CrossArtifactPressure(
+            row_count=args.v4_cross_rows,
+            group_count=args.v4_cross_groups,
+            excluded_rows=args.v4_cross_excluded,
+            adjustment_rows=args.v4_cross_adjustments,
+            distractor_files=args.v4_cross_distractors,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 cross-artifact pressure: {exc}") from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
@@ -162,6 +173,7 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         "workspace_lineage": lineage.to_dict(),
         "tool_recovery": tool_recovery.to_dict(),
         "wide_retrieval": wide_retrieval.to_dict(),
+        "cross_artifact": cross_artifact.to_dict(),
     }
 
 
@@ -318,6 +330,11 @@ def main() -> None:
     parser.add_argument("--v4-retrieval-duplicates", type=int, default=12, help="Frontier v4 retrieval mirrored-duplicate count coordinate")
     parser.add_argument("--v4-retrieval-conflicts", type=int, default=10, help="Frontier v4 retrieval stale-conflict count coordinate")
     parser.add_argument("--v4-retrieval-source-depth", type=int, default=3, help="Frontier v4 retrieval authoritative source-depth coordinate")
+    parser.add_argument("--v4-cross-rows", type=int, default=72, help="Frontier v4 cross-artifact ledger row-count coordinate")
+    parser.add_argument("--v4-cross-groups", type=int, default=6, help="Frontier v4 cross-artifact account-group coordinate")
+    parser.add_argument("--v4-cross-excluded", type=int, default=12, help="Frontier v4 cross-artifact excluded-row coordinate")
+    parser.add_argument("--v4-cross-adjustments", type=int, default=8, help="Frontier v4 cross-artifact negative-adjustment coordinate")
+    parser.add_argument("--v4-cross-distractors", type=int, default=3, help="Frontier v4 cross-artifact archived-ledger distractor coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
