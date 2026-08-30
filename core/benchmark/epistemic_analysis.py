@@ -22,6 +22,7 @@ _COUNT_FIELDS = (
     "missing_case_count",
     "extra_case_count",
     "duplicate_case_count",
+    "invalid_decision_count",
 )
 
 
