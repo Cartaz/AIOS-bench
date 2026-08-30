@@ -29,6 +29,11 @@ from .config_traversal import (
     check_config_traversal_variant,
     generate_config_traversal_variant,
 )
+from .cross_artifact import (
+    CrossArtifactPressure,
+    generate_cross_artifact_variant,
+    grade_cross_artifact_variant,
+)
 from .dependency_world import (
     DependencyWorldPressure,
     check_dependency_world_variant,
@@ -66,6 +71,7 @@ FAMILIES = {
     "workspace_lineage",
     "tool_recovery",
     "wide_retrieval",
+    "cross_artifact",
 }
 
 _PRESSURE_TYPES = {
@@ -76,6 +82,7 @@ _PRESSURE_TYPES = {
     "workspace_lineage": WorkspaceLineagePressure,
     "tool_recovery": ToolRecoveryPressure,
     "wide_retrieval": WideRetrievalPressure,
+    "cross_artifact": CrossArtifactPressure,
 }
 
 
@@ -123,6 +130,9 @@ def materialize_variant(
     if family == "wide_retrieval":
         pressure = WideRetrievalPressure.from_mapping(parameters or {})
         return generate_wide_retrieval_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "cross_artifact":
+        pressure = CrossArtifactPressure.from_mapping(parameters or {})
+        return generate_cross_artifact_variant(workspace, seed=int(seed), pressure=pressure)
     if family == "tool_recovery":
         pressure = ToolRecoveryPressure.from_mapping(parameters or {})
         oracle = generate_tool_recovery_variant(
@@ -220,6 +230,8 @@ def evaluate_variant(
     """Grade one generated family through a common structured contract."""
     if family == "wide_retrieval":
         return grade_wide_retrieval_variant(workspace, oracle)
+    if family == "cross_artifact":
+        return grade_cross_artifact_variant(workspace, oracle)
     if family == "expense_report":
         passed, detail = check_expense_variant(workspace, oracle)
     elif family == "config_traversal":
@@ -288,6 +300,7 @@ def diagnose_variant_failure(
 
 __all__ = [
     "ConfigTraversalPressure",
+    "CrossArtifactPressure",
     "DependencyWorldPressure",
     "ExpensePressure",
     "StatefulWorldPressure",
