@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .frontier_runner import FrontierRunner
+from .interventions import ExecutionCondition
 from .suites import frontier_v4_suite
 
 
@@ -27,6 +28,7 @@ class FrontierV4Runner(FrontierRunner):
         metrics_poll_interval: float = 1.0,
         variant_base_seed: int = 42,
         parametric_parameters: Mapping[str, Mapping[str, Any]] | None = None,
+        skill_mode: str = "no_skill",
     ) -> None:
         super().__init__(
             repo_root,
@@ -46,6 +48,7 @@ class FrontierV4Runner(FrontierRunner):
             server_metrics_model=server_metrics_model,
             max_output_tokens=max_output_tokens,
             metrics_poll_interval=metrics_poll_interval,
+            execution_condition=ExecutionCondition(skill_mode=skill_mode),
         )
 
     def _task_seed(self, task) -> int:
