@@ -31,7 +31,7 @@ def _materialize(tmp_path: Path, name: str = "world", seed: int = 42):
             pair_count=4,
             registry_size=24,
             distractor_records=8,
-            archive_files=2,
+            archive_revisions=2,
             source_depth=3,
         ),
     )
@@ -41,8 +41,8 @@ def _materialize(tmp_path: Path, name: str = "world", seed: int = 42):
 def test_pressure_rejects_impossible_or_unmediated_coordinates() -> None:
     with pytest.raises(ValueError, match="2\*pair_count"):
         EpistemicTwinPressure(pair_count=8, registry_size=12)
-    with pytest.raises(ValueError, match="archive_files must be positive"):
-        EpistemicTwinPressure(distractor_records=1, archive_files=0)
+    with pytest.raises(ValueError, match="archive_revisions must be positive"):
+        EpistemicTwinPressure(distractor_records=1, archive_revisions=0)
     with pytest.raises(ValueError, match="source_depth"):
         EpistemicTwinPressure(source_depth=0)
 
@@ -75,7 +75,7 @@ def test_seed_and_pressure_change_variant_identity(tmp_path: Path) -> None:
             pair_count=5,
             registry_size=28,
             distractor_records=10,
-            archive_files=2,
+            archive_revisions=2,
             source_depth=3,
         ),
     )
@@ -84,7 +84,9 @@ def test_seed_and_pressure_change_variant_identity(tmp_path: Path) -> None:
     assert baseline["variant_digest"] != changed_pressure["variant_digest"]
 
 
-def test_generated_pairs_have_one_supported_and_one_corrupted_twin(tmp_path: Path) -> None:
+def test_generated_pairs_have_one_supported_and_one_corrupted_twin_without_label_leakage(
+    tmp_path: Path,
+) -> None:
     workspace, oracle = _materialize(tmp_path)
     expected = oracle["expected_decisions"]
 
@@ -103,8 +105,14 @@ def test_generated_pairs_have_one_supported_and_one_corrupted_twin(tmp_path: Pat
         }
         assert differing == {pair["corruption_field"]}
 
+    registry = json.loads((workspace / oracle["source_path"]).read_text(encoding="utf-8"))
+    services = [str(row["service"]).lower() for row in registry["records"]]
+    assert all("shadow" not in service for service in services)
+    assert all("valid" not in service and "corrupt" not in service for service in services)
+
     archived = list((workspace / "evidence" / "archive").glob("registry_*.json"))
-    assert len(archived) == 2
+    policies = list((workspace / "policies" / "archive").glob("isolation_policy_*.md"))
+    assert len(archived) == len(policies) == 2
     archived_rows = [
         row
         for path in archived
@@ -114,6 +122,14 @@ def test_generated_pairs_have_one_supported_and_one_corrupted_twin(tmp_path: Pat
     assert all(row["environment"] == "production" for row in archived_rows)
     assert all(row["risk_class"] == "critical" for row in archived_rows)
     assert all(row["containment_ready"] is True for row in archived_rows)
+
+
+def test_generated_instructions_require_independent_evidence_review(tmp_path: Path) -> None:
+    workspace, _ = _materialize(tmp_path)
+    readme = (workspace / "README.md").read_text(encoding="utf-8")
+
+    assert "Do not infer a decision from case ordering, identifiers or naming" in readme
+    assert "fixed number" not in readme
 
 
 def test_exact_golden_passes_with_full_pair_metrics(tmp_path: Path) -> None:
