@@ -46,6 +46,11 @@ def _args(**overrides):
         "v4_retrieval_duplicates": 12,
         "v4_retrieval_conflicts": 10,
         "v4_retrieval_source_depth": 3,
+        "v4_cross_rows": 72,
+        "v4_cross_groups": 6,
+        "v4_cross_excluded": 12,
+        "v4_cross_adjustments": 8,
+        "v4_cross_distractors": 3,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -113,6 +118,13 @@ def test_v4_parameters_include_every_active_family():
             "duplicate_records": 12,
             "conflict_records": 10,
             "source_depth": 3,
+        },
+        "cross_artifact": {
+            "row_count": 72,
+            "group_count": 6,
+            "excluded_rows": 12,
+            "adjustment_rows": 8,
+            "distractor_files": 3,
         },
     }
 
@@ -255,6 +267,31 @@ def test_v4_retrieval_pressure_is_configurable():
 def test_v4_retrieval_pressure_rejects_invalid_coordinates():
     with pytest.raises(SystemExit, match="invalid Frontier v4 retrieval pressure"):
         cli._v4_parameters(_args(v4_retrieval_corpus_size=12))
+
+
+def test_v4_cross_artifact_pressure_is_configurable():
+    parameters = cli._v4_parameters(
+        _args(
+            v4_cross_rows=120,
+            v4_cross_groups=9,
+            v4_cross_excluded=20,
+            v4_cross_adjustments=14,
+            v4_cross_distractors=7,
+        )
+    )
+
+    assert parameters["cross_artifact"] == {
+        "row_count": 120,
+        "group_count": 9,
+        "excluded_rows": 20,
+        "adjustment_rows": 14,
+        "distractor_files": 7,
+    }
+
+
+def test_v4_cross_artifact_pressure_rejects_invalid_coordinates():
+    with pytest.raises(SystemExit, match="invalid Frontier v4 cross-artifact pressure"):
+        cli._v4_parameters(_args(v4_cross_rows=12))
 
 
 def test_skill_ablation_expands_to_both_conditions():
@@ -445,5 +482,35 @@ def test_retrieval_variant_identity_records_effective_pressure(tmp_path: Path):
         "duplicate_records": 24,
         "conflict_records": 16,
         "source_depth": 4,
+    }
+    assert identity["variant_digest"]
+
+
+def test_cross_artifact_variant_identity_records_effective_pressure(tmp_path: Path):
+    parameters = cli._v4_parameters(
+        _args(
+            v4_cross_rows=108,
+            v4_cross_groups=8,
+            v4_cross_excluded=18,
+            v4_cross_adjustments=12,
+            v4_cross_distractors=5,
+        )
+    )
+    runner = _runner(tmp_path / "cross-artifact-identity", parameters)
+    task = next(
+        task for task in load_tasks(TASK_ROOT, "frontier_v4")
+        if task.id == "data_cross_artifact_001"
+    )
+
+    runner._workspace(task)
+    identity = runner._result_identity(task)
+
+    assert identity["variant_family"] == "cross_artifact"
+    assert identity["variant_parameters"] == {
+        "row_count": 108,
+        "group_count": 8,
+        "excluded_rows": 18,
+        "adjustment_rows": 12,
+        "distractor_files": 5,
     }
     assert identity["variant_digest"]
