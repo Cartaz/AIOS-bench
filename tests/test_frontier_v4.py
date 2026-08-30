@@ -52,6 +52,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "autonomy_expense_001",
         "stateful_support_001",
         "support_dependency_001",
+        "retrieval_wide_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
         "tool_recovery_001",
@@ -60,6 +61,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "autonomy_expense_001": 4,
         "stateful_support_001": 5,
         "support_dependency_001": 4,
+        "retrieval_wide_001": 1,
         "tool_use_config_001": 4,
         "tool_use_lineage_001": 1,
         "tool_recovery_001": 1,
@@ -178,6 +180,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
     names = {path.name for path in paths}
     assert {
         "dependency_world.py",
+        "grading.py",
         "interventions.py",
         "materialization.py",
         "suites.py",
@@ -185,6 +188,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
         "tool_recovery.py",
         "tool_recovery_api.py",
         "tool_recovery_service.py",
+        "wide_retrieval.py",
         "workspace_lineage.py",
         "world_api.py",
     } <= names
