@@ -183,3 +183,37 @@ def test_skill_ablation_fails_closed_on_model_or_profile_mismatch() -> None:
     assert model_mismatch[0]["reason"] == "model_identity_mismatch_or_unverified"
     assert profile_mismatch[0]["comparable"] is False
     assert profile_mismatch[0]["reason"] == "ablation_execution_profile_mismatch"
+
+
+def test_skill_ablation_rejects_invalid_application_identity() -> None:
+    baseline = _row("no_skill", score=40, success=False)
+    curated = _row("curated_skill", score=100, success=True)
+    curated["skill_applied"] = False
+
+    comparison = skill_ablation_pairs([baseline, curated])[0]
+
+    assert comparison["comparable"] is False
+    assert comparison["reason"] == "skill_application_identity_invalid"
+
+
+def test_skill_ablation_rejects_duplicate_exact_cells() -> None:
+    baseline = _row("no_skill", score=40, success=False)
+    duplicate = dict(baseline)
+    duplicate["score"] = 60
+    curated = _row("curated_skill", score=100, success=True)
+
+    comparison = skill_ablation_pairs([baseline, duplicate, curated])[0]
+
+    assert comparison["comparable"] is False
+    assert comparison["reason"] == "duplicate_ablation_cell"
+
+
+def test_skill_ablation_requires_distinct_arm_execution_fingerprints() -> None:
+    baseline = _row("no_skill", score=40, success=False)
+    curated = _row("curated_skill", score=100, success=True)
+    curated["execution_fingerprint"] = baseline["execution_fingerprint"]
+
+    comparison = skill_ablation_pairs([baseline, curated])[0]
+
+    assert comparison["comparable"] is False
+    assert comparison["reason"] == "execution_arm_identity_invalid"
