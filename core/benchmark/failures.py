@@ -12,6 +12,17 @@ REFUSED = "REFUSED"
 INFRA_ERROR = "INFRA_ERROR"
 UNSUPPORTED = "UNSUPPORTED"
 BLOCKED = "BLOCKED"
+TOOL_SELECTION_ERROR = "TOOL_SELECTION_ERROR"
+TOOL_SCHEMA_ERROR = "TOOL_SCHEMA_ERROR"
+RETRY_LOOP = "RETRY_LOOP"
+RECOVERY_FAILURE = "RECOVERY_FAILURE"
+
+DETERMINISTIC_EVALUATION_FAILURES = frozenset({
+    TOOL_SELECTION_ERROR,
+    TOOL_SCHEMA_ERROR,
+    RETRY_LOOP,
+    RECOVERY_FAILURE,
+})
 
 FAILURE_KINDS = frozenset({
     PASS,
@@ -23,6 +34,7 @@ FAILURE_KINDS = frozenset({
     INFRA_ERROR,
     UNSUPPORTED,
     BLOCKED,
+    *DETERMINISTIC_EVALUATION_FAILURES,
 })
 
 
@@ -47,8 +59,14 @@ def classify_failure(
     execution_success: bool,
     evaluation_passed: bool | None,
     events: Iterable[dict[str, Any]] = (),
+    evaluation_failure_kind: str | None = None,
 ) -> str:
-    """Map runner state to a stable, mutually exclusive failure category."""
+    """Map runner state to a stable, mutually exclusive failure category.
+
+    Runtime/lifecycle failures take precedence over deterministic grader
+    diagnoses. A family-specific hint is eligible only after the harness
+    completed successfully and the deterministic evaluation failed.
+    """
     normalized = str(status).strip().lower()
     if success:
         return PASS
@@ -65,5 +83,7 @@ def classify_failure(
     if has_structured_refusal(events):
         return REFUSED
     if execution_success and evaluation_passed is False:
+        if evaluation_failure_kind in DETERMINISTIC_EVALUATION_FAILURES:
+            return str(evaluation_failure_kind)
         return WRONG
     return CRASH
