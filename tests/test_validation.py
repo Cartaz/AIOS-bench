@@ -81,11 +81,18 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "transient_failures": 5,
                 "incomplete_responses": 10,
             },
+            "wide_retrieval": {
+                "corpus_size": 120,
+                "target_count": 16,
+                "duplicate_records": 18,
+                "conflict_records": 14,
+                "source_depth": 4,
+            },
         },
     )
 
     assert result["ok"] is True
-    assert result["checked_tasks"] == 6
+    assert result["checked_tasks"] == 7
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
@@ -93,6 +100,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         "dependency_world",
         "workspace_lineage",
         "tool_recovery",
+        "wide_retrieval",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
