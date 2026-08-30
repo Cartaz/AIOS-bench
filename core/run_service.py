@@ -9,13 +9,8 @@ from typing import Callable
 from core.benchmark.config import AGENTS
 from core.benchmark.experiments import make_experiment_id
 from core.benchmark.frontier_runner import FrontierRunner
+from core.benchmark.interventions import ExecutionCondition, SKILL_MODES
 from core.benchmark.models import Task
-from core.benchmark.parametric import (
-    ConfigTraversalPressure,
-    DependencyWorldPressure,
-    ExpensePressure,
-    StatefulWorldPressure,
-)
 from core.benchmark.report import write_summary
 from core.benchmark.scheduler import MatchedInterleavedScheduler
 from core.benchmark.statistics import augment_summary_file
@@ -43,6 +38,8 @@ class RunRequest:
     max_output_tokens: int = 65536
     metrics_poll_interval: float = 1.0
     keep_raw: bool = False
+    skill_mode: str = "no_skill"
+    skill_ablation: bool = False
 
 
 @dataclass(frozen=True)
@@ -68,6 +65,7 @@ class BenchmarkService:
         return {
             "suite": suite,
             "suites": list(SUITES),
+            "skill_modes": list(SKILL_MODES) if suite == "frontier_v4" else [],
             "harnesses": [
                 {"id": name, "name": config.display_name}
                 for name, config in AGENTS.items()
@@ -122,6 +120,14 @@ class BenchmarkService:
         self._require_positive_number(request.metrics_poll_interval, "Metrics poll interval")
         if not isinstance(request.keep_raw, bool):
             raise ValueError("Keep raw must be a boolean")
+        if not isinstance(request.skill_ablation, bool):
+            raise ValueError("Skill ablation must be a boolean")
+        if not isinstance(request.skill_mode, str) or request.skill_mode not in SKILL_MODES:
+            raise ValueError(f"Skill mode must be one of: {', '.join(SKILL_MODES)}")
+        if request.suite != "frontier_v4" and (
+            request.skill_ablation or request.skill_mode != "no_skill"
+        ):
+            raise ValueError("Skill interventions are available only for Frontier v4")
         if not isinstance(request.model, str):
             raise ValueError("Model must be a string")
         for value, label in (
@@ -162,6 +168,10 @@ class BenchmarkService:
             except Exception:
                 logger.exception("Failed to abort benchmark runner %s", name)
 
+    @staticmethod
+    def _conditions(request: RunRequest) -> tuple[str, ...]:
+        return SKILL_MODES if request.skill_ablation else (request.skill_mode,)
+
     def run(
         self,
         request: RunRequest | PreparedRun,
@@ -173,7 +183,13 @@ class BenchmarkService:
         tasks = list(prepared.tasks)
         callback = on_event or (lambda event: None)
         token = cancellation_token or CancellationToken()
-        total_units = len(tasks) * len(run_request.harnesses) * run_request.repeats
+        conditions = self._conditions(run_request)
+        total_units = (
+            len(tasks)
+            * len(run_request.harnesses)
+            * len(conditions)
+            * run_request.repeats
+        )
         completed_units = 0
         active_runners: dict[str, ObservableFrontierRunner] = {}
 
@@ -189,18 +205,34 @@ class BenchmarkService:
             for repeat in range(1, run_request.repeats + 1):
                 token.raise_if_cancelled()
                 orchestration_seed = run_request.seed + repeat - 1
-                run_id = experiment_id if run_request.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
-                active_runners = {
-                    name: self._build_runner(
-                        run_request,
-                        name,
-                        run_id,
-                        orchestration_seed,
-                        emit,
-                        token,
-                    )
-                    for name in run_request.harnesses
-                }
+                active_runners = {}
+                for harness in run_request.harnesses:
+                    for skill_mode in conditions:
+                        logical_name = (
+                            harness
+                            if len(conditions) == 1
+                            else f"{harness}:{skill_mode}"
+                        )
+                        if len(conditions) == 1:
+                            run_id = (
+                                experiment_id
+                                if run_request.repeats == 1
+                                else f"{experiment_id}-r{repeat:02d}"
+                            )
+                        else:
+                            arm = skill_mode.replace("_", "-")
+                            run_id = f"{experiment_id}-{arm}"
+                            if run_request.repeats > 1:
+                                run_id += f"-r{repeat:02d}"
+                        active_runners[logical_name] = self._build_runner(
+                            run_request,
+                            harness,
+                            run_id,
+                            orchestration_seed,
+                            emit,
+                            token,
+                            skill_mode=skill_mode,
+                        )
                 emit({"type": "repeat_started", "repeat": repeat, "repeats": run_request.repeats})
                 if len(active_runners) == 1:
                     runner = next(iter(active_runners.values()))
@@ -249,19 +281,15 @@ class BenchmarkService:
         orchestration_seed: int,
         callback: EventCallback,
         cancellation_token: CancellationToken | None = None,
+        *,
+        skill_mode: str = "no_skill",
     ) -> "ObservableFrontierRunner":
         if request.suite == "frontier_v4":
-            suite = frontier_v4_suite(
-                variant_base_seed=orchestration_seed,
-                parametric_parameters={
-                    "expense_report": ExpensePressure().to_dict(),
-                    "config_traversal": ConfigTraversalPressure().to_dict(),
-                    "stateful_world": StatefulWorldPressure().to_dict(),
-                    "dependency_world": DependencyWorldPressure().to_dict(),
-                },
-            )
+            suite = frontier_v4_suite(variant_base_seed=orchestration_seed)
+            execution_condition = ExecutionCondition(skill_mode=skill_mode)
         else:
             suite = frontier_v3_suite()
+            execution_condition = None
         return ObservableFrontierRunner(
             repo_root=self.repo_root,
             agent=AGENTS[harness],
@@ -282,6 +310,7 @@ class BenchmarkService:
                 if cancellation_token is not None
                 else None
             ),
+            execution_condition=execution_condition,
             event_callback=callback,
         )
 
