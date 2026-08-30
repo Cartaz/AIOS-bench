@@ -149,6 +149,34 @@ def _cross_artifact_golden(
     return []
 
 
+def _epistemic_twins_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    source_path = oracle.get("source_path")
+    result_path = oracle.get("result_path")
+    expected = oracle.get("expected_decisions")
+    if (
+        not isinstance(source_path, str)
+        or not isinstance(result_path, str)
+        or not isinstance(expected, Mapping)
+        or not all(isinstance(row, Mapping) for row in expected.values())
+    ):
+        raise ValueError("invalid epistemic-twins oracle")
+    decisions = [dict(expected[case_id]) for case_id in sorted(expected)]
+    _write(
+        workspace,
+        result_path,
+        json.dumps(
+            {"source": source_path, "decisions": decisions},
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        ) + "\n",
+    )
+    return []
+
+
 def _mediated_world_golden(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -274,6 +302,8 @@ def materialize_parametric_golden(
         return _wide_retrieval_golden(workspace, oracle)
     if family == "cross_artifact":
         return _cross_artifact_golden(workspace, oracle)
+    if family == "epistemic_twins":
+        return _epistemic_twins_golden(workspace, oracle)
     return _legacy_materializer(family, workspace, oracle)
 
 
