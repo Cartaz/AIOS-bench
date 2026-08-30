@@ -52,6 +52,19 @@ def has_structured_refusal(events: Iterable[dict[str, Any]]) -> bool:
     return False
 
 
+def _evaluation_failure_hint(events: Iterable[dict[str, Any]]) -> str | None:
+    for event in events:
+        if event.get("type") != "deterministic_evaluation":
+            continue
+        result = event.get("result")
+        if not isinstance(result, dict):
+            continue
+        candidate = result.get("failure_kind")
+        if candidate in DETERMINISTIC_EVALUATION_FAILURES:
+            return str(candidate)
+    return None
+
+
 def classify_failure(
     *,
     status: str,
@@ -67,6 +80,7 @@ def classify_failure(
     diagnoses. A family-specific hint is eligible only after the harness
     completed successfully and the deterministic evaluation failed.
     """
+    event_list = list(events)
     normalized = str(status).strip().lower()
     if success:
         return PASS
@@ -80,10 +94,11 @@ def classify_failure(
         return TIMEOUT
     if normalized == "error":
         return INFRA_ERROR
-    if has_structured_refusal(events):
+    if has_structured_refusal(event_list):
         return REFUSED
     if execution_success and evaluation_passed is False:
-        if evaluation_failure_kind in DETERMINISTIC_EVALUATION_FAILURES:
-            return str(evaluation_failure_kind)
+        hint = evaluation_failure_kind or _evaluation_failure_hint(event_list)
+        if hint in DETERMINISTIC_EVALUATION_FAILURES:
+            return str(hint)
         return WRONG
     return CRASH
