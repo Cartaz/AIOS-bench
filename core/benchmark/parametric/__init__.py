@@ -39,6 +39,11 @@ from .dependency_world import (
     check_dependency_world_variant,
     generate_dependency_world_variant,
 )
+from .epistemic_twins import (
+    EpistemicTwinPressure,
+    generate_epistemic_twins_variant,
+    grade_epistemic_twins_variant,
+)
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
 from .grading import VariantGrade
 from .stateful_world import (
@@ -72,6 +77,7 @@ FAMILIES = {
     "tool_recovery",
     "wide_retrieval",
     "cross_artifact",
+    "epistemic_twins",
 }
 
 _PRESSURE_TYPES = {
@@ -83,6 +89,7 @@ _PRESSURE_TYPES = {
     "tool_recovery": ToolRecoveryPressure,
     "wide_retrieval": WideRetrievalPressure,
     "cross_artifact": CrossArtifactPressure,
+    "epistemic_twins": EpistemicTwinPressure,
 }
 
 
@@ -133,6 +140,9 @@ def materialize_variant(
     if family == "cross_artifact":
         pressure = CrossArtifactPressure.from_mapping(parameters or {})
         return generate_cross_artifact_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "epistemic_twins":
+        pressure = EpistemicTwinPressure.from_mapping(parameters or {})
+        return generate_epistemic_twins_variant(workspace, seed=int(seed), pressure=pressure)
     if family == "tool_recovery":
         pressure = ToolRecoveryPressure.from_mapping(parameters or {})
         oracle = generate_tool_recovery_variant(
@@ -232,6 +242,8 @@ def evaluate_variant(
         return grade_wide_retrieval_variant(workspace, oracle)
     if family == "cross_artifact":
         return grade_cross_artifact_variant(workspace, oracle)
+    if family == "epistemic_twins":
+        return grade_epistemic_twins_variant(workspace, oracle)
     if family == "expense_report":
         passed, detail = check_expense_variant(workspace, oracle)
     elif family == "config_traversal":
@@ -302,6 +314,7 @@ __all__ = [
     "ConfigTraversalPressure",
     "CrossArtifactPressure",
     "DependencyWorldPressure",
+    "EpistemicTwinPressure",
     "ExpensePressure",
     "StatefulWorldPressure",
     "ToolRecoveryPressure",
