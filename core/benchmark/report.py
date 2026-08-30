@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from .ablations import skill_ablation_pairs
 from .landscapes import pressure_landscapes, pressure_paired_comparisons
 from .raw import latest_attempts, load_attempts, source_index
+from .retrieval_analysis import wide_retrieval_metrics
 
 
 ANALYSIS_SCHEMA = "aios-bench/derived-analysis/v1"
@@ -338,6 +339,7 @@ def build_summary(root: Path) -> dict[str, Any]:
         "raw_source_file_count": sources["file_count"],
         "pressure_landscapes": pressure_landscapes(canonical_rows, **filters),
         "pressure_paired_comparisons": pressure_paired_comparisons(canonical_rows, **filters),
+        "wide_retrieval_metrics": wide_retrieval_metrics(canonical_rows, **filters),
         "skill_ablations": skill_ablation_pairs(rows, **filters),
     }
 
