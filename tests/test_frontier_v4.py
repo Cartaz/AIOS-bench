@@ -54,6 +54,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "support_dependency_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
+        "tool_recovery_001",
     ]
     assert {task.id: task.revision for task in v4} == {
         "autonomy_expense_001": 4,
@@ -61,13 +62,22 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "support_dependency_001": 4,
         "tool_use_config_001": 4,
         "tool_use_lineage_001": 1,
+        "tool_recovery_001": 1,
     }
     runtime_tasks = {
         task.id: task
         for task in v4
-        if task.id in {"stateful_support_001", "support_dependency_001"}
+        if task.id in {
+            "stateful_support_001",
+            "support_dependency_001",
+            "tool_recovery_001",
+        }
     }
-    assert set(runtime_tasks) == {"stateful_support_001", "support_dependency_001"}
+    assert set(runtime_tasks) == {
+        "stateful_support_001",
+        "support_dependency_001",
+        "tool_recovery_001",
+    }
     assert all(
         task.required_capabilities == ("benchmark_local_runtime",)
         for task in runtime_tasks.values()
@@ -171,6 +181,9 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
         "materialization.py",
         "suites.py",
         "task_runtime.py",
+        "tool_recovery.py",
+        "tool_recovery_api.py",
+        "tool_recovery_service.py",
         "workspace_lineage.py",
         "world_api.py",
     } <= names
