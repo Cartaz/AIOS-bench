@@ -51,6 +51,11 @@ def _args(**overrides):
         "v4_cross_excluded": 12,
         "v4_cross_adjustments": 8,
         "v4_cross_distractors": 3,
+        "v4_epistemic_pairs": 6,
+        "v4_epistemic_registry_size": 48,
+        "v4_epistemic_distractor_records": 12,
+        "v4_epistemic_archive_files": 3,
+        "v4_epistemic_source_depth": 3,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -125,6 +130,13 @@ def test_v4_parameters_include_every_active_family():
             "excluded_rows": 12,
             "adjustment_rows": 8,
             "distractor_files": 3,
+        },
+        "epistemic_twins": {
+            "pair_count": 6,
+            "registry_size": 48,
+            "distractor_records": 12,
+            "archive_files": 3,
+            "source_depth": 3,
         },
     }
 
@@ -292,6 +304,31 @@ def test_v4_cross_artifact_pressure_is_configurable():
 def test_v4_cross_artifact_pressure_rejects_invalid_coordinates():
     with pytest.raises(SystemExit, match="invalid Frontier v4 cross-artifact pressure"):
         cli._v4_parameters(_args(v4_cross_rows=12))
+
+
+def test_v4_epistemic_pressure_is_configurable():
+    parameters = cli._v4_parameters(
+        _args(
+            v4_epistemic_pairs=10,
+            v4_epistemic_registry_size=80,
+            v4_epistemic_distractor_records=24,
+            v4_epistemic_archive_files=6,
+            v4_epistemic_source_depth=5,
+        )
+    )
+
+    assert parameters["epistemic_twins"] == {
+        "pair_count": 10,
+        "registry_size": 80,
+        "distractor_records": 24,
+        "archive_files": 6,
+        "source_depth": 5,
+    }
+
+
+def test_v4_epistemic_pressure_rejects_invalid_coordinates():
+    with pytest.raises(SystemExit, match="invalid Frontier v4 epistemic-twin pressure"):
+        cli._v4_parameters(_args(v4_epistemic_pairs=10, v4_epistemic_registry_size=12))
 
 
 def test_skill_ablation_expands_to_both_conditions():
@@ -512,5 +549,35 @@ def test_cross_artifact_variant_identity_records_effective_pressure(tmp_path: Pa
         "excluded_rows": 18,
         "adjustment_rows": 12,
         "distractor_files": 5,
+    }
+    assert identity["variant_digest"]
+
+
+def test_epistemic_variant_identity_records_effective_pressure(tmp_path: Path):
+    parameters = cli._v4_parameters(
+        _args(
+            v4_epistemic_pairs=8,
+            v4_epistemic_registry_size=64,
+            v4_epistemic_distractor_records=20,
+            v4_epistemic_archive_files=5,
+            v4_epistemic_source_depth=4,
+        )
+    )
+    runner = _runner(tmp_path / "epistemic-identity", parameters)
+    task = next(
+        task for task in load_tasks(TASK_ROOT, "frontier_v4")
+        if task.id == "reasoning_epistemic_001"
+    )
+
+    runner._workspace(task)
+    identity = runner._result_identity(task)
+
+    assert identity["variant_family"] == "epistemic_twins"
+    assert identity["variant_parameters"] == {
+        "pair_count": 8,
+        "registry_size": 64,
+        "distractor_records": 20,
+        "archive_files": 5,
+        "source_depth": 4,
     }
     assert identity["variant_digest"]
