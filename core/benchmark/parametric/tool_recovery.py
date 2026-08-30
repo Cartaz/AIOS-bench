@@ -31,12 +31,12 @@ class ToolRecoveryPressure:
             raise ValueError(
                 "incomplete_responses must be between required_actions and case_count"
             )
-        if not 1 <= self.transient_failures <= min(
+        if not 2 <= self.transient_failures <= min(
             24,
             self.required_actions + self.incomplete_responses,
         ):
             raise ValueError(
-                "transient_failures must be between 1 and min(24, required_actions+incomplete_responses)"
+                "transient_failures must be between 2 and min(24, required_actions+incomplete_responses)"
             )
 
     @classmethod
@@ -203,18 +203,15 @@ def generate_tool_recovery_variant(
         )
     incomplete_ids = sorted(incomplete_ids)
 
-    # Recovery events are split between ambiguous committed writes and transient
-    # reads. Every transient read belongs to the incomplete set, so correct
-    # decision-making necessarily encounters the injected failure.
+    # Every generated variant contains both recovery modes promised by the task:
+    # at least one retryable read failure and at least one response-lost write.
+    # Allocate the minimum writes needed to keep the remaining read failures
+    # within the incomplete-response population.
     ambiguous_count = min(
         pressure.required_actions,
         max(1, pressure.transient_failures - pressure.incomplete_responses),
     )
     read_failure_count = pressure.transient_failures - ambiguous_count
-    if read_failure_count > pressure.incomplete_responses:
-        shift = read_failure_count - pressure.incomplete_responses
-        ambiguous_count = min(pressure.required_actions, ambiguous_count + shift)
-        read_failure_count = pressure.transient_failures - ambiguous_count
     ambiguous_ids = sorted(rng.sample(target_ids, ambiguous_count))
     read_failure_ids = sorted(rng.sample(incomplete_ids, read_failure_count))
 
