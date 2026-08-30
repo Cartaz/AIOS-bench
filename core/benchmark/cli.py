@@ -18,6 +18,7 @@ from .parametric import (
     ExpensePressure,
     StatefulWorldPressure,
     ToolRecoveryPressure,
+    WideRetrievalPressure,
     WorkspaceLineagePressure,
 )
 from .paths import REPO_ROOT, RESULTS_ROOT, TASKS_ROOT
@@ -143,6 +144,16 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 tool recovery pressure: {exc}") from exc
+    try:
+        wide_retrieval = WideRetrievalPressure(
+            corpus_size=args.v4_retrieval_corpus_size,
+            target_count=args.v4_retrieval_targets,
+            duplicate_records=args.v4_retrieval_duplicates,
+            conflict_records=args.v4_retrieval_conflicts,
+            source_depth=args.v4_retrieval_source_depth,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 retrieval pressure: {exc}") from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
@@ -150,6 +161,7 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         "dependency_world": dependency.to_dict(),
         "workspace_lineage": lineage.to_dict(),
         "tool_recovery": tool_recovery.to_dict(),
+        "wide_retrieval": wide_retrieval.to_dict(),
     }
 
 
@@ -301,6 +313,11 @@ def main() -> None:
     parser.add_argument("--v4-tool-distractors", type=int, default=4, help="Frontier v4 tool-recovery distractor-tool coordinate")
     parser.add_argument("--v4-tool-transient-failures", type=int, default=3, help="Frontier v4 tool-recovery injected transient-failure coordinate")
     parser.add_argument("--v4-tool-incomplete-responses", type=int, default=8, help="Frontier v4 tool-recovery incomplete-list-response coordinate")
+    parser.add_argument("--v4-retrieval-corpus-size", type=int, default=96, help="Frontier v4 retrieval authoritative-corpus size coordinate")
+    parser.add_argument("--v4-retrieval-targets", type=int, default=12, help="Frontier v4 retrieval target-set size coordinate")
+    parser.add_argument("--v4-retrieval-duplicates", type=int, default=12, help="Frontier v4 retrieval mirrored-duplicate count coordinate")
+    parser.add_argument("--v4-retrieval-conflicts", type=int, default=10, help="Frontier v4 retrieval stale-conflict count coordinate")
+    parser.add_argument("--v4-retrieval-source-depth", type=int, default=3, help="Frontier v4 retrieval authoritative source-depth coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
