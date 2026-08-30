@@ -162,4 +162,64 @@ The structured `VariantGrade` abstraction is justified by a concrete present nee
 
 ### Review conclusion
 
-The V4.4 design preserves the strategic extension shape established by V4.3: a deep parametric family plus deterministic oracle and derived analysis over the shared engine. No material ownership leak, hidden external dependency, duplicated state owner or harness-specific special case was found in the milestone review. Formal closure requires the canonical CI matrix to pass on this review commit; after that observation V4.4 can be considered closed and V4.5 may begin.
+**Closed 2026-08-30.** The post-review V4.4 commit passed the canonical CI matrix on Python 3.12, 3.13 and 3.14, including installation, compileall, Ruff and pytest. No material ownership leak, hidden external dependency, duplicated state owner or harness-specific special case remained at closure. V4.5 can therefore build on the shared materialization/evaluation contract without changing the runner.
+
+## Frontier V4.5 — cross-artifact consistency
+
+### Design alternatives and selected boundary
+
+Two materially different approaches were considered before implementation:
+
+1. add a generic multi-artifact schema/plugin engine and make tasks declaratively describe arbitrary artifact types; or
+2. add one deep parametric family whose generator owns the concrete source-of-truth transformation and whose grader independently parses the two required deliverables.
+
+The second design was selected. A generic artifact framework would be speculative: there is currently only one concrete cross-artifact family, and abstracting format grammar, reconciliation keys and semantic transforms prematurely would spread configuration across layers rather than hide complexity. The selected module presents the same small family interface as existing V4 generators while keeping its CSV/domain rules private.
+
+### Complexity and ownership
+
+- **Resolved:** `parametric/cross_artifact.py` exclusively owns generated ledger semantics, deterministic source-of-truth transformation, independent JSON/Markdown parsing and cross-artifact reconciliation. Generic evaluator and task execution code remain family-agnostic through `VariantGrade`.
+- **Resolved:** `ParametricTaskMaterializer` remains the sole owner of seeded workspace/oracle construction. Expected summaries and protected digests live only in the hidden run oracle.
+- **Resolved:** no task-scoped runtime, API, harness adapter branch or new scheduler is needed. The workload is ordinary local-file reasoning over the same shared Frontier runner.
+- **Resolved:** derived aggregation is isolated in `cross_artifact_analysis.py` and explicitly excluded from semantic suite fingerprinting, while generator/grader code remains semantic by default.
+- **Resolved:** CLI pressure controls instantiate the same `CrossArtifactPressure` type registered in the canonical family registry. The desktop service consumes normalized registry defaults, avoiding a second owner for effective pressure identity.
+
+### Correctness, negative constraints and information hiding
+
+- **Resolved:** the authoritative input uses integer cents, not floating-point money. Posted negative adjustments are therefore exact and deterministic.
+- **Resolved:** every account is guaranteed at least one posted source row, while pending/voided rows and archived ledger revisions create meaningful exclusion/distractor pressure without changing the authoritative transform.
+- **Resolved:** README, authority metadata, current ledger and distractor ledgers are hash-protected. Agent modification of any benchmark input fails before artifact scoring.
+- **Resolved:** machine-readable and human-readable artifacts are parsed independently. A correct JSON file cannot mask a wrong Markdown file, and vice versa.
+- **Resolved:** unsupported account groups are measured explicitly and prevent strict success even if both output artifacts contain the same unsupported claim.
+- **Resolved:** exact account sets, per-account posted counts/net cents, overall count, grand total and source identity must all agree with the hidden canonical transformation.
+
+### Scoring and failure semantics
+
+- **Resolved:** strict completion remains the task success criterion. Deterministic component accuracy and reconciliation are diagnostic partial metrics carried through the existing structured grade; fatal acceptance remains fatal.
+- **Resolved:** `CROSS_ARTIFACT_MISMATCH` means exactly that two parseable deliverables disagree with each other. If both deliverables agree but are jointly wrong relative to the authoritative source, the ordinary deterministic `WRONG` category remains semantically correct rather than overloading the mismatch diagnosis.
+- **Resolved:** machine accuracy, human accuracy and reconciliation rate remain separate dimensions in `summary.json`; no opaque weighted cross-artifact index is introduced.
+- **Resolved:** extra groups are reported separately rather than silently changing the field-accuracy denominator. They still make strict completion impossible, preserving a readable distinction between incorrect expected fields and unsupported additional claims.
+
+### Benchmark-health review
+
+- **Verified by deterministic tests:** same seed plus same pressure reproduces the same hidden expected summary and variant digest; changing seed or pressure changes variant identity.
+- **Verified by deterministic tests:** the exact dual-artifact golden receives full strict success.
+- **Verified by deterministic tests:** a JSON/Markdown disagreement is detected and classified as `CROSS_ARTIFACT_MISMATCH`.
+- **Verified by deterministic tests:** two mutually consistent but authoritative-wrong artifacts fail without being mislabeled as an inter-artifact mismatch.
+- **Verified by deterministic tests:** unsupported groups and source tampering fail strict grading.
+- **Verified by integration tests:** partial metrics and failure kind propagate through the generic evaluator/classifier, canonical summary aggregation, CLI pressure identity and desktop catalog/default-pressure paths.
+
+### Change-amplification review
+
+V4.5 required one family module, one catalog entry, one derived-analysis module and localized registry/CLI/report/test updates. The runner, scheduler, task executor, persistence format, Qt bridge and frontend required no semantic special cases. This is consistent with the strategic extension shape established in V4.3–V4.4.
+
+The explicit family dispatch is becoming longer but has not yet produced duplicated behavior or ambiguous ownership: each branch is a direct mapping from a stable family name to its pressure/generator/grader. Introducing reflection, plugin discovery or factories now would increase cognitive load. Revisit only if V4.6+ demonstrates actual change amplification beyond these localized registrations.
+
+### Deliberate deferrals
+
+- DOCX/PDF or other rich document formats are intentionally excluded until their parsing/rendering dependencies can be validated deterministically; strict JSON plus Markdown satisfies the milestone without adding fragile document infrastructure.
+- A dedicated dashboard panel for V4.5 component metrics is deferred. The canonical task score/failure remains visible in the existing dashboard and the machine/human/reconciliation dimensions are persisted in `summary.json`. A presentation-specific panel can be added once multiple real runs demonstrate which cross-artifact dimensions are useful enough to warrant permanent UI space.
+- Additional artifact pairs (for example CSV + memo, configuration + report) should be added as concrete scenarios only when they test meaningfully different reconciliation capability; a generic authoring framework remains intentionally absent.
+
+### Review conclusion
+
+The V4.5 implementation preserves one source of truth for task semantics, one parametric materialization path and one generic evaluation pipeline. No material ownership leak, new external dependency, duplicated execution path or tactical harness special case was found. Formal closure requires the canonical post-review CI matrix to pass on Python 3.12, 3.13 and 3.14; only after observing that result should V4.6 begin.
