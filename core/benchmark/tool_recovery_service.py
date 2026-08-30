@@ -157,12 +157,12 @@ class ToolRecoveryService:
             return result
         if tool == "cases.get":
             self._require_keys(tool, arguments, {"case_id"})
-            case_id = self._identifier(arguments["case_id"], "case_id")
+            case_id = self._identifier(tool, arguments["case_id"], "case_id")
             return self._get_case(case_id)
         if tool == "actions.process":
             self._require_keys(tool, arguments, {"case_id", "idempotency_key"})
-            case_id = self._identifier(arguments["case_id"], "case_id")
-            key = self._identifier(arguments["idempotency_key"], "idempotency_key")
+            case_id = self._identifier(tool, arguments["case_id"], "case_id")
+            key = self._identifier(tool, arguments["idempotency_key"], "idempotency_key")
             return self._process(case_id, key)
 
         self._append(
@@ -193,8 +193,15 @@ class ToolRecoveryService:
             f"{tool} requires exactly: {', '.join(sorted(expected)) or 'no arguments'}",
         )
 
-    def _identifier(self, value: object, label: str) -> str:
+    def _identifier(self, tool: str, value: object, label: str) -> str:
         if not isinstance(value, str) or _ID.fullmatch(value) is None:
+            self._append(
+                tool=tool,
+                outcome="schema_error",
+                code="invalid_schema",
+                retryable=False,
+                invalid_argument=label,
+            )
             raise ToolRecoveryError(
                 HTTPStatus.BAD_REQUEST,
                 "invalid_schema",
@@ -356,19 +363,20 @@ class ToolRecoveryService:
             return response
 
     def _append(self, *, tool: str, outcome: str, retryable: bool, **extra: Any) -> None:
-        self._sequence += 1
-        record = {
-            "schema": TOOL_ACTION_LOG_SCHEMA,
-            "sequence": self._sequence,
-            "tool": tool,
-            "outcome": outcome,
-            "retryable": bool(retryable),
-            **extra,
-        }
-        with self.action_log.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+        with self._lock:
+            self._sequence += 1
+            record = {
+                "schema": TOOL_ACTION_LOG_SCHEMA,
+                "sequence": self._sequence,
+                "tool": tool,
+                "outcome": outcome,
+                "retryable": bool(retryable),
+                **extra,
+            }
+            with self.action_log.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
 
 
 def tool_action_log_path(run_dir: Path, task_id: str) -> Path:
@@ -490,17 +498,24 @@ def diagnose_tool_recovery_failure(
         return "TOOL_SELECTION_ERROR"
     if any(record.get("outcome") == "schema_error" for record in records):
         return "TOOL_SCHEMA_ERROR"
+    if any(record.get("outcome") == "duplicate_applied" for record in records):
+        return "RECOVERY_FAILURE"
 
     max_attempts = int(oracle.get("max_attempts_per_operation", 4))
-    signatures: dict[tuple[str, str, str], int] = {}
+    operation_counts: dict[tuple[str, str], int] = {}
+    retryable_operations: set[tuple[str, str]] = set()
     for record in records:
-        signature = (
-            str(record.get("tool", "")),
-            str(record.get("case_id", "")),
-            str(record.get("idempotency_key", "")),
-        )
-        signatures[signature] = signatures.get(signature, 0) + 1
-    if any(count > max_attempts for count in signatures.values()):
+        tool = str(record.get("tool", ""))
+        if tool not in {"cases.get", "actions.process"}:
+            continue
+        operation = (tool, str(record.get("case_id", "")))
+        operation_counts[operation] = operation_counts.get(operation, 0) + 1
+        if record.get("retryable") is True:
+            retryable_operations.add(operation)
+    if any(
+        operation_counts[operation] > max_attempts
+        for operation in retryable_operations
+    ):
         return "RETRY_LOOP"
 
     read_transients = {str(value) for value in oracle.get("transient_read_case_ids") or []}
