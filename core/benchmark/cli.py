@@ -10,12 +10,14 @@ from .doctor import apply_profile_environment, run_wizard
 from .experiments import annotate_repeat, make_experiment_id
 from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
+from .interventions import SKILL_MODES
 from .models import Trajectory
 from .parametric import (
     ConfigTraversalPressure,
     DependencyWorldPressure,
     ExpensePressure,
     StatefulWorldPressure,
+    ToolRecoveryPressure,
     WorkspaceLineagePressure,
 )
 from .paths import REPO_ROOT, RESULTS_ROOT, TASKS_ROOT
@@ -53,6 +55,17 @@ def _selected_harnesses(args: argparse.Namespace) -> list[str]:
     if len(selected) > 1:
         raise SystemExit("Select one harness or --all, not both.")
     return list(AGENTS) if selected == ["__all__"] else selected
+
+
+def _validate_skill_options(args: argparse.Namespace) -> None:
+    if args.suite != "frontier_v4" and (
+        args.skill_ablation or args.skill_mode != "no_skill"
+    ):
+        raise SystemExit("skill interventions are available only with --suite frontier_v4")
+
+
+def _execution_skill_modes(args: argparse.Namespace) -> tuple[str, ...]:
+    return SKILL_MODES if args.skill_ablation else (str(args.skill_mode),)
 
 
 def _summary(root: Path, output: Path | None = None) -> Path:
@@ -120,12 +133,23 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 lineage pressure: {exc}") from exc
+    try:
+        tool_recovery = ToolRecoveryPressure(
+            case_count=args.v4_tool_cases,
+            required_actions=args.v4_tool_actions,
+            distractor_tools=args.v4_tool_distractors,
+            transient_failures=args.v4_tool_transient_failures,
+            incomplete_responses=args.v4_tool_incomplete_responses,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 tool recovery pressure: {exc}") from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
         "stateful_world": stateful.to_dict(),
         "dependency_world": dependency.to_dict(),
         "workspace_lineage": lineage.to_dict(),
+        "tool_recovery": tool_recovery.to_dict(),
     }
 
 
@@ -135,6 +159,7 @@ def _build_runner(
     *,
     run_id: str | None,
     orchestration_seed: int,
+    skill_mode: str | None = None,
 ):
     common = dict(
         repo_root=ROOT,
@@ -150,6 +175,7 @@ def _build_runner(
             **common,
             variant_base_seed=orchestration_seed,
             parametric_parameters=_v4_parameters(args),
+            skill_mode=skill_mode or args.skill_mode,
         )
     return FrontierV3Runner(**common)
 
@@ -170,6 +196,7 @@ def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> 
             harness,
             run_id=run_id,
             orchestration_seed=orchestration_seed,
+            skill_mode=args.skill_mode,
         )
         try:
             exit_code = max(exit_code, runner.run(tasks))
@@ -184,18 +211,26 @@ def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> 
 def _run_matched_interleaved(args: argparse.Namespace, harnesses: list[str], tasks: list) -> int:
     exit_code = 0
     experiment_id = args.run_id or make_experiment_id(args.suite)
+    skill_modes = _execution_skill_modes(args)
     for repeat in range(1, args.repeats + 1):
         orchestration_seed = args.seed + repeat - 1
-        run_id = experiment_id if args.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
-        runners = {
-            harness: _build_runner(
-                args,
-                harness,
-                run_id=run_id,
-                orchestration_seed=orchestration_seed,
-            )
-            for harness in harnesses
-        }
+        base_run_id = experiment_id if args.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
+        runners = {}
+        for harness in harnesses:
+            for skill_mode in skill_modes:
+                logical_name = (
+                    harness if len(skill_modes) == 1 else f"{harness}:{skill_mode}"
+                )
+                run_id = base_run_id
+                if len(skill_modes) > 1:
+                    run_id = f"{base_run_id}-{skill_mode.replace('_', '-')}"
+                runners[logical_name] = _build_runner(
+                    args,
+                    harness,
+                    run_id=run_id,
+                    orchestration_seed=orchestration_seed,
+                    skill_mode=skill_mode,
+                )
         scheduler = MatchedInterleavedScheduler(
             runners,
             tasks,
@@ -229,6 +264,17 @@ def main() -> None:
         default=42,
         help="Base orchestration seed; in Frontier v4 it also deterministically derives task variants",
     )
+    parser.add_argument(
+        "--skill-mode",
+        choices=SKILL_MODES,
+        default="no_skill",
+        help="Frontier v4 inference condition for benchmark-owned procedural skills",
+    )
+    parser.add_argument(
+        "--skill-ablation",
+        action="store_true",
+        help="Frontier v4 matched interleaving of no_skill and curated_skill arms",
+    )
     parser.add_argument("--v4-expense-rows", type=int, default=48, help="Frontier v4 expense-family row pressure coordinate")
     parser.add_argument("--v4-expense-malformed", type=int, default=2, help="Frontier v4 expense-family malformed-row pressure coordinate")
     parser.add_argument("--v4-expense-distractors", type=int, default=3, help="Frontier v4 expense-family distractor-file pressure coordinate")
@@ -250,6 +296,11 @@ def main() -> None:
     parser.add_argument("--v4-lineage-stale-revisions", type=int, default=2, help="Frontier v4 workspace-lineage historical-revision coordinate")
     parser.add_argument("--v4-lineage-distractors", type=int, default=4, help="Frontier v4 workspace-lineage unrelated-distractor coordinate")
     parser.add_argument("--v4-lineage-extra-settings", type=int, default=2, help="Frontier v4 workspace-lineage extra-setting coordinate")
+    parser.add_argument("--v4-tool-cases", type=int, default=24, help="Frontier v4 tool-recovery case-count coordinate")
+    parser.add_argument("--v4-tool-actions", type=int, default=5, help="Frontier v4 tool-recovery required-action coordinate")
+    parser.add_argument("--v4-tool-distractors", type=int, default=4, help="Frontier v4 tool-recovery distractor-tool coordinate")
+    parser.add_argument("--v4-tool-transient-failures", type=int, default=3, help="Frontier v4 tool-recovery injected transient-failure coordinate")
+    parser.add_argument("--v4-tool-incomplete-responses", type=int, default=8, help="Frontier v4 tool-recovery incomplete-list-response coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
@@ -288,6 +339,7 @@ def main() -> None:
         raise SystemExit(run_wizard(setup=args.setup, check_only=args.check, repair=args.repair))
     if args.setup or args.check or args.repair:
         raise SystemExit("--setup, --check and --repair are only valid with the doctor command")
+    _validate_skill_options(args)
 
     profile = apply_profile_environment()
     if args.model == "unknown" and isinstance(profile.get("model"), str) and profile["model"].strip():
@@ -380,7 +432,7 @@ def main() -> None:
         print(f"Server metrics ready: {report['server_metrics_ready']}")
         raise SystemExit(0 if report["integration_ok"] else max(exit_code, 1))
 
-    if len(harnesses) == 1:
+    if len(harnesses) == 1 and not args.skill_ablation:
         exit_code = _run_single_harness(args, harnesses[0], tasks)
     else:
         exit_code = _run_matched_interleaved(args, harnesses, tasks)
