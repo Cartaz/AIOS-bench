@@ -63,11 +63,18 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
                 "transient_failures": 3,
                 "incomplete_responses": 8,
             },
+            "wide_retrieval": {
+                "corpus_size": 96,
+                "target_count": 12,
+                "duplicate_records": 12,
+                "conflict_records": 10,
+                "source_depth": 3,
+            },
         },
     )
 
     assert result["schema"] == "aios-bench/parametric-validation/v2"
-    assert result["checked_tasks"] == 6
+    assert result["checked_tasks"] == 7
     assert result["ok"] is True, result["failures"]
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
@@ -76,6 +83,7 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
         "dependency_world",
         "workspace_lineage",
         "tool_recovery",
+        "wide_retrieval",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
