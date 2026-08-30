@@ -16,6 +16,7 @@ from .parametric import (
     DependencyWorldPressure,
     ExpensePressure,
     StatefulWorldPressure,
+    WorkspaceLineagePressure,
 )
 from .paths import REPO_ROOT, RESULTS_ROOT, TASKS_ROOT
 from .publication import render_derived, verify_publication, write_publication_manifest
@@ -109,11 +110,22 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 dependency pressure: {exc}") from exc
+    try:
+        lineage = WorkspaceLineagePressure(
+            lineage_depth=args.v4_lineage_depth,
+            branch_count=args.v4_lineage_branches,
+            stale_revisions=args.v4_lineage_stale_revisions,
+            distractor_files=args.v4_lineage_distractors,
+            extra_settings=args.v4_lineage_extra_settings,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 lineage pressure: {exc}") from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
         "stateful_world": stateful.to_dict(),
         "dependency_world": dependency.to_dict(),
+        "workspace_lineage": lineage.to_dict(),
     }
 
 
@@ -233,6 +245,11 @@ def main() -> None:
     parser.add_argument("--v4-dependency-mutations", type=int, default=5, help="Frontier v4 dependency-world required-mutation coordinate")
     parser.add_argument("--v4-dependency-policy-distractors", type=int, default=3, help="Frontier v4 dependency-world archived-policy distractor coordinate")
     parser.add_argument("--v4-dependency-negative-constraints", type=int, default=6, help="Frontier v4 dependency-world near-miss preservation coordinate")
+    parser.add_argument("--v4-lineage-depth", type=int, default=4, help="Frontier v4 workspace-lineage root-to-leaf depth coordinate")
+    parser.add_argument("--v4-lineage-branches", type=int, default=3, help="Frontier v4 workspace-lineage branch-count coordinate")
+    parser.add_argument("--v4-lineage-stale-revisions", type=int, default=2, help="Frontier v4 workspace-lineage historical-revision coordinate")
+    parser.add_argument("--v4-lineage-distractors", type=int, default=4, help="Frontier v4 workspace-lineage unrelated-distractor coordinate")
+    parser.add_argument("--v4-lineage-extra-settings", type=int, default=2, help="Frontier v4 workspace-lineage extra-setting coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
