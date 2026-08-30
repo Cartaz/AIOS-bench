@@ -35,6 +35,7 @@ from .dependency_world import (
     generate_dependency_world_variant,
 )
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
+from .grading import VariantGrade
 from .stateful_world import (
     StatefulWorldPressure,
     check_stateful_world_variant,
@@ -44,6 +45,11 @@ from .tool_recovery import (
     ToolRecoveryPressure,
     check_tool_recovery_variant,
     generate_tool_recovery_variant,
+)
+from .wide_retrieval import (
+    WideRetrievalPressure,
+    generate_wide_retrieval_variant,
+    grade_wide_retrieval_variant,
 )
 from .workspace_lineage import (
     WorkspaceLineagePressure,
@@ -59,6 +65,7 @@ FAMILIES = {
     "dependency_world",
     "workspace_lineage",
     "tool_recovery",
+    "wide_retrieval",
 }
 
 _PRESSURE_TYPES = {
@@ -68,6 +75,7 @@ _PRESSURE_TYPES = {
     "dependency_world": DependencyWorldPressure,
     "workspace_lineage": WorkspaceLineagePressure,
     "tool_recovery": ToolRecoveryPressure,
+    "wide_retrieval": WideRetrievalPressure,
 }
 
 
@@ -76,10 +84,8 @@ def normalize_parameters(
 ) -> dict[str, dict[str, int]]:
     """Return validated effective coordinates for every registered family.
 
-    Suite manifests must record defaults too; otherwise adding a family can make
-    two GUI/CLI runs look comparable even though one path silently relied on an
-    unrecorded default. Keeping this registry here makes family ownership deep
-    and prevents every caller from maintaining its own default map.
+    Suite manifests record defaults too so execution identity changes whenever
+    effective workload semantics change, even when a caller relies on defaults.
     """
     supplied = parameters or {}
     unknown = set(supplied) - FAMILIES
@@ -114,6 +120,9 @@ def materialize_variant(
     if family == "workspace_lineage":
         pressure = WorkspaceLineagePressure.from_mapping(parameters or {})
         return generate_workspace_lineage_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "wide_retrieval":
+        pressure = WideRetrievalPressure.from_mapping(parameters or {})
+        return generate_wide_retrieval_variant(workspace, seed=int(seed), pressure=pressure)
     if family == "tool_recovery":
         pressure = ToolRecoveryPressure.from_mapping(parameters or {})
         oracle = generate_tool_recovery_variant(
@@ -200,6 +209,49 @@ def _check_tool_recovery(
     return True, f"{detail}; {provenance_detail}"
 
 
+def evaluate_variant(
+    family: str,
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    *,
+    run_dir: Path | None = None,
+    task_id: str | None = None,
+) -> VariantGrade:
+    """Grade one generated family through a common structured contract."""
+    if family == "wide_retrieval":
+        return grade_wide_retrieval_variant(workspace, oracle)
+    if family == "expense_report":
+        passed, detail = check_expense_variant(workspace, oracle)
+    elif family == "config_traversal":
+        passed, detail = check_config_traversal_variant(workspace, oracle)
+    elif family == "workspace_lineage":
+        passed, detail = check_workspace_lineage_variant(workspace, oracle)
+    elif family == "tool_recovery":
+        passed, detail = _check_tool_recovery(
+            workspace,
+            oracle,
+            run_dir=run_dir,
+            task_id=task_id,
+        )
+        failure_kind = None if passed else diagnose_tool_recovery_failure(
+            oracle,
+            run_dir=run_dir,
+            task_id=task_id,
+        )
+        return VariantGrade.binary(passed, detail, failure_kind=failure_kind)
+    elif family in {"stateful_world", "dependency_world"}:
+        passed, detail = _check_mediated_world(
+            family,
+            workspace,
+            oracle,
+            run_dir=run_dir,
+            task_id=task_id,
+        )
+    else:
+        return VariantGrade.binary(False, f"unknown parametric family: {family}")
+    return VariantGrade.binary(passed, detail)
+
+
 def check_variant(
     family: str,
     workspace: Path,
@@ -208,28 +260,14 @@ def check_variant(
     run_dir: Path | None = None,
     task_id: str | None = None,
 ) -> tuple[bool, str]:
-    if family == "expense_report":
-        return check_expense_variant(workspace, oracle)
-    if family == "config_traversal":
-        return check_config_traversal_variant(workspace, oracle)
-    if family == "workspace_lineage":
-        return check_workspace_lineage_variant(workspace, oracle)
-    if family == "tool_recovery":
-        return _check_tool_recovery(
-            workspace,
-            oracle,
-            run_dir=run_dir,
-            task_id=task_id,
-        )
-    if family in {"stateful_world", "dependency_world"}:
-        return _check_mediated_world(
-            family,
-            workspace,
-            oracle,
-            run_dir=run_dir,
-            task_id=task_id,
-        )
-    return False, f"unknown parametric family: {family}"
+    grade = evaluate_variant(
+        family,
+        workspace,
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+    return grade.passed, grade.detail
 
 
 def diagnose_variant_failure(
@@ -254,10 +292,13 @@ __all__ = [
     "ExpensePressure",
     "StatefulWorldPressure",
     "ToolRecoveryPressure",
+    "WideRetrievalPressure",
     "WorkspaceLineagePressure",
     "FAMILIES",
+    "VariantGrade",
     "check_variant",
     "diagnose_variant_failure",
+    "evaluate_variant",
     "materialize_variant",
     "normalize_parameters",
     "start_variant_runtime",
