@@ -171,7 +171,7 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
             pair_count=args.v4_epistemic_pairs,
             registry_size=args.v4_epistemic_registry_size,
             distractor_records=args.v4_epistemic_distractor_records,
-            archive_files=args.v4_epistemic_archive_files,
+            archive_revisions=args.v4_epistemic_archive_revisions,
             source_depth=args.v4_epistemic_source_depth,
         )
     except ValueError as exc:
@@ -350,7 +350,7 @@ def main() -> None:
     parser.add_argument("--v4-epistemic-pairs", type=int, default=6, help="Frontier v4 epistemic-twin pair-count coordinate")
     parser.add_argument("--v4-epistemic-registry-size", type=int, default=48, help="Frontier v4 epistemic authoritative-registry size coordinate")
     parser.add_argument("--v4-epistemic-distractor-records", type=int, default=12, help="Frontier v4 epistemic stale-record distractor coordinate")
-    parser.add_argument("--v4-epistemic-archive-files", type=int, default=3, help="Frontier v4 epistemic archive-file coordinate")
+    parser.add_argument("--v4-epistemic-archive-revisions", type=int, default=3, help="Frontier v4 epistemic archived policy/registry revision coordinate")
     parser.add_argument("--v4-epistemic-source-depth", type=int, default=3, help="Frontier v4 epistemic authoritative source-depth coordinate")
     parser.add_argument(
         "--server-metrics-url",
