@@ -54,7 +54,7 @@ def _args(**overrides):
         "v4_epistemic_pairs": 6,
         "v4_epistemic_registry_size": 48,
         "v4_epistemic_distractor_records": 12,
-        "v4_epistemic_archive_files": 3,
+        "v4_epistemic_archive_revisions": 3,
         "v4_epistemic_source_depth": 3,
     }
     values.update(overrides)
@@ -135,7 +135,7 @@ def test_v4_parameters_include_every_active_family():
             "pair_count": 6,
             "registry_size": 48,
             "distractor_records": 12,
-            "archive_files": 3,
+            "archive_revisions": 3,
             "source_depth": 3,
         },
     }
@@ -312,7 +312,7 @@ def test_v4_epistemic_pressure_is_configurable():
             v4_epistemic_pairs=10,
             v4_epistemic_registry_size=80,
             v4_epistemic_distractor_records=24,
-            v4_epistemic_archive_files=6,
+            v4_epistemic_archive_revisions=6,
             v4_epistemic_source_depth=5,
         )
     )
@@ -321,7 +321,7 @@ def test_v4_epistemic_pressure_is_configurable():
         "pair_count": 10,
         "registry_size": 80,
         "distractor_records": 24,
-        "archive_files": 6,
+        "archive_revisions": 6,
         "source_depth": 5,
     }
 
@@ -559,7 +559,7 @@ def test_epistemic_variant_identity_records_effective_pressure(tmp_path: Path):
             v4_epistemic_pairs=8,
             v4_epistemic_registry_size=64,
             v4_epistemic_distractor_records=20,
-            v4_epistemic_archive_files=5,
+            v4_epistemic_archive_revisions=5,
             v4_epistemic_source_depth=4,
         )
     )
@@ -577,7 +577,7 @@ def test_epistemic_variant_identity_records_effective_pressure(tmp_path: Path):
         "pair_count": 8,
         "registry_size": 64,
         "distractor_records": 20,
-        "archive_files": 5,
+        "archive_revisions": 5,
         "source_depth": 4,
     }
     assert identity["variant_digest"]
