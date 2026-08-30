@@ -119,8 +119,8 @@ def _decoy_value(value: Any, rng: random.Random) -> Any:
         delta = rng.randint(1, 17)
         return value + delta if rng.choice([True, False]) else max(0, value - delta)
     if isinstance(value, str):
-        return f"legacy-{rng.randint(10, 99)}-{value}"
-    return f"legacy-{rng.randint(100, 999)}"
+        return f"inactive-{rng.randint(10, 99)}-{value}"
+    return f"inactive-{rng.randint(100, 999)}"
 
 
 def _logical_nodes(pressure: WorkspaceLineagePressure) -> tuple[str, list[list[str]]]:
@@ -133,6 +133,21 @@ def _logical_nodes(pressure: WorkspaceLineagePressure) -> tuple[str, list[list[s
         ]
         branches.append(branch_nodes)
     return shared, branches
+
+
+def _snapshot_revision(current_revision: int, snapshot: int) -> int:
+    """Choose inactive revisions on both sides of the active pin.
+
+    Odd snapshots are newer-looking unreleased revisions and even snapshots are
+    older historical revisions. This deliberately makes "pick the highest
+    revision" an invalid shortcut while preserving deterministic coherent DAGs.
+    """
+    if snapshot == 0:
+        return current_revision
+    distance = (snapshot + 1) // 2
+    if snapshot % 2:
+        return current_revision + distance
+    return current_revision - distance
 
 
 def generate_workspace_lineage_variant(
@@ -185,12 +200,15 @@ def generate_workspace_lineage_variant(
     stale_source_paths: list[str] = []
     protected: list[str] = []
 
-    def dependencies_for(node_id: str, *, offset: int) -> list[dict[str, Any]]:
+    def revision_for(node_id: str, snapshot: int) -> int:
+        return _snapshot_revision(current_revisions[node_id], snapshot)
+
+    def dependencies_for(node_id: str, *, snapshot: int) -> list[dict[str, Any]]:
         if node_id == "release":
             return [
                 {
                     "node_id": branch[0],
-                    "revision": current_revisions[branch[0]] - offset,
+                    "revision": revision_for(branch[0], snapshot),
                 }
                 for branch in branches
             ]
@@ -201,13 +219,13 @@ def generate_workspace_lineage_variant(
                     child = branch[index + 1]
                 else:
                     child = shared_id
-                return [{"node_id": child, "revision": current_revisions[child] - offset}]
+                return [{"node_id": child, "revision": revision_for(child, snapshot)}]
         return []
 
-    for offset in range(0, pressure.stale_revisions + 1):
-        current = offset == 0
+    for snapshot in range(0, pressure.stale_revisions + 1):
+        current = snapshot == 0
         for node_id in logical_ids:
-            revision = current_revisions[node_id] - offset
+            revision = revision_for(node_id, snapshot)
             source_relative = _source_path(node_id, revision)
             node_relative = _node_path(node_id, revision)
             if current:
@@ -237,12 +255,12 @@ def generate_workspace_lineage_variant(
             node_payload: dict[str, Any] = {
                 "node_id": node_id,
                 "revision": revision,
-                "requires": dependencies_for(node_id, offset=offset),
+                "requires": dependencies_for(node_id, snapshot=snapshot),
                 "source": source_relative,
             }
             if node_id == "release":
                 node_payload["release_id"] = (
-                    release_id if current else f"historical-{release_id}-{offset}"
+                    release_id if current else f"inactive-{release_id}-{snapshot}"
                 )
                 node_payload["consumer"] = consumer_path
             _write_json(workspace / node_relative, node_payload)
@@ -281,13 +299,14 @@ def generate_workspace_lineage_variant(
         "then follow each node's exact `node_id` + `revision` requirements through "
         "`lineage/nodes/`. Do not substitute a newer-looking or older revision. The active "
         "graph is a DAG: every root-to-shared-base path is authoritative, and only sources "
-        "referenced by the pinned graph contribute effective settings. Historical node "
-        "revisions and unrelated config files are distractors.\n\n"
+        "referenced by the pinned graph contribute effective settings. Inactive node "
+        "revisions include both historical and newer unreleased snapshots; unrelated config "
+        "files are additional distractors.\n\n"
         "Create `reports/workspace_lineage.json` with exactly these semantic fields: "
         "`active_release` (string), `root` (`node_id@revision`), `lineage_paths` (array of "
         "root-to-shared-base arrays using `node_id@revision`), `effective_settings` (object), "
         "`consumer_path` (string), and `ignored_stale_sources` (array containing every source "
-        "file referenced only by historical revisions). Do not modify any existing file.\n",
+        "file referenced only by inactive revisions). Do not modify any existing file.\n",
         encoding="utf-8",
     )
     protected.append("README.md")
