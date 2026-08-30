@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
-from .parametric import check_variant
+from .parametric import check_variant, diagnose_variant_failure
 from .reference_checks import check_task
 
 
@@ -91,6 +91,7 @@ def evaluate_artifacts(
         kind = check["type"]
         path = check.get("path", "")
         detail = ""
+        failure_kind: str | None = None
         try:
             if kind == "exists":
                 passed = file_exists(workspace, path)
@@ -144,16 +145,24 @@ def evaluate_artifacts(
                 passed, detail = reference_result
             elif kind == "parametric_reference":
                 task_id = str(check["task_id"])
+                family = str(check["family"])
                 oracle = _load_parametric_oracle(run_dir, task_id)
-                if oracle.get("family") != check.get("family"):
+                if oracle.get("family") != family:
                     raise EvaluationError("parametric family/oracle mismatch")
                 passed, detail = check_variant(
-                    str(check["family"]),
+                    family,
                     workspace,
                     oracle,
                     run_dir=run_dir,
                     task_id=task_id,
                 )
+                if not passed:
+                    failure_kind = diagnose_variant_failure(
+                        family,
+                        oracle,
+                        run_dir=run_dir,
+                        task_id=task_id,
+                    )
             elif kind == "max_files":
                 candidate = _safe_path(workspace, path or ".")
                 count = sum(1 for item in candidate.rglob("*") if item.is_file()) if candidate.exists() else 0
@@ -171,6 +180,7 @@ def evaluate_artifacts(
             "passed": passed,
             "weight": float(check.get("weight", 1.0)),
             "detail": detail,
+            "failure_kind": failure_kind,
         })
 
     total = sum(result["weight"] for result in results) or 1.0
@@ -180,11 +190,20 @@ def evaluate_artifacts(
         for result in results
     )
     score = earned / total
+    failure_kind = next(
+        (
+            str(result["failure_kind"])
+            for result in results
+            if not result["passed"] and result.get("failure_kind")
+        ),
+        None,
+    )
     return {
         "passed": not fatal and score >= 0.80,
         "acceptance_score": score,
         "checks_passed": sum(result["passed"] for result in results),
         "checks_total": len(results),
+        "failure_kind": failure_kind,
         "results": results,
     }
 
