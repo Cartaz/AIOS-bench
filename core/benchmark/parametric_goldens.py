@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .golden_solutions import materialize_parametric_golden as _legacy_materializer
+from .tool_recovery_service import (
+    ToolRecoveryError,
+    ToolRecoveryService,
+    tool_action_log_path,
+)
 from .world_service import (
     SupportDependencyWorldService,
     SupportWorldService,
@@ -108,6 +113,60 @@ def _mediated_world_golden(
     return []
 
 
+def _tool_recovery_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    *,
+    run_dir: Path,
+    task_id: str,
+) -> list[dict[str, Any]]:
+    state_path = str(oracle.get("state_path", ""))
+    targets = oracle.get("target_ids")
+    incomplete = oracle.get("incomplete_case_ids")
+    ambiguous = {str(value) for value in (oracle.get("ambiguous_write_case_ids") or [])}
+    if not state_path or not isinstance(targets, list) or not isinstance(incomplete, list):
+        raise ValueError("invalid tool recovery oracle")
+
+    service = ToolRecoveryService(
+        workspace / state_path,
+        tool_action_log_path(run_dir, task_id),
+        oracle,
+    )
+    service.invoke("cases.list", {})
+    for case_id in incomplete:
+        arguments = {"case_id": str(case_id)}
+        try:
+            service.invoke("cases.get", arguments)
+        except ToolRecoveryError as exc:
+            if not exc.retryable:
+                raise
+            service.invoke("cases.get", arguments)
+
+    for index, case_id in enumerate(targets, 1):
+        case = str(case_id)
+        arguments = {
+            "case_id": case,
+            "idempotency_key": f"golden-{index}-{case}",
+        }
+        try:
+            service.invoke("actions.process", arguments)
+        except ToolRecoveryError as exc:
+            if not exc.retryable or case not in ambiguous:
+                raise
+            service.invoke("actions.process", arguments)
+
+    payload = {
+        "processed_case_ids": [str(value) for value in targets],
+        "recovered_case_ids": sorted(ambiguous),
+    }
+    _write(
+        workspace,
+        "reports/tool_recovery_summary.json",
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+    )
+    return []
+
+
 def materialize_parametric_golden(
     family: str,
     workspace: Path,
@@ -130,6 +189,15 @@ def materialize_parametric_golden(
             run_dir=run_dir,
             task_id=task_id,
             service_class=service_class,
+        )
+    if family == "tool_recovery":
+        if run_dir is None or not task_id:
+            raise ValueError("tool_recovery golden requires run_dir and task_id")
+        return _tool_recovery_golden(
+            workspace,
+            oracle,
+            run_dir=run_dir,
+            task_id=task_id,
         )
     if family == "config_traversal":
         return _config_traversal_golden(workspace, oracle)
