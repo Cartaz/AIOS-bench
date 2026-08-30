@@ -27,6 +27,7 @@ class SuiteDefinition:
 
 
 NON_SEMANTIC_MODULES = frozenset({
+    "ablations.py",
     "cli.py",
     "config.py",
     "dashboard.py",
