@@ -26,6 +26,7 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
         "stateful_support_001",
         "support_dependency_001",
         "tool_use_config_001",
+        "tool_use_lineage_001",
     }
 
 
@@ -54,6 +55,7 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "config_traversal",
             "stateful_world",
             "dependency_world",
+            "workspace_lineage",
         }
         assert coordinates["dependency_world"] == {
             "entity_count": 30,
@@ -61,6 +63,13 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "required_mutations": 5,
             "distractor_policies": 3,
             "negative_constraints": 6,
+        }
+        assert coordinates["workspace_lineage"] == {
+            "lineage_depth": 4,
+            "branch_count": 3,
+            "stale_revisions": 2,
+            "distractor_files": 4,
+            "extra_settings": 2,
         }
     finally:
         runner.abort(tasks)
