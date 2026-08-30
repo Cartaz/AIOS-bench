@@ -4,6 +4,7 @@ from typing import Any, Mapping
 
 from .frontier_runner import SuiteDefinition
 from .materialization import ParametricTaskMaterializer, StaticTaskMaterializer
+from .parametric import normalize_parameters
 
 
 def frontier_v3_suite() -> SuiteDefinition:
@@ -20,10 +21,7 @@ def frontier_v4_suite(
     variant_base_seed: int = 42,
     parametric_parameters: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> SuiteDefinition:
-    parameters = {
-        str(family): dict(values)
-        for family, values in (parametric_parameters or {}).items()
-    }
+    parameters = normalize_parameters(parametric_parameters)
     return SuiteDefinition(
         name="frontier_v4",
         catalog_dir="frontier_v4",
