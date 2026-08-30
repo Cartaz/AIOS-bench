@@ -88,11 +88,18 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "conflict_records": 14,
                 "source_depth": 4,
             },
+            "cross_artifact": {
+                "row_count": 90,
+                "group_count": 7,
+                "excluded_rows": 15,
+                "adjustment_rows": 10,
+                "distractor_files": 4,
+            },
         },
     )
 
     assert result["ok"] is True
-    assert result["checked_tasks"] == 7
+    assert result["checked_tasks"] == 8
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
@@ -101,6 +108,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         "workspace_lineage",
         "tool_recovery",
         "wide_retrieval",
+        "cross_artifact",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
