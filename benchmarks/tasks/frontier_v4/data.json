@@ -1,0 +1,16 @@
+[
+  {
+    "id": "data_cross_artifact_001",
+    "category": "data",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Produce two independently consumable deliverables from the same authoritative generated ledger. Read README.md and source/AUTHORITY.json, use only the current authoritative ledger, apply the declared posted-row transformation exactly, preserve every existing source file unchanged, and create both reports/account_summary.json and reports/account_summary.md in the required schemas. Every account must appear exactly once in each artifact, no unsupported account or claim may appear, integer-cent totals must be exact, and the JSON and Markdown must reconcile field-for-field. Row count, account-group count, excluded rows, negative adjustment rows and archived distractor files vary by seed and pressure coordinates, so derive all values from the generated workspace rather than fixture-specific assumptions.",
+    "mode": "cold",
+    "tags": ["data", "frontier_v4", "parametric", "cross_artifact", "reconciliation", "structured_output", "negative_constraints", "authoritative_source"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/account_summary.json", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "reports/account_summary.md", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "cross_artifact", "task_id": "data_cross_artifact_001", "weight": 8, "fatal": true}
+    ]
+  }
+]
