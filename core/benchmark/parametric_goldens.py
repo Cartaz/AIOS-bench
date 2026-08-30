@@ -104,6 +104,51 @@ def _wide_retrieval_golden(
     return []
 
 
+def _cross_artifact_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    expected = oracle.get("expected")
+    if not isinstance(expected, Mapping):
+        raise ValueError("invalid cross-artifact oracle")
+    groups = expected.get("groups")
+    if not isinstance(groups, list) or not all(isinstance(row, Mapping) for row in groups):
+        raise ValueError("invalid cross-artifact groups")
+
+    payload = {
+        "source": expected.get("source"),
+        "groups": [dict(row) for row in groups],
+        "posted_count": expected.get("posted_count"),
+        "grand_total_cents": expected.get("grand_total_cents"),
+    }
+    _write(
+        workspace,
+        "reports/account_summary.json",
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+    )
+
+    lines = [
+        "# Account summary",
+        "",
+        f"source: {expected.get('source')}",
+        "",
+        "| account | posted_count | net_cents |",
+        "| --- | ---: | ---: |",
+    ]
+    for row in groups:
+        lines.append(
+            f"| {row['account']} | {row['posted_count']} | {row['net_cents']} |"
+        )
+    lines.extend([
+        "",
+        f"posted_count: {expected.get('posted_count')}",
+        f"grand_total_cents: {expected.get('grand_total_cents')}",
+        "",
+    ])
+    _write(workspace, "reports/account_summary.md", "\n".join(lines))
+    return []
+
+
 def _mediated_world_golden(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -227,6 +272,8 @@ def materialize_parametric_golden(
         return _workspace_lineage_golden(workspace, oracle)
     if family == "wide_retrieval":
         return _wide_retrieval_golden(workspace, oracle)
+    if family == "cross_artifact":
+        return _cross_artifact_golden(workspace, oracle)
     return _legacy_materializer(family, workspace, oracle)
 
 
