@@ -341,21 +341,26 @@ def _load_result(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     return value, None
 
 
-def _observed_decisions(value: Any) -> tuple[dict[str, Mapping[str, Any]], set[str]]:
+def _observed_decisions(
+    value: Any,
+) -> tuple[dict[str, Mapping[str, Any]], set[str], int]:
     if not isinstance(value, list):
-        return {}, set()
+        return {}, set(), 0
     observed: dict[str, Mapping[str, Any]] = {}
     duplicates: set[str] = set()
+    invalid_count = 0
     for item in value:
         if not isinstance(item, Mapping):
+            invalid_count += 1
             continue
-        case_id = str(item.get("case_id", ""))
+        case_id = str(item.get("case_id", "")).strip()
         if not case_id:
+            invalid_count += 1
             continue
         if case_id in observed:
             duplicates.add(case_id)
         observed[case_id] = item
-    return observed, duplicates
+    return observed, duplicates, invalid_count
 
 
 def _row_exact(observed: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
@@ -417,12 +422,13 @@ def grade_epistemic_twins_variant(
                     "missing_case_count": len(expected),
                     "extra_case_count": 0,
                     "duplicate_case_count": 0,
+                    "invalid_decision_count": 0,
                     "source_correct": False,
                 }
             },
         )
 
-    observed, duplicates = _observed_decisions(result.get("decisions"))
+    observed, duplicates, invalid_count = _observed_decisions(result.get("decisions"))
     expected_ids = set(expected)
     observed_ids = set(observed)
     missing = expected_ids - observed_ids
@@ -502,6 +508,7 @@ def grade_epistemic_twins_variant(
         "missing_case_count": len(missing),
         "extra_case_count": len(extra),
         "duplicate_case_count": len(duplicates),
+        "invalid_decision_count": invalid_count,
         "source_correct": source_correct,
     }
     strict = (
@@ -509,6 +516,7 @@ def grade_epistemic_twins_variant(
         and not missing
         and not extra
         and not duplicates
+        and invalid_count == 0
         and full_correct == case_count
         and case_count > 0
     )
@@ -534,7 +542,8 @@ def grade_epistemic_twins_variant(
         "epistemic twin mismatch: "
         f"full={full_correct}/{case_count}, valid_accept={valid_accepts}/{valid_count}, "
         f"corrupt_reject={corrupted_rejects}/{corrupted_count}, missing={len(missing)}, "
-        f"extra={len(extra)}, duplicate={len(duplicates)}, source_correct={source_correct}"
+        f"extra={len(extra)}, duplicate={len(duplicates)}, invalid={invalid_count}, "
+        f"source_correct={source_correct}"
     )
     return VariantGrade(
         passed=False,
