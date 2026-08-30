@@ -74,17 +74,25 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "distractor_files": 5,
                 "extra_settings": 3,
             },
+            "tool_recovery": {
+                "case_count": 30,
+                "required_actions": 6,
+                "distractor_tools": 6,
+                "transient_failures": 5,
+                "incomplete_responses": 10,
+            },
         },
     )
 
     assert result["ok"] is True
-    assert result["checked_tasks"] == 5
+    assert result["checked_tasks"] == 6
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
         "stateful_world",
         "dependency_world",
         "workspace_lineage",
+        "tool_recovery",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
