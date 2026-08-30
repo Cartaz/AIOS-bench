@@ -23,6 +23,13 @@ def test_parametric_registry_records_defaults_for_every_family() -> None:
         "conflict_records": 10,
         "source_depth": 3,
     }
+    assert parameters["cross_artifact"] == {
+        "row_count": 72,
+        "group_count": 6,
+        "excluded_rows": 12,
+        "adjustment_rows": 8,
+        "distractor_files": 3,
+    }
 
 
 def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> None:
@@ -44,6 +51,7 @@ def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> N
         "months": 6,
     }
     assert parameters["wide_retrieval"]["target_count"] == 12
+    assert parameters["cross_artifact"]["group_count"] == 6
 
 
 def test_parametric_registry_rejects_unknown_family() -> None:
