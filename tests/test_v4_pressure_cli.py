@@ -41,6 +41,11 @@ def _args(**overrides):
         "v4_tool_distractors": 4,
         "v4_tool_transient_failures": 3,
         "v4_tool_incomplete_responses": 8,
+        "v4_retrieval_corpus_size": 96,
+        "v4_retrieval_targets": 12,
+        "v4_retrieval_duplicates": 12,
+        "v4_retrieval_conflicts": 10,
+        "v4_retrieval_source_depth": 3,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -101,6 +106,13 @@ def test_v4_parameters_include_every_active_family():
             "distractor_tools": 4,
             "transient_failures": 3,
             "incomplete_responses": 8,
+        },
+        "wide_retrieval": {
+            "corpus_size": 96,
+            "target_count": 12,
+            "duplicate_records": 12,
+            "conflict_records": 10,
+            "source_depth": 3,
         },
     }
 
@@ -218,6 +230,31 @@ def test_v4_tool_recovery_pressure_is_configurable():
 def test_v4_tool_recovery_pressure_rejects_invalid_coordinates():
     with pytest.raises(SystemExit, match="invalid Frontier v4 tool recovery pressure"):
         cli._v4_parameters(_args(v4_tool_actions=20))
+
+
+def test_v4_retrieval_pressure_is_configurable():
+    parameters = cli._v4_parameters(
+        _args(
+            v4_retrieval_corpus_size=160,
+            v4_retrieval_targets=20,
+            v4_retrieval_duplicates=30,
+            v4_retrieval_conflicts=18,
+            v4_retrieval_source_depth=5,
+        )
+    )
+
+    assert parameters["wide_retrieval"] == {
+        "corpus_size": 160,
+        "target_count": 20,
+        "duplicate_records": 30,
+        "conflict_records": 18,
+        "source_depth": 5,
+    }
+
+
+def test_v4_retrieval_pressure_rejects_invalid_coordinates():
+    with pytest.raises(SystemExit, match="invalid Frontier v4 retrieval pressure"):
+        cli._v4_parameters(_args(v4_retrieval_corpus_size=12))
 
 
 def test_skill_ablation_expands_to_both_conditions():
@@ -378,5 +415,35 @@ def test_tool_recovery_variant_identity_records_effective_pressure(tmp_path: Pat
         "distractor_tools": 10,
         "transient_failures": 7,
         "incomplete_responses": 14,
+    }
+    assert identity["variant_digest"]
+
+
+def test_retrieval_variant_identity_records_effective_pressure(tmp_path: Path):
+    parameters = cli._v4_parameters(
+        _args(
+            v4_retrieval_corpus_size=144,
+            v4_retrieval_targets=18,
+            v4_retrieval_duplicates=24,
+            v4_retrieval_conflicts=16,
+            v4_retrieval_source_depth=4,
+        )
+    )
+    runner = _runner(tmp_path / "retrieval-identity", parameters)
+    task = next(
+        task for task in load_tasks(TASK_ROOT, "frontier_v4")
+        if task.id == "retrieval_wide_001"
+    )
+
+    runner._workspace(task)
+    identity = runner._result_identity(task)
+
+    assert identity["variant_family"] == "wide_retrieval"
+    assert identity["variant_parameters"] == {
+        "corpus_size": 144,
+        "target_count": 18,
+        "duplicate_records": 24,
+        "conflict_records": 16,
+        "source_depth": 4,
     }
     assert identity["variant_digest"]
