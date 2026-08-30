@@ -45,9 +45,9 @@ Persistent/operational state is owned by Python. JavaScript never writes setting
 Frontier v3 and v4 remain separate scientific catalogs so historical results and benchmark semantics stay identifiable, but they share one `FrontierRunner` execution engine.
 
 - **Frontier v3** uses frozen/static task fixtures through `StaticTaskMaterializer`. Task-specific fixture preparation is declared by catalog `setup` entries rather than hard-coded task IDs in the materializer.
-- **Frontier v4** uses deterministic seeded families through `ParametricTaskMaterializer`, with generated grader oracles stored outside the agent workspace.
+- **Frontier v4** uses deterministic seeded families through `ParametricTaskMaterializer`, with generated grader oracles stored outside the agent workspace. Its `workspace_lineage` family generates revision-pinned DAGs with coherent historical revisions and unrelated configuration distractors, requiring agents to recover provenance before deriving effective state.
 
-Materialization is a task/suite concern; harness execution, lifecycle, telemetry, scoring, persistence and scheduling are shared. A future catalog therefore does not require a new execution engine merely because its task materialization strategy changes.
+Materialization is a task/suite concern; harness execution, lifecycle, telemetry, scoring, persistence and scheduling are shared. Frontier v4 pressure defaults are normalized in the parametric family registry so CLI and desktop runs record the same complete coordinate set in execution identity. A future catalog therefore does not require a new execution engine merely because its task materialization strategy changes.
 
 Only `benchmarks/tasks/frontier_v3/` and `benchmarks/tasks/frontier_v4/` are active Frontier catalogs. Root-level task JSON files and `frontier_v2.json` are retained historical assets and are not loaded by the desktop/current Frontier services. See `benchmarks/tasks/README.md`.
 
