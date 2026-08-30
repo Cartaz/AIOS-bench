@@ -26,6 +26,12 @@ def _write_valid_report(workspace: Path, oracle: dict) -> None:
     )
 
 
+def _source_identity(relative: str) -> tuple[str, int]:
+    name = Path(relative).name.removesuffix(".json")
+    node_id, revision = name.rsplit(".r", 1)
+    return node_id, int(revision)
+
+
 def test_workspace_lineage_is_deterministic_for_same_seed(tmp_path: Path) -> None:
     pressure = WorkspaceLineagePressure(
         lineage_depth=5,
@@ -102,6 +108,11 @@ def test_workspace_lineage_materializes_revision_pinned_dag(tmp_path: Path) -> N
     assert all(path.startswith("config/sources/") for path in oracle["stale_source_paths"])
     assert not any("current" in path or "history" in path for path in oracle["stale_source_paths"])
 
+    current = dict(_source_identity(path) for path in oracle["current_source_paths"])
+    inactive = [_source_identity(path) for path in oracle["stale_source_paths"]]
+    assert any(revision > current[node_id] for node_id, revision in inactive)
+    assert any(revision < current[node_id] for node_id, revision in inactive)
+
 
 def test_workspace_lineage_accepts_exact_grounded_report(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
@@ -121,7 +132,7 @@ def test_workspace_lineage_rejects_stale_revision_substitution(tmp_path: Path) -
     report = json.loads(report_path.read_text(encoding="utf-8"))
     current = report["lineage_paths"][0][1]
     node_id, revision = current.rsplit("@", 1)
-    report["lineage_paths"][0][1] = f"{node_id}@{int(revision) - 1}"
+    report["lineage_paths"][0][1] = f"{node_id}@{int(revision) + 1}"
     report_path.write_text(json.dumps(report), encoding="utf-8")
 
     passed, detail = check_variant("workspace_lineage", workspace, oracle)
