@@ -30,6 +30,7 @@ NON_SEMANTIC_MODULES = frozenset({
     "ablations.py",
     "cli.py",
     "config.py",
+    "cross_artifact_analysis.py",
     "dashboard.py",
     "doctor.py",
     "frontier_v3_runner.py",
