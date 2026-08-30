@@ -30,6 +30,13 @@ def test_parametric_registry_records_defaults_for_every_family() -> None:
         "adjustment_rows": 8,
         "distractor_files": 3,
     }
+    assert parameters["epistemic_twins"] == {
+        "pair_count": 6,
+        "registry_size": 48,
+        "distractor_records": 12,
+        "archive_files": 3,
+        "source_depth": 3,
+    }
 
 
 def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> None:
@@ -52,6 +59,7 @@ def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> N
     }
     assert parameters["wide_retrieval"]["target_count"] == 12
     assert parameters["cross_artifact"]["group_count"] == 6
+    assert parameters["epistemic_twins"]["pair_count"] == 6
 
 
 def test_parametric_registry_rejects_unknown_family() -> None:
