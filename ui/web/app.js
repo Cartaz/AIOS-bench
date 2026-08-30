@@ -119,6 +119,13 @@ async function loadCatalog() {
   state.catalog = catalog;
   state.harnesses = new Set(catalog.harnesses.map(h => h.id));
   state.tasks = new Set(catalog.tasks.map(t => t.id));
+  const supportsSkills = catalog.suite === 'frontier_v4' && (catalog.skill_modes || []).length > 0;
+  $('skillMode').disabled = !supportsSkills;
+  $('skillAblation').disabled = !supportsSkills;
+  if (!supportsSkills) {
+    $('skillMode').value = 'no_skill';
+    $('skillAblation').checked = false;
+  }
   renderHarnesses();
   renderTasks();
 }
@@ -223,6 +230,8 @@ function bindUiEvents() {
       seed: Number($('seed').value),
       task_timeout: Number($('timeout').value),
       total_timeout: totalTimeout ? Number(totalTimeout) : null,
+      skill_mode: $('skillMode').value,
+      skill_ablation: $('skillAblation').checked,
     };
     void state.backend.startRun(payload).then(ok => {
       if (ok) setRunState({ running: true, busy: true });
