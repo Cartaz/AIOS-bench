@@ -36,6 +36,11 @@ def _args(**overrides):
         "v4_lineage_stale_revisions": 2,
         "v4_lineage_distractors": 4,
         "v4_lineage_extra_settings": 2,
+        "v4_tool_cases": 24,
+        "v4_tool_actions": 5,
+        "v4_tool_distractors": 4,
+        "v4_tool_transient_failures": 3,
+        "v4_tool_incomplete_responses": 8,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -89,6 +94,13 @@ def test_v4_parameters_include_every_active_family():
             "stale_revisions": 2,
             "distractor_files": 4,
             "extra_settings": 2,
+        },
+        "tool_recovery": {
+            "case_count": 24,
+            "required_actions": 5,
+            "distractor_tools": 4,
+            "transient_failures": 3,
+            "incomplete_responses": 8,
         },
     }
 
@@ -181,6 +193,41 @@ def test_v4_lineage_pressure_is_configurable():
 def test_v4_lineage_pressure_rejects_invalid_coordinates():
     with pytest.raises(SystemExit, match="invalid Frontier v4 lineage pressure"):
         cli._v4_parameters(_args(v4_lineage_depth=2))
+
+
+def test_v4_tool_recovery_pressure_is_configurable():
+    parameters = cli._v4_parameters(
+        _args(
+            v4_tool_cases=48,
+            v4_tool_actions=10,
+            v4_tool_distractors=12,
+            v4_tool_transient_failures=9,
+            v4_tool_incomplete_responses=16,
+        )
+    )
+
+    assert parameters["tool_recovery"] == {
+        "case_count": 48,
+        "required_actions": 10,
+        "distractor_tools": 12,
+        "transient_failures": 9,
+        "incomplete_responses": 16,
+    }
+
+
+def test_v4_tool_recovery_pressure_rejects_invalid_coordinates():
+    with pytest.raises(SystemExit, match="invalid Frontier v4 tool recovery pressure"):
+        cli._v4_parameters(_args(v4_tool_actions=20))
+
+
+def test_skill_ablation_expands_to_both_conditions():
+    args = SimpleNamespace(skill_ablation=True, skill_mode="curated_skill")
+    assert cli._execution_skill_modes(args) == ("no_skill", "curated_skill")
+
+
+def test_single_skill_condition_is_preserved():
+    args = SimpleNamespace(skill_ablation=False, skill_mode="curated_skill")
+    assert cli._execution_skill_modes(args) == ("curated_skill",)
 
 
 def test_config_pressure_changes_execution_fingerprint_not_landscape_profile(tmp_path: Path):
@@ -301,5 +348,35 @@ def test_lineage_variant_identity_records_effective_pressure(tmp_path: Path):
         "stale_revisions": 4,
         "distractor_files": 8,
         "extra_settings": 5,
+    }
+    assert identity["variant_digest"]
+
+
+def test_tool_recovery_variant_identity_records_effective_pressure(tmp_path: Path):
+    parameters = cli._v4_parameters(
+        _args(
+            v4_tool_cases=40,
+            v4_tool_actions=8,
+            v4_tool_distractors=10,
+            v4_tool_transient_failures=7,
+            v4_tool_incomplete_responses=14,
+        )
+    )
+    runner = _runner(tmp_path / "tool-recovery-identity", parameters)
+    task = next(
+        task for task in load_tasks(TASK_ROOT, "frontier_v4")
+        if task.id == "tool_recovery_001"
+    )
+
+    runner._workspace(task)
+    identity = runner._result_identity(task)
+
+    assert identity["variant_family"] == "tool_recovery"
+    assert identity["variant_parameters"] == {
+        "case_count": 40,
+        "required_actions": 8,
+        "distractor_tools": 10,
+        "transient_failures": 7,
+        "incomplete_responses": 14,
     }
     assert identity["variant_digest"]
