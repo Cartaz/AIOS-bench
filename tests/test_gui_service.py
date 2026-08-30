@@ -26,6 +26,7 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
         "autonomy_expense_001",
         "stateful_support_001",
         "support_dependency_001",
+        "retrieval_wide_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
         "tool_recovery_001",
@@ -60,6 +61,7 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "dependency_world",
             "workspace_lineage",
             "tool_recovery",
+            "wide_retrieval",
         }
         assert coordinates["dependency_world"] == {
             "entity_count": 30,
@@ -81,6 +83,13 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "distractor_tools": 4,
             "transient_failures": 3,
             "incomplete_responses": 8,
+        }
+        assert coordinates["wide_retrieval"] == {
+            "corpus_size": 96,
+            "target_count": 12,
+            "duplicate_records": 12,
+            "conflict_records": 10,
+            "source_depth": 3,
         }
     finally:
         runner.abort(tasks)
