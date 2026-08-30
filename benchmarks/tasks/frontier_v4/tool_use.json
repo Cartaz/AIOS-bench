@@ -11,5 +11,18 @@
       {"type": "exists", "path": "reports/effective_config.md", "weight": 1, "fatal": true},
       {"type": "parametric_reference", "family": "config_traversal", "task_id": "tool_use_config_001", "weight": 9, "fatal": true}
     ]
+  },
+  {
+    "id": "tool_use_lineage_001",
+    "category": "tool_use",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Reconstruct the active deployment lineage from the generated workspace. Start with README.md and the revision-pinned current release, then follow every exact node dependency through the lineage DAG. Merge settings only from sources referenced by the active pinned graph, identify every source that belongs only to historical revisions, ignore unrelated legacy configuration, and record the consumer path. Save the result exactly as described by README.md in reports/workspace_lineage.json. Do not modify any existing file. Lineage depth, branch count, historical revision count, distractor count, and effective-setting count vary by seed and pressure coordinates, so derive everything from the workspace rather than fixture-specific constants or filename recency.",
+    "mode": "cold",
+    "tags": ["tool_use", "frontier_v4", "parametric", "grounded", "workspace_lineage", "dag", "provenance", "revision_pinning", "stale_sources"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/workspace_lineage.json", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "workspace_lineage", "task_id": "tool_use_lineage_001", "weight": 9, "fatal": true}
+    ]
   }
 ]
