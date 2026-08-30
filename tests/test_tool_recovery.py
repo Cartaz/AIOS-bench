@@ -8,6 +8,7 @@ import pytest
 from aios_bench.evaluators import evaluate_artifacts
 from aios_bench.failures import (
     RECOVERY_FAILURE,
+    RETRY_LOOP,
     TOOL_SCHEMA_ERROR,
     TOOL_SELECTION_ERROR,
     classify_failure,
@@ -220,6 +221,50 @@ def test_tool_recovery_diagnoses_tool_selection_and_schema_errors(tmp_path: Path
         run_dir=second_run,
         task_id="tool_recovery_001",
     ) == TOOL_SCHEMA_ERROR
+
+
+def test_tool_recovery_invalid_identifier_is_recorded_as_schema_error(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    run_dir = tmp_path / "run"
+    oracle = materialize_variant("tool_recovery", workspace, seed=63)
+    service = ToolRecoveryService(
+        workspace / oracle["state_path"],
+        tool_action_log_path(run_dir, "tool_recovery_001"),
+        oracle,
+    )
+
+    with pytest.raises(ToolRecoveryError):
+        service.invoke("cases.get", {"case_id": "bad id with spaces"})
+
+    assert diagnose_tool_recovery_failure(
+        oracle,
+        run_dir=run_dir,
+        task_id="tool_recovery_001",
+    ) == TOOL_SCHEMA_ERROR
+
+
+def test_tool_recovery_detects_excessive_retry_after_retryable_failure(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    run_dir = tmp_path / "run"
+    oracle = materialize_variant("tool_recovery", workspace, seed=64)
+    service = ToolRecoveryService(
+        workspace / oracle["state_path"],
+        tool_action_log_path(run_dir, "tool_recovery_001"),
+        oracle,
+    )
+    case_id = oracle["transient_read_case_ids"][0]
+
+    with pytest.raises(ToolRecoveryError) as exc_info:
+        service.invoke("cases.get", {"case_id": case_id})
+    assert exc_info.value.retryable is True
+    for _ in range(int(oracle["max_attempts_per_operation"])):
+        service.invoke("cases.get", {"case_id": case_id})
+
+    assert diagnose_tool_recovery_failure(
+        oracle,
+        run_dir=run_dir,
+        task_id="tool_recovery_001",
+    ) == RETRY_LOOP
 
 
 def test_tool_recovery_evaluator_propagates_failure_kind(tmp_path: Path) -> None:
