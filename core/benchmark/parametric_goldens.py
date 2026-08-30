@@ -82,6 +82,28 @@ def _workspace_lineage_golden(
     return []
 
 
+def _wide_retrieval_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    query_id = oracle.get("query_id")
+    target_rows = oracle.get("target_rows")
+    if not isinstance(query_id, str) or not isinstance(target_rows, list):
+        raise ValueError("invalid wide retrieval oracle")
+    if not all(isinstance(row, Mapping) for row in target_rows):
+        raise ValueError("invalid wide retrieval target rows")
+    payload = {
+        "query_id": query_id,
+        "records": [dict(row) for row in target_rows],
+    }
+    _write(
+        workspace,
+        "reports/wide_retrieval.json",
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+    )
+    return []
+
+
 def _mediated_world_golden(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -203,6 +225,8 @@ def materialize_parametric_golden(
         return _config_traversal_golden(workspace, oracle)
     if family == "workspace_lineage":
         return _workspace_lineage_golden(workspace, oracle)
+    if family == "wide_retrieval":
+        return _wide_retrieval_golden(workspace, oracle)
     return _legacy_materializer(family, workspace, oracle)
 
 
