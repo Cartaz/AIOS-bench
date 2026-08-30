@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..task_runtime import TaskRuntime
+from ..tool_recovery_api import (
+    start_tool_recovery_runtime,
+    write_tool_recovery_client,
+)
+from ..tool_recovery_service import (
+    diagnose_tool_recovery_failure,
+    verify_tool_recovery_log,
+)
 from ..world_api import (
     start_dependency_world_runtime,
     start_support_world_runtime,
@@ -32,6 +40,11 @@ from .stateful_world import (
     check_stateful_world_variant,
     generate_stateful_world_variant,
 )
+from .tool_recovery import (
+    ToolRecoveryPressure,
+    check_tool_recovery_variant,
+    generate_tool_recovery_variant,
+)
 from .workspace_lineage import (
     WorkspaceLineagePressure,
     check_workspace_lineage_variant,
@@ -45,6 +58,7 @@ FAMILIES = {
     "stateful_world",
     "dependency_world",
     "workspace_lineage",
+    "tool_recovery",
 }
 
 _PRESSURE_TYPES = {
@@ -53,6 +67,7 @@ _PRESSURE_TYPES = {
     "stateful_world": StatefulWorldPressure,
     "dependency_world": DependencyWorldPressure,
     "workspace_lineage": WorkspaceLineagePressure,
+    "tool_recovery": ToolRecoveryPressure,
 }
 
 
@@ -99,6 +114,15 @@ def materialize_variant(
     if family == "workspace_lineage":
         pressure = WorkspaceLineagePressure.from_mapping(parameters or {})
         return generate_workspace_lineage_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "tool_recovery":
+        pressure = ToolRecoveryPressure.from_mapping(parameters or {})
+        oracle = generate_tool_recovery_variant(
+            workspace,
+            seed=int(seed),
+            pressure=pressure,
+        )
+        write_tool_recovery_client(workspace)
+        return _reseal_variant(oracle)
     if family == "stateful_world":
         pressure = StatefulWorldPressure.from_mapping(parameters or {})
         oracle = generate_stateful_world_variant(workspace, seed=int(seed), pressure=pressure)
@@ -126,6 +150,8 @@ def start_variant_runtime(
         return start_support_world_runtime(workspace, run_dir, task_id, oracle)
     if family == "dependency_world":
         return start_dependency_world_runtime(workspace, run_dir, task_id, oracle)
+    if family == "tool_recovery":
+        return start_tool_recovery_runtime(workspace, run_dir, task_id, oracle)
     return TaskRuntime()
 
 
@@ -154,6 +180,26 @@ def _check_mediated_world(
     return True, f"{detail}; {provenance_detail}"
 
 
+def _check_tool_recovery(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    *,
+    run_dir: Path | None,
+    task_id: str | None,
+) -> tuple[bool, str]:
+    passed, detail = check_tool_recovery_variant(workspace, oracle)
+    if not passed:
+        return passed, detail
+    provenance_ok, provenance_detail = verify_tool_recovery_log(
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+    if not provenance_ok:
+        return False, provenance_detail
+    return True, f"{detail}; {provenance_detail}"
+
+
 def check_variant(
     family: str,
     workspace: Path,
@@ -168,6 +214,13 @@ def check_variant(
         return check_config_traversal_variant(workspace, oracle)
     if family == "workspace_lineage":
         return check_workspace_lineage_variant(workspace, oracle)
+    if family == "tool_recovery":
+        return _check_tool_recovery(
+            workspace,
+            oracle,
+            run_dir=run_dir,
+            task_id=task_id,
+        )
     if family in {"stateful_world", "dependency_world"}:
         return _check_mediated_world(
             family,
@@ -179,14 +232,32 @@ def check_variant(
     return False, f"unknown parametric family: {family}"
 
 
+def diagnose_variant_failure(
+    family: str,
+    oracle: Mapping[str, Any],
+    *,
+    run_dir: Path | None = None,
+    task_id: str | None = None,
+) -> str | None:
+    if family == "tool_recovery":
+        return diagnose_tool_recovery_failure(
+            oracle,
+            run_dir=run_dir,
+            task_id=task_id,
+        )
+    return None
+
+
 __all__ = [
     "ConfigTraversalPressure",
     "DependencyWorldPressure",
     "ExpensePressure",
     "StatefulWorldPressure",
+    "ToolRecoveryPressure",
     "WorkspaceLineagePressure",
     "FAMILIES",
     "check_variant",
+    "diagnose_variant_failure",
     "materialize_variant",
     "normalize_parameters",
     "start_variant_runtime",
