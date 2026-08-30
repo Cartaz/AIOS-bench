@@ -160,6 +160,28 @@ def _skill_ablation_rows(comparisons: list[dict[str, Any]]) -> str:
     return "".join(rows)
 
 
+def _retrieval_metric_rows(groups: list[dict[str, Any]]) -> str:
+    return "".join(
+        '<tr>'
+        f'<td>{_display(item.get("harness"))}</td>'
+        f'<td>{_display(item.get("model"))}</td>'
+        f'<td>{int(item.get("observations", 0))}</td>'
+        f'<td>{int(item.get("strict_passes", 0))}/{int(item.get("observations", 0))}</td>'
+        f'<td>{_percent(item.get("strict_pass_rate"))}</td>'
+        f'<td>{_percent(item.get("mean_record_precision"))}</td>'
+        f'<td>{_percent(item.get("mean_record_recall"))}</td>'
+        f'<td>{_percent(item.get("mean_record_f1"))}</td>'
+        f'<td>{_percent(item.get("mean_field_accuracy"))}</td>'
+        f'<td>{_percent(item.get("mean_provenance_recall"))}</td>'
+        f'<td>{int(item.get("total_missing_record_count", 0))}</td>'
+        f'<td>{int(item.get("total_extra_record_count", 0))}</td>'
+        f'<td>{int(item.get("total_wrong_authority_count", 0))}</td>'
+        f'<td>{int(item.get("total_stale_source_count", 0))}</td>'
+        '</tr>'
+        for item in groups
+    )
+
+
 def _failure_rows(groups: list[dict[str, Any]]) -> str:
     rows: list[str] = []
     for item in groups:
@@ -320,6 +342,11 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
         if isinstance(summary.get("skill_ablations"), list)
         else []
     )
+    retrieval_metrics = (
+        summary.get("wide_retrieval_metrics")
+        if isinstance(summary.get("wide_retrieval_metrics"), list)
+        else []
+    )
     selected = (
         f'{_display(summary.get("selected_suite"))} · '
         f'{_display(summary.get("selected_suite_revision"))}'
@@ -376,6 +403,7 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
     reliability_table = _reliability_rows(reliability)
     paired_table = _paired_rows(paired)
     skill_ablation_table = _skill_ablation_rows(skill_ablations)
+    retrieval_table = _retrieval_metric_rows(retrieval_metrics)
     failure_table = _failure_rows(failures)
     efficiency_table = _efficiency_rows(efficiency)
     pressure_axis_table = _pressure_axis_rows(landscapes)
@@ -386,11 +414,12 @@ def build_dashboard(results_root: Path, output_dir: Path | None = None) -> Path:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIOS-bench Dashboard</title>
 <style>:root{{color-scheme:dark}}body{{font-family:system-ui,sans-serif;margin:32px;background:#111;color:#eee}}h1{{margin-bottom:4px}}.meta{{color:#999;margin-bottom:24px}}table{{border-collapse:collapse;width:100%;max-width:1400px}}th,td{{padding:12px;border-bottom:1px solid #333;text-align:left;vertical-align:top}}th{{color:#aaa}}code{{font-size:.9em}}.panel{{margin-top:28px;max-width:1400px;padding:20px;border:1px solid #333;border-radius:12px;overflow:auto}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px}}.card{{border:1px solid #333;border-radius:12px;padding:16px}}.bar{{height:8px;background:#333;border-radius:4px;overflow:hidden}}.fill{{height:100%;background:#aaa}}small{{color:#999}}</style></head><body><h1>AIOS-bench</h1>
-<div class="meta">Harness × model comparison — newest observed suite revision: {selected}. Canonical capability, reliability, pressure response and efficiency use the baseline/no-skill condition only; curated guidance is isolated below as a matched intervention.</div>
+<div class="meta">Harness × model comparison — newest observed suite revision: {selected}. Canonical capability, reliability, pressure response, retrieval quality and efficiency use the baseline/no-skill condition only; curated guidance is isolated below as a matched intervention.</div>
 <div class="panel"><h2>Latest capability leaderboard</h2><table><thead><tr><th>Harness</th><th>Model</th><th>Suite</th><th>Revision</th><th>Profile</th><th>Run</th><th>Score</th><th>Passed</th><th>Unsupported</th><th>Blocked</th><th>Success</th><th>Runtime</th></tr></thead><tbody>{cards or '<tr><td colspan="12">No eligible benchmark results yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Reliability across repeats</h2><p><small>Baseline/no-skill attempt-level pass rate and Wilson 95% interval. Score range is descriptive; capability scoring is unchanged.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Repeats</th><th>Passed attempts</th><th>Pass rate</th><th>Wilson 95%</th><th>Median score</th><th>Score range</th></tr></thead><tbody>{reliability_table or '<tr><td colspan="8">No repeated observations yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Paired harness comparisons</h2><p><small>Baseline/no-skill strict same-model matched observations only. Δ = score(A) − score(B); CI is task-cluster bootstrap; p is paired sign-flip.</small></p><table><thead><tr><th>A</th><th>B</th><th>Tasks</th><th>Observations</th><th>Mean Δ</th><th>95% CI</th><th>p</th><th>W/L/T</th><th>A-only pass / B-only pass</th></tr></thead><tbody>{paired_table or '<tr><td colspan="9">No strict matched comparisons yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Curated skill ablations</h2><p><small>Exact matched cells only: same harness, model identity, experiment, repeat, task seed, generated variant and pressure vector. Lift = curated_skill − no_skill. Curated arms never enter the canonical leaderboard.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Family</th><th>Skill</th><th>Matched</th><th>Mean lift</th><th>Median lift</th><th>Curated/Base/Ties</th><th>Curated-only pass / Base-only pass</th><th>Δ input tok.</th><th>Δ output tok.</th><th>Skill digest</th></tr></thead><tbody>{skill_ablation_table or '<tr><td colspan="12">No strict matched skill ablations yet.</td></tr>'}</tbody></table></div>
+<div class="panel"><h2>Exhaustive retrieval and provenance</h2><p><small>Baseline/no-skill Wide Retrieval observations only. Strict pass requires the complete target set, no extras/duplicates, exact semantic fields and exact authoritative JSONL citations. Component metrics expose where incomplete search, field errors or authority mistakes occur.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Obs.</th><th>Strict</th><th>Strict rate</th><th>Precision</th><th>Recall</th><th>Record F1</th><th>Field accuracy</th><th>Provenance recall</th><th>Missing</th><th>Extra</th><th>Wrong authority</th><th>Stale source</th></tr></thead><tbody>{retrieval_table or '<tr><td colspan="14">No Wide Retrieval observations yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Frontier v4 pressure response — marginal axes</h2><p><small>Baseline/no-skill rows only. Each row conditions on one observed coordinate value and marginalizes over other observed coordinates. Coordinates are workload descriptors, not assumed monotonic difficulty levels.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Family</th><th>Axis</th><th>Value</th><th>Obs.</th><th>Variants</th><th>Pass rate</th><th>Wilson 95%</th><th>Mean score</th><th>Median</th><th>Failure mix</th></tr></thead><tbody>{pressure_axis_table or '<tr><td colspan="12">No selected Frontier v4 pressure observations yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Frontier v4 joint pressure cells</h2><p><small>Baseline/no-skill joint cells preserve the complete generated pressure vector; no interpolation is performed between unobserved cells.</small></p><table><thead><tr><th>Harness</th><th>Model</th><th>Family</th><th>Pressure vector</th><th>Obs.</th><th>Variants</th><th>Pass rate</th><th>Wilson 95%</th><th>Mean score</th><th>Failure mix</th></tr></thead><tbody>{pressure_cell_table or '<tr><td colspan="10">No joint pressure cells yet.</td></tr>'}</tbody></table></div>
 <div class="panel"><h2>Matched harness deltas by pressure cell</h2><p><small>Baseline/no-skill strict same-model comparisons only. A pair is matched on experiment, repeat, task, task seed and variant digest. Δ = score(A) − score(B); these cell deltas are descriptive.</small></p><table><thead><tr><th>A</th><th>B</th><th>Family</th><th>Pressure vector</th><th>Matched</th><th>Mean Δ</th><th>Median Δ</th><th>W/L/T</th><th>A-only pass / B-only pass</th></tr></thead><tbody>{pressure_pair_table or '<tr><td colspan="9">No strict matched pressure-cell comparisons yet.</td></tr>'}</tbody></table></div>
