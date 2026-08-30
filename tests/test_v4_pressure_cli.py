@@ -31,6 +31,11 @@ def _args(**overrides):
         "v4_dependency_mutations": 5,
         "v4_dependency_policy_distractors": 3,
         "v4_dependency_negative_constraints": 6,
+        "v4_lineage_depth": 4,
+        "v4_lineage_branches": 3,
+        "v4_lineage_stale_revisions": 2,
+        "v4_lineage_distractors": 4,
+        "v4_lineage_extra_settings": 2,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -77,6 +82,13 @@ def test_v4_parameters_include_every_active_family():
             "required_mutations": 5,
             "distractor_policies": 3,
             "negative_constraints": 6,
+        },
+        "workspace_lineage": {
+            "lineage_depth": 4,
+            "branch_count": 3,
+            "stale_revisions": 2,
+            "distractor_files": 4,
+            "extra_settings": 2,
         },
     }
 
@@ -144,6 +156,31 @@ def test_v4_dependency_pressure_is_configurable():
 def test_v4_dependency_pressure_rejects_invalid_coordinates():
     with pytest.raises(SystemExit, match="invalid Frontier v4 dependency pressure"):
         cli._v4_parameters(_args(v4_dependency_accounts=2))
+
+
+def test_v4_lineage_pressure_is_configurable():
+    parameters = cli._v4_parameters(
+        _args(
+            v4_lineage_depth=6,
+            v4_lineage_branches=5,
+            v4_lineage_stale_revisions=4,
+            v4_lineage_distractors=9,
+            v4_lineage_extra_settings=5,
+        )
+    )
+
+    assert parameters["workspace_lineage"] == {
+        "lineage_depth": 6,
+        "branch_count": 5,
+        "stale_revisions": 4,
+        "distractor_files": 9,
+        "extra_settings": 5,
+    }
+
+
+def test_v4_lineage_pressure_rejects_invalid_coordinates():
+    with pytest.raises(SystemExit, match="invalid Frontier v4 lineage pressure"):
+        cli._v4_parameters(_args(v4_lineage_depth=2))
 
 
 def test_config_pressure_changes_execution_fingerprint_not_landscape_profile(tmp_path: Path):
@@ -234,5 +271,35 @@ def test_dependency_variant_identity_records_effective_pressure(tmp_path: Path):
         "required_mutations": 7,
         "distractor_policies": 4,
         "negative_constraints": 9,
+    }
+    assert identity["variant_digest"]
+
+
+def test_lineage_variant_identity_records_effective_pressure(tmp_path: Path):
+    parameters = cli._v4_parameters(
+        _args(
+            v4_lineage_depth=6,
+            v4_lineage_branches=5,
+            v4_lineage_stale_revisions=4,
+            v4_lineage_distractors=8,
+            v4_lineage_extra_settings=5,
+        )
+    )
+    runner = _runner(tmp_path / "lineage-identity", parameters)
+    task = next(
+        task for task in load_tasks(TASK_ROOT, "frontier_v4")
+        if task.id == "tool_use_lineage_001"
+    )
+
+    runner._workspace(task)
+    identity = runner._result_identity(task)
+
+    assert identity["variant_family"] == "workspace_lineage"
+    assert identity["variant_parameters"] == {
+        "lineage_depth": 6,
+        "branch_count": 5,
+        "stale_revisions": 4,
+        "distractor_files": 8,
+        "extra_settings": 5,
     }
     assert identity["variant_digest"]
