@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -37,6 +38,42 @@ def _config_traversal_golden(
         "",
     ])
     _write(workspace, "reports/effective_config.md", "\n".join(lines))
+    return []
+
+
+def _workspace_lineage_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    active_release = oracle.get("active_release")
+    root = oracle.get("root")
+    lineage_paths = oracle.get("lineage_paths")
+    effective_settings = oracle.get("effective_settings")
+    consumer_path = oracle.get("consumer_path")
+    stale_sources = oracle.get("stale_source_paths")
+    if (
+        not isinstance(active_release, str)
+        or not isinstance(root, str)
+        or not isinstance(lineage_paths, list)
+        or not isinstance(effective_settings, Mapping)
+        or not isinstance(consumer_path, str)
+        or not isinstance(stale_sources, list)
+    ):
+        raise ValueError("invalid workspace lineage oracle")
+
+    payload = {
+        "active_release": active_release,
+        "root": root,
+        "lineage_paths": lineage_paths,
+        "effective_settings": dict(effective_settings),
+        "consumer_path": consumer_path,
+        "ignored_stale_sources": stale_sources,
+    }
+    _write(
+        workspace,
+        "reports/workspace_lineage.json",
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+    )
     return []
 
 
@@ -96,6 +133,8 @@ def materialize_parametric_golden(
         )
     if family == "config_traversal":
         return _config_traversal_golden(workspace, oracle)
+    if family == "workspace_lineage":
+        return _workspace_lineage_golden(workspace, oracle)
     return _legacy_materializer(family, workspace, oracle)
 
 
