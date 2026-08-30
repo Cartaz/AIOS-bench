@@ -32,6 +32,7 @@ def test_frontier_v4_list_is_explicit_opt_in(monkeypatch, capsys):
         "autonomy_expense_001",
         "stateful_support_001",
         "support_dependency_001",
+        "data_cross_artifact_001",
         "retrieval_wide_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
@@ -93,6 +94,22 @@ def test_frontier_v4_rejects_invalid_retrieval_pressure(monkeypatch):
         ],
     )
     with pytest.raises(SystemExit, match="invalid Frontier v4 retrieval pressure"):
+        cli.main()
+
+
+def test_frontier_v4_rejects_invalid_cross_artifact_pressure(monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "aiosbench",
+            "--suite",
+            "frontier_v4",
+            "--v4-cross-rows",
+            "12",
+            "validate",
+        ],
+    )
+    with pytest.raises(SystemExit, match="invalid Frontier v4 cross-artifact pressure"):
         cli.main()
 
 
