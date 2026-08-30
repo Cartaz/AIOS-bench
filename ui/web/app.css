@@ -40,6 +40,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 label { display: grid; gap: 8px; color: var(--muted); font-size: 13px; margin-bottom: 16px; }
 input, select { width: 100%; border: 0; border-radius: 16px; color: var(--text); padding: 12px 14px; outline: none; }
 input:focus, select:focus { box-shadow: inset 3px 3px 8px var(--shadow-dark), inset -3px -3px 8px var(--shadow-light), 0 0 0 1px rgba(255, 102, 0, .55); }
+.inline-option { display: flex; align-items: center; gap: 10px; min-height: 38px; cursor: pointer; }
+.inline-option input[type="checkbox"] { width: 18px; height: 18px; margin: 0; padding: 0; flex: 0 0 18px; accent-color: var(--accent); box-shadow: inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light); }
+.inline-option:focus-within { color: var(--text); }
+.inline-option input[type="checkbox"]:focus-visible { outline: 2px solid rgba(255, 102, 0, .75); outline-offset: 3px; box-shadow: none; }
+.inline-option input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .toggle-list { display: grid; gap: 10px; margin-bottom: 20px; }
 .toggle, .task, .doctor-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light); }
