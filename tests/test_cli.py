@@ -34,6 +34,7 @@ def test_frontier_v4_list_is_explicit_opt_in(monkeypatch, capsys):
         "support_dependency_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
+        "tool_recovery_001",
     }
 
 
