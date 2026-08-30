@@ -53,12 +53,14 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "stateful_support_001",
         "support_dependency_001",
         "tool_use_config_001",
+        "tool_use_lineage_001",
     ]
     assert {task.id: task.revision for task in v4} == {
         "autonomy_expense_001": 4,
         "stateful_support_001": 5,
         "support_dependency_001": 4,
         "tool_use_config_001": 4,
+        "tool_use_lineage_001": 1,
     }
     runtime_tasks = {
         task.id: task
@@ -169,6 +171,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
         "materialization.py",
         "suites.py",
         "task_runtime.py",
+        "workspace_lineage.py",
         "world_api.py",
     } <= names
     assert any("parametric" in path.parts for path in paths)
