@@ -16,6 +16,7 @@ from .parametric import (
     ConfigTraversalPressure,
     CrossArtifactPressure,
     DependencyWorldPressure,
+    EpistemicTwinPressure,
     ExpensePressure,
     StatefulWorldPressure,
     ToolRecoveryPressure,
@@ -165,6 +166,16 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 cross-artifact pressure: {exc}") from exc
+    try:
+        epistemic_twins = EpistemicTwinPressure(
+            pair_count=args.v4_epistemic_pairs,
+            registry_size=args.v4_epistemic_registry_size,
+            distractor_records=args.v4_epistemic_distractor_records,
+            archive_files=args.v4_epistemic_archive_files,
+            source_depth=args.v4_epistemic_source_depth,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 epistemic-twin pressure: {exc}") from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
@@ -174,6 +185,7 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         "tool_recovery": tool_recovery.to_dict(),
         "wide_retrieval": wide_retrieval.to_dict(),
         "cross_artifact": cross_artifact.to_dict(),
+        "epistemic_twins": epistemic_twins.to_dict(),
     }
 
 
@@ -335,6 +347,11 @@ def main() -> None:
     parser.add_argument("--v4-cross-excluded", type=int, default=12, help="Frontier v4 cross-artifact excluded-row coordinate")
     parser.add_argument("--v4-cross-adjustments", type=int, default=8, help="Frontier v4 cross-artifact negative-adjustment coordinate")
     parser.add_argument("--v4-cross-distractors", type=int, default=3, help="Frontier v4 cross-artifact archived-ledger distractor coordinate")
+    parser.add_argument("--v4-epistemic-pairs", type=int, default=6, help="Frontier v4 epistemic-twin pair-count coordinate")
+    parser.add_argument("--v4-epistemic-registry-size", type=int, default=48, help="Frontier v4 epistemic authoritative-registry size coordinate")
+    parser.add_argument("--v4-epistemic-distractor-records", type=int, default=12, help="Frontier v4 epistemic stale-record distractor coordinate")
+    parser.add_argument("--v4-epistemic-archive-files", type=int, default=3, help="Frontier v4 epistemic archive-file coordinate")
+    parser.add_argument("--v4-epistemic-source-depth", type=int, default=3, help="Frontier v4 epistemic authoritative source-depth coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
