@@ -44,6 +44,8 @@ class TaskExecutionRunner(Protocol):
 
     def start_task_runtime(self, task: Task, workspace: Path) -> TaskRuntime: ...
 
+    def build_task_prompt(self, task: Task) -> str: ...
+
     def record_event(self, event: dict) -> None: ...
 
     def result_identity(self, task: Task) -> dict: ...
@@ -152,11 +154,7 @@ def run_frontier_task(
     logs.mkdir(parents=True, exist_ok=True)
     stdout_path = logs / f"{task.id}.stdout.log"
     stderr_path = logs / f"{task.id}.stderr.log"
-    prompt = (
-        "You are being evaluated by AIOS-bench. Work only inside the provided workspace. "
-        "Complete the task fully, verify the result, and do not modify benchmark files outside "
-        "the workspace.\n\nTASK:\n" + task.prompt
-    )
+    prompt = runner.build_task_prompt(task)
     invocation = runner.agent.adapter.build(prompt, workspace, runner.model)
     command = invocation.command
     custom = os.environ.get(f"AIOS_BENCH_{runner.agent.name.upper()}_COMMAND")
