@@ -52,6 +52,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "autonomy_expense_001",
         "stateful_support_001",
         "support_dependency_001",
+        "data_cross_artifact_001",
         "retrieval_wide_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
@@ -61,6 +62,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "autonomy_expense_001": 4,
         "stateful_support_001": 5,
         "support_dependency_001": 4,
+        "data_cross_artifact_001": 1,
         "retrieval_wide_001": 1,
         "tool_use_config_001": 4,
         "tool_use_lineage_001": 1,
@@ -179,6 +181,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
     paths = semantic_source_paths(ROOT)
     names = {path.name for path in paths}
     assert {
+        "cross_artifact.py",
         "dependency_world.py",
         "grading.py",
         "interventions.py",
@@ -193,6 +196,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
         "world_api.py",
     } <= names
     assert "ablations.py" not in names
+    assert "cross_artifact_analysis.py" not in names
     assert "report.py" not in names
     assert "dashboard.py" not in names
     assert any("parametric" in path.parts for path in paths)
