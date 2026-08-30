@@ -16,6 +16,13 @@ def test_parametric_registry_records_defaults_for_every_family() -> None:
         "distractor_files": 4,
         "extra_settings": 2,
     }
+    assert parameters["wide_retrieval"] == {
+        "corpus_size": 96,
+        "target_count": 12,
+        "duplicate_records": 12,
+        "conflict_records": 10,
+        "source_depth": 3,
+    }
 
 
 def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> None:
@@ -36,6 +43,7 @@ def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> N
         "distractor_files": 3,
         "months": 6,
     }
+    assert parameters["wide_retrieval"]["target_count"] == 12
 
 
 def test_parametric_registry_rejects_unknown_family() -> None:
