@@ -112,4 +112,4 @@ Adding V4.3 required one new parametric family registration, one execution condi
 
 ### Review conclusion
 
-No material ownership leak, duplicated execution path or tactical special-case layer was found after the V4.3 cleanup. The milestone is ready for closure once the complete post-review commit set passes the canonical compileall, pytest and Ruff matrix plus the existing Qt/WebEngine smoke checks. V4.4 should start from the current materialization/evaluation interfaces rather than changing the runner.
+**Closed 2026-08-30.** No material ownership leak, duplicated execution path or tactical special-case layer was found after the V4.3 cleanup. The complete post-review implementation passed the canonical CI matrix on Python 3.12, 3.13 and 3.14, including install verification, compileall, Ruff and pytest with the existing offscreen Qt/WebEngine coverage. V4.4 should start from the current materialization/evaluation interfaces rather than changing the runner.
