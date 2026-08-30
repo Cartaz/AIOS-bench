@@ -34,7 +34,7 @@ def test_parametric_registry_records_defaults_for_every_family() -> None:
         "pair_count": 6,
         "registry_size": 48,
         "distractor_records": 12,
-        "archive_files": 3,
+        "archive_revisions": 3,
         "source_depth": 3,
     }
 
