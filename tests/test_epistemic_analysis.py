@@ -32,6 +32,7 @@ def _metrics(
     false_compliance: float,
     overcautious: float,
     pair_accuracy: float,
+    invalid_decisions: int = 0,
 ) -> dict:
     return {
         "strict_complete_pass": strict,
@@ -48,6 +49,7 @@ def _metrics(
         "missing_case_count": 0,
         "extra_case_count": 0,
         "duplicate_case_count": 0,
+        "invalid_decision_count": invalid_decisions,
     }
 
 
@@ -75,6 +77,7 @@ def test_epistemic_metrics_keep_both_failure_directions_visible() -> None:
                 false_compliance=1.0,
                 overcautious=0.0,
                 pair_accuracy=0.0,
+                invalid_decisions=2,
             ),
         ),
     ]
@@ -97,6 +100,7 @@ def test_epistemic_metrics_keep_both_failure_directions_visible() -> None:
     assert item["mean_pair_action_accuracy"] == 0.5
     assert item["total_pair_count"] == 12
     assert item["total_case_count"] == 24
+    assert item["total_invalid_decision_count"] == 2
 
 
 def test_epistemic_metrics_filter_other_families_and_noncomparable_rows() -> None:
@@ -190,3 +194,4 @@ def test_summary_uses_only_baseline_rows_for_epistemic_metrics(tmp_path: Path) -
     assert item["mean_false_premise_compliance_rate"] == pytest.approx(0.5)
     assert item["mean_overcautious_refusal_rate"] == pytest.approx(0.0)
     assert item["mean_pair_action_accuracy"] == pytest.approx(0.5)
+    assert item["total_invalid_decision_count"] == 0
