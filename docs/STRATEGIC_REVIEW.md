@@ -113,3 +113,53 @@ Adding V4.3 required one new parametric family registration, one execution condi
 ### Review conclusion
 
 **Closed 2026-08-30.** No material ownership leak, duplicated execution path or tactical special-case layer was found after the V4.3 cleanup. The complete post-review implementation passed the canonical CI matrix on Python 3.12, 3.13 and 3.14, including install verification, compileall, Ruff and pytest with the existing offscreen Qt/WebEngine coverage. V4.4 should start from the current materialization/evaluation interfaces rather than changing the runner.
+
+## Frontier V4.4 — exhaustive retrieval and provenance
+
+### Complexity, ownership and extension shape
+
+- **Resolved:** `parametric/wide_retrieval.py` owns generated corpus semantics and deterministic grading. It does not add a second runner, scheduler, persistence path, transport layer or harness-specific implementation.
+- **Resolved:** the existing `ParametricTaskMaterializer` remains the only owner of seeded workspace/oracle construction. The hidden oracle is written under the run directory, outside the agent workspace, exactly like the other Frontier v4 families.
+- **Resolved:** partial deterministic grading is exposed through the small `VariantGrade` contract. Existing binary families continue to use `VariantGrade.binary`, so V4.4 did not duplicate the evaluator or alter their semantics.
+- **Resolved:** family-specific derived aggregation lives in `retrieval_analysis.py`; it reads persisted evaluation metrics and does not participate in task execution or grading. The module is deliberately non-semantic, while the generator/grader remains part of the suite fingerprint.
+
+### Information hiding and benchmark integrity
+
+- **Resolved:** the generated workspace contains only task-visible corpus, query and authority metadata. Expected target rows and protected-input digests remain in the benchmark-owned oracle outside the workspace.
+- **Resolved:** every generated corpus has one explicit authoritative root plus plausible mirrors and retired conflicting records. At least one target receives a stale conflicting representation so authority/provenance errors remain observable rather than depending on a lucky seed.
+- **Resolved:** all corpus, query, authority and instruction inputs are hash-protected. Modifying any protected source invalidates grading before result metrics are considered.
+- **Resolved:** grading requires exact authoritative JSONL path and 1-based source line, so a semantically correct record copied from a mirror or retired source cannot receive a strict pass.
+- **Resolved:** V4.4 stays completely offline. No live web, remote search service or externally drifting corpus is involved.
+
+### Scoring, diagnostics and failure taxonomy
+
+- **Resolved:** strict complete pass remains the canonical success condition. Partial score is deterministic diagnostic signal only and cannot turn an incomplete fatal parametric check into a task pass.
+- **Resolved:** retrieval quality is decomposed into record precision, recall/F1, field-level correctness and provenance recall, with explicit counts for missing, extra and duplicate rows plus wrong-authority, stale-source and mirror-source use.
+- **Resolved:** deterministic failure precedence classifies missing target records as `INCOMPLETE_RETRIEVAL` before considering provenance loss caused by the same omission; actual citation/authority failures are classified as `WRONG_AUTHORITY` once retrieval completeness is satisfied.
+- **Resolved:** baseline/no-skill filtering remains centralized in the existing canonical reporting boundary. Curated-skill runs therefore cannot inflate the V4.4 capability or retrieval-quality aggregates.
+- **Resolved:** pressure coordinates remain descriptive workload dimensions (`corpus_size`, `target_count`, `duplicate_records`, `conflict_records`, `source_depth`). Existing landscape code records exact joint vectors and does not assume that a marginal coordinate is causally monotonic difficulty.
+
+### Benchmark-health review
+
+- **Verified by deterministic tests:** same seed plus same pressure reproduces the same variant identity and targets; changing seed or pressure changes the variant digest.
+- **Verified by deterministic tests:** the golden complete answer receives strict pass and full metrics.
+- **Verified by deterministic tests:** missing targets, extra rows, field corruption, stale citations and source tampering are rejected with the expected metric/failure behavior.
+- **Verified by integration tests:** the structured grade, partial credit and family metrics survive through the generic evaluator, run identity, summary and dashboard paths.
+- **Verified by UI/service tests:** the new task and all effective default pressure coordinates come from the same Frontier v4 catalog/registry used by CLI and desktop execution.
+
+### Change-amplification review
+
+One new family still requires explicit registration in the parametric pressure map plus catalog/CLI/service/reporting coverage. This is visible change, but it remains localized and preserves clear ownership. Replacing the explicit family dispatch with a plugin/factory registry now would add indirection without reducing a demonstrated maintenance bottleneck. The current explicit dispatch is therefore retained; revisit only if later families make this extension surface materially repetitive or error-prone.
+
+The structured `VariantGrade` abstraction is justified by a concrete present need: V4.4 has meaningful deterministic partial metrics while earlier families are binary. It hides that distinction from the generic evaluator rather than spreading family checks into execution code.
+
+### Deliberate deferrals
+
+- Live-web retrieval is intentionally excluded because source drift, availability and search-provider behavior would weaken reproducibility and comparability.
+- Cross-artifact reconciliation is not folded into this family; it belongs to V4.5 so retrieval and artifact-consistency semantics remain independently understandable.
+- No weighted opaque retrieval composite is promoted to the dashboard. Raw dimensions and strict pass remain visible until empirical runs justify any stronger summary contract.
+- `source_depth` currently describes generated authoritative path depth, not a causal difficulty scale; reporting must continue treating it as an observed pressure coordinate only.
+
+### Review conclusion
+
+The V4.4 design preserves the strategic extension shape established by V4.3: a deep parametric family plus deterministic oracle and derived analysis over the shared engine. No material ownership leak, hidden external dependency, duplicated state owner or harness-specific special case was found in the milestone review. Formal closure requires the canonical CI matrix to pass on this review commit; after that observation V4.4 can be considered closed and V4.5 may begin.
