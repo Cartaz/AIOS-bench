@@ -95,11 +95,18 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "adjustment_rows": 10,
                 "distractor_files": 4,
             },
+            "epistemic_twins": {
+                "pair_count": 8,
+                "registry_size": 64,
+                "distractor_records": 18,
+                "archive_revisions": 4,
+                "source_depth": 4,
+            },
         },
     )
 
     assert result["ok"] is True
-    assert result["checked_tasks"] == 8
+    assert result["checked_tasks"] == 9
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
@@ -109,6 +116,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         "tool_recovery",
         "wide_retrieval",
         "cross_artifact",
+        "epistemic_twins",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
