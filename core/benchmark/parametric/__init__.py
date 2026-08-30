@@ -32,6 +32,11 @@ from .stateful_world import (
     check_stateful_world_variant,
     generate_stateful_world_variant,
 )
+from .workspace_lineage import (
+    WorkspaceLineagePressure,
+    check_workspace_lineage_variant,
+    generate_workspace_lineage_variant,
+)
 
 
 FAMILIES = {
@@ -39,6 +44,7 @@ FAMILIES = {
     "config_traversal",
     "stateful_world",
     "dependency_world",
+    "workspace_lineage",
 }
 
 
@@ -62,6 +68,9 @@ def materialize_variant(
     if family == "config_traversal":
         pressure = ConfigTraversalPressure.from_mapping(parameters or {})
         return generate_config_traversal_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "workspace_lineage":
+        pressure = WorkspaceLineagePressure.from_mapping(parameters or {})
+        return generate_workspace_lineage_variant(workspace, seed=int(seed), pressure=pressure)
     if family == "stateful_world":
         pressure = StatefulWorldPressure.from_mapping(parameters or {})
         oracle = generate_stateful_world_variant(workspace, seed=int(seed), pressure=pressure)
@@ -129,6 +138,8 @@ def check_variant(
         return check_expense_variant(workspace, oracle)
     if family == "config_traversal":
         return check_config_traversal_variant(workspace, oracle)
+    if family == "workspace_lineage":
+        return check_workspace_lineage_variant(workspace, oracle)
     if family in {"stateful_world", "dependency_world"}:
         return _check_mediated_world(
             family,
@@ -145,6 +156,7 @@ __all__ = [
     "DependencyWorldPressure",
     "ExpensePressure",
     "StatefulWorldPressure",
+    "WorkspaceLineagePressure",
     "FAMILIES",
     "check_variant",
     "materialize_variant",
