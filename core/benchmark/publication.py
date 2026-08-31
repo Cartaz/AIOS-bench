@@ -19,6 +19,8 @@ ANALYSIS_IMPLEMENTATION_FILES = (
     "report.py",
     "statistics.py",
     "landscapes.py",
+    "horizon.py",
+    "horizon_analysis.py",
     "dashboard.py",
     "publication.py",
 )
@@ -170,19 +172,20 @@ def verify_publication(raw_root: Path, published_root: Path) -> dict[str, Any]:
     if summary_path.is_file():
         try:
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            summary = None
-        if not isinstance(summary, dict):
-            errors.append("published summary.json is invalid")
-        elif summary.get("raw_source_digest") != current_source.get("digest"):
-            errors.append("summary raw_source_digest does not match current raw inputs")
+        except json.JSONDecodeError as exc:
+            errors.append(f"published summary is invalid: {exc}")
+        else:
+            if summary.get("raw_source_digest") != current_source.get("digest"):
+                errors.append("summary raw_source_digest does not match current raw source")
+            if summary.get("raw_source_file_count") != current_source.get("file_count"):
+                errors.append("summary raw_source_file_count does not match current raw source")
 
     return {
         "schema": "aios-bench/publication-verification/v1",
         "ok": not errors,
+        "errors": errors,
         "source_digest": current_source.get("digest"),
         "analysis_implementation_digest": current_implementation.get("digest"),
-        "actual_outputs": actual_hashes,
-        "regenerated_outputs": regenerated_hashes,
-        "errors": errors,
+        "published_hashes": actual_hashes,
+        "regenerated_hashes": regenerated_hashes,
     }
