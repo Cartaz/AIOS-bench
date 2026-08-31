@@ -102,11 +102,18 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "archive_revisions": 4,
                 "source_depth": 4,
             },
+            "black_box_reconstruction": {
+                "rule_count": 8,
+                "public_examples": 16,
+                "probe_budget": 56,
+                "distractor_fields": 5,
+                "max_units": 700,
+            },
         },
     )
 
-    assert result["ok"] is True
-    assert result["checked_tasks"] == 9
+    assert result["ok"] is True, result["failures"]
+    assert result["checked_tasks"] == 10
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
@@ -117,6 +124,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         "wide_retrieval",
         "cross_artifact",
         "epistemic_twins",
+        "black_box_reconstruction",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
