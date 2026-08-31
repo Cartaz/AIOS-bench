@@ -10,6 +10,8 @@ from .doctor import apply_profile_environment, run_wizard
 from .experiments import annotate_repeat, make_experiment_id
 from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
+from .horizon import DEFAULT_HORIZON_PROFILE, HORIZON_PROFILES, get_horizon_profile
+from .horizon_execution import execute_horizon_profile
 from .interventions import SKILL_MODES
 from .models import Trajectory
 from .parametric import (
@@ -196,6 +198,7 @@ def _build_runner(
     run_id: str | None,
     orchestration_seed: int,
     skill_mode: str | None = None,
+    parametric_parameters: dict[str, dict[str, int]] | None = None,
 ):
     common = dict(
         repo_root=ROOT,
@@ -210,7 +213,11 @@ def _build_runner(
         return FrontierV4Runner(
             **common,
             variant_base_seed=orchestration_seed,
-            parametric_parameters=_v4_parameters(args),
+            parametric_parameters=(
+                parametric_parameters
+                if parametric_parameters is not None
+                else _v4_parameters(args)
+            ),
             skill_mode=skill_mode or args.skill_mode,
         )
     return FrontierV3Runner(**common)
@@ -279,6 +286,45 @@ def _run_matched_interleaved(args: argparse.Namespace, harnesses: list[str], tas
     return exit_code
 
 
+def _run_horizon(args: argparse.Namespace, harnesses: list[str], tasks: list) -> int:
+    if args.suite != "frontier_v4":
+        raise SystemExit("horizon requires --suite frontier_v4")
+    profile = get_horizon_profile(args.horizon_profile)
+    by_id = {task.id: task for task in tasks}
+    experiment_id = args.run_id or f"{make_experiment_id('frontier_v4')}-horizon"
+
+    def runner_factory(
+        harness: str,
+        run_id: str,
+        orchestration_seed: int,
+        skill_mode: str,
+        parameters: dict[str, dict[str, int]],
+    ):
+        return _build_runner(
+            args,
+            harness,
+            run_id=run_id,
+            orchestration_seed=orchestration_seed,
+            skill_mode=skill_mode,
+            parametric_parameters=parameters,
+        )
+
+    result = execute_horizon_profile(
+        profile,
+        tasks=by_id,
+        harnesses=tuple(harnesses),
+        skill_modes=_execution_skill_modes(args),
+        repeats=args.repeats,
+        base_seed=args.seed,
+        experiment_id=experiment_id,
+        runner_factory=runner_factory,
+    )
+    print(f"\nLong-horizon profile: {profile.id}")
+    print(f"Profile digest:       {profile.digest}")
+    print(f"Pressure cells:       {len(profile.cells)} × {args.repeats} repeat(s)")
+    return result.exit_code
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="aiosbench", description="AIOS-bench local agent benchmark")
     _add_harness_flags(parser)
@@ -310,6 +356,15 @@ def main() -> None:
         "--skill-ablation",
         action="store_true",
         help="Frontier v4 matched interleaving of no_skill and curated_skill arms",
+    )
+    parser.add_argument(
+        "--horizon-profile",
+        choices=tuple(HORIZON_PROFILES),
+        default=DEFAULT_HORIZON_PROFILE,
+        help=(
+            "Benchmark-owned Frontier v4 generated pressure profile used by the horizon command; "
+            "its exact cells override manual --v4-* pressure coordinates"
+        ),
     )
     parser.add_argument("--v4-expense-rows", type=int, default=48, help="Frontier v4 expense-family row pressure coordinate")
     parser.add_argument("--v4-expense-malformed", type=int, default=2, help="Frontier v4 expense-family malformed-row pressure coordinate")
@@ -378,7 +433,18 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["run", "smoke", "list", "score", "dashboard", "publish", "verify", "validate", "doctor"],
+        choices=[
+            "run",
+            "horizon",
+            "smoke",
+            "list",
+            "score",
+            "dashboard",
+            "publish",
+            "verify",
+            "validate",
+            "doctor",
+        ],
         default="run",
     )
     parser.add_argument("path", nargs="?", type=Path)
@@ -452,6 +518,15 @@ def main() -> None:
         raise SystemExit("--max-output-tokens must be >= 0")
     if args.metrics_poll_interval <= 0:
         raise SystemExit("--metrics-poll-interval must be > 0")
+
+    if args.command == "horizon":
+        exit_code = _run_horizon(args, harnesses, tasks)
+        summary = _summary(RESULTS)
+        print(f"\nSummary:   {summary}")
+        if args.dashboard:
+            dashboard = build_dashboard(RESULTS)
+            print(f"Dashboard: {dashboard}")
+        raise SystemExit(exit_code)
 
     if args.command == "smoke":
         if args.suite != "frontier_v3":
