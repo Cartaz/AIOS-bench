@@ -306,9 +306,11 @@ def _run_solution(
         "PYTHONIOENCODING": "utf-8",
         "PYTHONHASHSEED": "0",
     }
+    base_executable = getattr(sys, "_base_executable", None) or sys.executable
+    verification_python = Path(base_executable).resolve()
     try:
         process = subprocess.run(
-            plan.wrap([sys.executable, "-I", str(solution.relative_to(workspace))]),
+            plan.wrap([str(verification_python), "-I", str(solution.relative_to(workspace))]),
             cwd=workspace,
             input=payload,
             text=True,
