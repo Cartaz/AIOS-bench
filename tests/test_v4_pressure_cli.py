@@ -56,6 +56,11 @@ def _args(**overrides):
         "v4_epistemic_distractor_records": 12,
         "v4_epistemic_archive_revisions": 3,
         "v4_epistemic_source_depth": 3,
+        "v4_black_box_rules": 7,
+        "v4_black_box_public_examples": 12,
+        "v4_black_box_probe_budget": 48,
+        "v4_black_box_distractor_fields": 3,
+        "v4_black_box_max_units": 500,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -137,6 +142,13 @@ def test_v4_parameters_include_every_active_family():
             "distractor_records": 12,
             "archive_revisions": 3,
             "source_depth": 3,
+        },
+        "black_box_reconstruction": {
+            "rule_count": 7,
+            "public_examples": 12,
+            "probe_budget": 48,
+            "distractor_fields": 3,
+            "max_units": 500,
         },
     }
 
