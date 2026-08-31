@@ -14,6 +14,7 @@ from .horizon import HORIZON_CONTEXT_KIND
 from .horizon_analysis import long_horizon_response_curves
 from .landscapes import pressure_landscapes, pressure_paired_comparisons
 from .raw import latest_attempts, load_attempts, source_index
+from .reconstruction_analysis import black_box_reconstruction_metrics
 from .retrieval_analysis import wide_retrieval_metrics
 
 
@@ -390,6 +391,10 @@ def build_summary(root: Path) -> dict[str, Any]:
         "wide_retrieval_metrics": wide_retrieval_metrics(canonical_rows, **filters),
         "cross_artifact_metrics": cross_artifact_metrics(canonical_rows, **filters),
         "epistemic_twin_metrics": epistemic_twin_metrics(canonical_rows, **filters),
+        "black_box_reconstruction_metrics": black_box_reconstruction_metrics(
+            canonical_rows,
+            **filters,
+        ),
         "skill_ablations": skill_ablation_pairs(rows, **filters),
     }
 
