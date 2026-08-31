@@ -38,6 +38,20 @@ def test_health_gate_checks_generation_oracle_and_grader_contracts() -> None:
     assert observation["grader_within_budget"] is True
 
 
+def test_entire_frontier_v4_catalog_passes_benchmark_health_gate() -> None:
+    tasks = load_tasks(TASKS_ROOT, "frontier_v4")
+    result = validate_benchmark_health(
+        REPO_ROOT,
+        tasks,
+        base_seed=42,
+        parameters=normalize_parameters(),
+    )
+
+    assert result["checked_tasks"] == len(tasks)
+    assert result["ok"] is True, result["failures"]
+    assert not result["failures"]
+
+
 def test_health_gate_detects_instruction_verifier_drift() -> None:
     task = _task("autonomy_expense_001")
     broken = replace(task, prompt="Produce the required result without naming its output paths.")
