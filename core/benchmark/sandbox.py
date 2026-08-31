@@ -98,9 +98,11 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
         )
 
     # When the workspace itself lives below the repository, preserve it through
-    # an alias before replacing the repository mount, then recreate only its
-    # parent path and bind the alias back at the original absolute location.
+    # an alias before replacing the repository mount. Bubblewrap bind targets
+    # must already exist inside the sandbox, so create the alias explicitly;
+    # then recreate only the canonical workspace parent path and rebind it.
     args: tuple[str, ...] = (
+        "--dir", str(_WORKSPACE_ALIAS),
         "--bind", str(workspace), str(_WORKSPACE_ALIAS),
         "--tmpfs", str(repo),
     )
