@@ -177,6 +177,75 @@ def _epistemic_twins_golden(
     return []
 
 
+def _black_box_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    spec = oracle.get("reference_spec")
+    if not isinstance(spec, Mapping):
+        raise ValueError("invalid black-box reconstruction oracle")
+    encoded = json.dumps(dict(spec), sort_keys=True, separators=(",", ":"))
+    source = f'''from __future__ import annotations
+
+import json
+import sys
+
+SPEC = json.loads({encoded!r})
+
+
+def transform(value):
+    enabled = set(SPEC["enabled_rules"])
+    units = int(value["units"])
+    quantum = int(SPEC["round_quantum"])
+    normalized = units
+    if "quantize_units" in enabled and units:
+        normalized = ((units + quantum - 1) // quantum) * quantum
+    score = normalized
+    if "plan_multiplier" in enabled:
+        score *= int(SPEC["plan_multipliers"][value["plan"]])
+    if "region_offset" in enabled:
+        score += int(SPEC["region_offsets"][value["region"]])
+    if "priority_weight" in enabled:
+        score += int(value["priority"]) * int(SPEC["priority_weight"])
+    if "active_adjustment" in enabled:
+        score += int(SPEC["active_bonus"]) if value["active"] else -int(SPEC["inactive_penalty"])
+    tags = set(value["tags"])
+    if "tag_bonus" in enabled and SPEC["special_tag"] in tags:
+        score += int(SPEC["special_tag_bonus"])
+    if "bulk_bonus" in enabled and units >= int(SPEC["bulk_threshold"]):
+        score += int(SPEC["bulk_bonus"])
+    if "premium_bonus" in enabled and value["plan"] == SPEC["premium_plan"]:
+        score += int(SPEC["premium_bonus"])
+    score = max(0, int(score))
+    low, high = (int(item) for item in SPEC["bucket_thresholds"])
+    bucket = "low" if score < low else "standard" if score < high else "high"
+    flags = []
+    if not value["active"]:
+        flags.append("inactive")
+    if int(value["priority"]) >= int(SPEC["priority_flag_threshold"]):
+        flags.append("priority")
+    if "tag_bonus" in enabled and SPEC["special_tag"] in tags:
+        flags.append("tag:" + str(SPEC["special_tag"]))
+    if "bulk_bonus" in enabled and units >= int(SPEC["bulk_threshold"]):
+        flags.append("bulk")
+    if "premium_bonus" in enabled and value["plan"] == SPEC["premium_plan"]:
+        flags.append("premium")
+    return {{
+        "bucket": bucket,
+        "score": score,
+        "normalized_units": normalized,
+        "flags": sorted(flags),
+    }}
+
+
+for line in sys.stdin:
+    if line.strip():
+        print(json.dumps(transform(json.loads(line)), sort_keys=True, separators=(",", ":")))
+'''
+    _write(workspace, str(oracle.get("solution_path", "solution/reconstruct.py")), source)
+    return []
+
+
 def _mediated_world_golden(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -304,6 +373,8 @@ def materialize_parametric_golden(
         return _cross_artifact_golden(workspace, oracle)
     if family == "epistemic_twins":
         return _epistemic_twins_golden(workspace, oracle)
+    if family == "black_box_reconstruction":
+        return _black_box_golden(workspace, oracle)
     return _legacy_materializer(family, workspace, oracle)
 
 
