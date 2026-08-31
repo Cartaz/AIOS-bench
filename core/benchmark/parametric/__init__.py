@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..black_box_api import start_black_box_runtime, write_black_box_client
 from ..task_runtime import TaskRuntime
 from ..tool_recovery_api import (
     start_tool_recovery_runtime,
@@ -23,6 +24,11 @@ from ..world_service import (
     SupportDependencyWorldService,
     SupportWorldService,
     verify_support_action_log,
+)
+from .black_box_reconstruction import (
+    BlackBoxReconstructionPressure,
+    generate_black_box_reconstruction_variant,
+    grade_black_box_reconstruction_variant,
 )
 from .config_traversal import (
     ConfigTraversalPressure,
@@ -78,6 +84,7 @@ FAMILIES = {
     "wide_retrieval",
     "cross_artifact",
     "epistemic_twins",
+    "black_box_reconstruction",
 }
 
 _PRESSURE_TYPES = {
@@ -90,6 +97,7 @@ _PRESSURE_TYPES = {
     "wide_retrieval": WideRetrievalPressure,
     "cross_artifact": CrossArtifactPressure,
     "epistemic_twins": EpistemicTwinPressure,
+    "black_box_reconstruction": BlackBoxReconstructionPressure,
 }
 
 
@@ -143,6 +151,15 @@ def materialize_variant(
     if family == "epistemic_twins":
         pressure = EpistemicTwinPressure.from_mapping(parameters or {})
         return generate_epistemic_twins_variant(workspace, seed=int(seed), pressure=pressure)
+    if family == "black_box_reconstruction":
+        pressure = BlackBoxReconstructionPressure.from_mapping(parameters or {})
+        oracle = generate_black_box_reconstruction_variant(
+            workspace,
+            seed=int(seed),
+            pressure=pressure,
+        )
+        write_black_box_client(workspace)
+        return _reseal_variant(oracle)
     if family == "tool_recovery":
         pressure = ToolRecoveryPressure.from_mapping(parameters or {})
         oracle = generate_tool_recovery_variant(
@@ -181,6 +198,8 @@ def start_variant_runtime(
         return start_dependency_world_runtime(workspace, run_dir, task_id, oracle)
     if family == "tool_recovery":
         return start_tool_recovery_runtime(workspace, run_dir, task_id, oracle)
+    if family == "black_box_reconstruction":
+        return start_black_box_runtime(workspace, run_dir, task_id, oracle)
     return TaskRuntime()
 
 
@@ -244,6 +263,13 @@ def evaluate_variant(
         return grade_cross_artifact_variant(workspace, oracle)
     if family == "epistemic_twins":
         return grade_epistemic_twins_variant(workspace, oracle)
+    if family == "black_box_reconstruction":
+        return grade_black_box_reconstruction_variant(
+            workspace,
+            oracle,
+            run_dir=run_dir,
+            task_id=task_id,
+        )
     if family == "expense_report":
         passed, detail = check_expense_variant(workspace, oracle)
     elif family == "config_traversal":
@@ -311,6 +337,7 @@ def diagnose_variant_failure(
 
 
 __all__ = [
+    "BlackBoxReconstructionPressure",
     "ConfigTraversalPressure",
     "CrossArtifactPressure",
     "DependencyWorldPressure",
