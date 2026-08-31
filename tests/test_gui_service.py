@@ -32,6 +32,7 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
         "data_cross_artifact_001",
         "reasoning_epistemic_001",
         "retrieval_wide_001",
+        "software_black_box_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
         "tool_recovery_001",
@@ -80,6 +81,7 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "wide_retrieval",
             "cross_artifact",
             "epistemic_twins",
+            "black_box_reconstruction",
         }
         assert coordinates["dependency_world"] == {
             "entity_count": 30,
@@ -122,6 +124,13 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "distractor_records": 12,
             "archive_revisions": 3,
             "source_depth": 3,
+        }
+        assert coordinates["black_box_reconstruction"] == {
+            "rule_count": 7,
+            "public_examples": 12,
+            "probe_budget": 48,
+            "distractor_fields": 3,
+            "max_units": 500,
         }
     finally:
         runner.abort(tasks)
