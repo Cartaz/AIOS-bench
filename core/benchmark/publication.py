@@ -22,6 +22,7 @@ ANALYSIS_IMPLEMENTATION_FILES = (
     "horizon_analysis.py",
     "landscapes.py",
     "raw.py",
+    "reconstruction_analysis.py",
     "report.py",
     "retrieval_analysis.py",
     "statistics.py",
