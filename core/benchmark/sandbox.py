@@ -145,8 +145,9 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     a special transport case: its model runs in a separately isolated service,
     while the trusted local client retains only the package access it needs and
     masks benchmark-owned answer material explicitly. Hidden black-box verifier
-    processes additionally receive a private network namespace so reconstructed
-    code cannot depend on a live service or external endpoint during grading.
+    processes additionally receive private network and PID namespaces so
+    reconstructed code cannot depend on a live endpoint or inspect the grader's
+    host process tree during hidden evaluation.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
@@ -172,8 +173,8 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             strategy = "bubblewrap_repo_hidden_workspace_only"
 
         if adapter_name == "blackbox-verifier":
-            prefix += ("--unshare-net",)
-            strategy += "_network_isolated"
+            prefix += ("--unshare-net", "--unshare-pid")
+            strategy += "_network_pid_isolated"
 
         if adapter_name == "piagent":
             pi_state = Path.home() / ".pi" / "agent"
