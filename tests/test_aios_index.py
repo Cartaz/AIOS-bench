@@ -9,7 +9,7 @@ from core.benchmark.aios_index import (
     IndexEntry,
     get_aios_index_profile,
 )
-from core.benchmark.parametric import FAMILIES, normalize_parameters
+from core.benchmark.parametric import normalize_parameters
 from core.benchmark.paths import TASKS_ROOT
 from core.benchmark.tasks import load_tasks
 
@@ -22,6 +22,15 @@ EXPECTED_TASK_IDS = {
     "software_black_box_001",
     "tool_use_lineage_001",
     "tool_recovery_001",
+}
+EXPECTED_FAMILIES = {
+    "dependency_world",
+    "workspace_lineage",
+    "tool_recovery",
+    "wide_retrieval",
+    "cross_artifact",
+    "epistemic_twins",
+    "black_box_reconstruction",
 }
 
 
@@ -37,11 +46,17 @@ def test_default_aios_index_is_compact_canonical_v4_selection() -> None:
     assert all(task.tier == 5 for task in selected)
 
 
-def test_aios_index_profile_digest_covers_selection_and_effective_pressures() -> None:
+def test_aios_index_profile_digest_covers_selection_and_only_selected_pressures() -> None:
     profile = get_aios_index_profile()
-    assert profile.parameters() == normalize_parameters()
-    assert set(profile.parameters()) == FAMILIES
+    canonical = normalize_parameters()
+
+    assert set(profile.parameters()) == EXPECTED_FAMILIES
+    assert profile.parameters() == {
+        family: canonical[family]
+        for family in profile.pressure_families
+    }
     assert len(profile.digest) == 64
+    assert profile.comparison_id == f"{profile.id}@{profile.digest}"
 
     changed = AIOSIndexProfile(
         "changed",
@@ -55,20 +70,13 @@ def test_aios_index_context_is_self_describing_without_cloning_task_definitions(
     context = profile.context()
 
     assert context["kind"] == AIOS_INDEX_CONTEXT_KIND
-    assert context["profile_id"] == profile.id
+    assert context["profile_name"] == profile.id
+    assert context["profile_id"] == profile.comparison_id
     assert context["profile_digest"] == profile.digest
     assert context["task_count"] == len(profile.entries)
     assert set(context["task_ids"]) == EXPECTED_TASK_IDS
     assert set(context["roles"]) == EXPECTED_TASK_IDS
-    assert set(context["pressure_coordinates"]) == {
-        "dependency_world",
-        "workspace_lineage",
-        "tool_recovery",
-        "wide_retrieval",
-        "cross_artifact",
-        "epistemic_twins",
-        "black_box_reconstruction",
-    }
+    assert set(context["pressure_coordinates"]) == EXPECTED_FAMILIES
 
 
 def test_aios_index_rejects_missing_catalog_task() -> None:
@@ -90,6 +98,17 @@ def test_aios_index_rejects_dependency_outside_profile() -> None:
     profile = AIOSIndexProfile("broken", (IndexEntry("dependent_task", "test"),))
     with pytest.raises(ValueError, match="outside the profile"):
         profile.select_tasks([task])
+
+
+def test_aios_index_rejects_family_drift() -> None:
+    tasks = load_tasks(TASKS_ROOT, "frontier_v4")
+    profile = AIOSIndexProfile(
+        "broken",
+        (IndexEntry("tool_recovery_001", "test", "wide_retrieval"),),
+    )
+
+    with pytest.raises(ValueError, match="family drift"):
+        profile.select_tasks(tasks)
 
 
 def test_aios_index_module_has_no_catalog_copy() -> None:
