@@ -37,6 +37,8 @@ NON_SEMANTIC_MODULES = frozenset({
     "frontier_v3_runner.py",
     "frontier_v4_runner.py",
     "golden_solutions.py",
+    "horizon.py",
+    "horizon_analysis.py",
     "landscapes.py",
     "parametric_goldens.py",
     "paths.py",
