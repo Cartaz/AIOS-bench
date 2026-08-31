@@ -28,6 +28,8 @@ class SuiteDefinition:
 
 NON_SEMANTIC_MODULES = frozenset({
     "ablations.py",
+    "aios_index.py",
+    "aios_index_execution.py",
     "cli.py",
     "config.py",
     "cross_artifact_analysis.py",
@@ -37,6 +39,7 @@ NON_SEMANTIC_MODULES = frozenset({
     "frontier_v3_runner.py",
     "frontier_v4_runner.py",
     "golden_solutions.py",
+    "health.py",
     "horizon.py",
     "horizon_analysis.py",
     "horizon_execution.py",
