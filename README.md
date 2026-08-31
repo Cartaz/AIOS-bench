@@ -7,6 +7,7 @@ AIOS-Bench is a reproducible benchmark application for local AI operating-system
 - Linux desktop (CachyOS/Arch + KDE is first-class)
 - Python 3.12+
 - Qt/PySide6 with WebEngine
+- Bubblewrap (`bwrap`) for strict grader-hidden sandboxing; V4.8 black-box reconstruction fails closed when a functional sandbox is unavailable
 - Optional harness runtimes configured through the in-app Setup / Doctor workflow
 
 ## Install
@@ -16,7 +17,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-The installer resolves the repository root from any working directory, creates or repairs `.venv`, installs runtime/development requirements, and verifies the critical Qt/application imports.
+The installer resolves the repository root from any working directory, creates or repairs `.venv`, installs runtime/development requirements, verifies the critical Qt/application imports, and probes whether an installed Bubblewrap can actually create the sandbox required by strict black-box reconstruction grading. Missing or unusable Bubblewrap is reported explicitly without preventing installation of the rest of AIOS-Bench.
 
 ## Launch
 
@@ -45,13 +46,14 @@ Persistent/operational state is owned by Python. JavaScript never writes setting
 Frontier v3 and v4 remain separate scientific catalogs so historical results and benchmark semantics stay identifiable, but they share one `FrontierRunner` execution engine.
 
 - **Frontier v3** uses frozen/static task fixtures through `StaticTaskMaterializer`. Task-specific fixture preparation is declared by catalog `setup` entries rather than hard-coded task IDs in the materializer.
-- **Frontier v4** uses deterministic seeded families through `ParametricTaskMaterializer`, with generated grader oracles stored outside the agent workspace. Its active families cover expense reporting, configuration traversal, stateful support worlds, dependency/tool gaps, workspace lineage, typed tool recovery, exhaustive local retrieval with provenance, cross-artifact reconciliation, and paired premise verification.
+- **Frontier v4** uses deterministic seeded families through `ParametricTaskMaterializer`, with generated grader oracles stored outside the agent workspace. Its active families cover expense reporting, configuration traversal, stateful support worlds, dependency/tool gaps, workspace lineage, typed tool recovery, exhaustive local retrieval with provenance, cross-artifact reconciliation, paired premise verification, and black-box software reconstruction.
 - **Workspace lineage** generates revision-pinned DAGs with coherent historical revisions and unrelated configuration distractors, requiring agents to recover provenance before deriving effective state.
 - **Tool recovery** exposes a benchmark-owned task-scoped loopback API with typed operations, similarly named inactive tools, incomplete list responses, retryable read failures and `response_lost` writes. Operational state is hidden from the agent workspace while the API is active and restored for deterministic final-state evaluation. The verifier checks both final state and benchmark-owned action provenance, including idempotency-key reuse after ambiguous writes.
 - **Wide retrieval** generates a frozen seeded local corpus with an explicitly authoritative current tree, plausible mirrors and stale conflicting archives. Agents must return every and only matching record with exact semantic fields and exact JSONL path/line provenance. Strict completion remains binary, while deterministic component metrics expose record precision/recall/F1, field accuracy and provenance recall without using an LLM judge.
 - **Cross-artifact consistency** generates an authoritative integer-cent ledger plus archived distractor revisions and requires two independently consumable representations of the same account summary: strict JSON and strict Markdown. Each artifact is graded independently against the hidden canonical transformation and then reconciled field-for-field with the other. Source files are hash-protected, unsupported account rows fail strict grading, and a disagreement between otherwise parseable deliverables is diagnosed as `CROSS_ARTIFACT_MISMATCH`.
 - **Epistemic twins** generates paired action requests whose prose makes the same decisive claim while the current authoritative registry supports one twin and contradicts exactly one decisive fact in the other. Opaque IDs and shuffled ordering prevent label-based shortcuts; stale archived registry revisions plausibly support the corrupted claims but are explicitly non-authoritative. The grader measures valid-twin acceptance, corrupted-twin rejection, false-premise compliance, over-cautious refusal, evidence accuracy and pair-level discrimination, so neither an always-comply nor an always-refuse policy can score well.
-- **Generated long-horizon pressure** is an experiment profile over existing canonical v4 families rather than a tenth synthetic mega-task. It executes ordered exact pressure cells for stateful worlds, dependency worlds, workspace lineage, tool recovery and wide retrieval while holding the generated task seed constant across cells within a repeat. Each cell still uses the ordinary family generator, runtime and deterministic grader.
+- **Black-box reconstruction** exposes only a public input/output contract, generated examples and a bounded task-scoped reference probe service. The agent must implement `solution/reconstruct.py` without receiving the hidden reference specification. The reference service is shut down before evaluation; deterministic hidden property, boundary and transfer cases then execute the candidate under a grader-hidden Bubblewrap sandbox. Strict success requires perfect hidden outputs and protocol compliance, while partial property/transfer/field accuracy and probe usage remain diagnostic only.
+- **Generated long-horizon pressure** is an experiment profile over existing canonical v4 families rather than a synthetic mega-task. It executes ordered exact pressure cells for stateful worlds, dependency worlds, workspace lineage, tool recovery and wide retrieval while holding the generated task seed constant across cells within a repeat. Each cell still uses the ordinary family generator, runtime and deterministic grader.
 
 Materialization is a task/suite concern; harness execution, lifecycle, telemetry, scoring, persistence and scheduling are shared. Frontier v4 pressure defaults are normalized in the parametric family registry so CLI and desktop runs record the same complete coordinate set in execution identity. A future catalog therefore does not require a new execution engine merely because its task materialization strategy changes.
 
@@ -72,7 +74,7 @@ The desktop UI is the canonical interface. The engineering CLI exposes the same 
 aiosbench --suite frontier_v4 --piagent --model MODEL --skill-ablation --no-resume
 ```
 
-Tool-recovery pressure can be varied through the `--v4-tool-*` coordinates, Wide Retrieval pressure through `--v4-retrieval-*`, cross-artifact pressure through `--v4-cross-*`, and Epistemic Twins pressure through `--v4-epistemic-*`. All effective pressure coordinates are recorded in execution identity. The desktop service consumes the same normalized family registry, so even families without dedicated GUI pressure editors retain their canonical defaults in run identity.
+Tool-recovery pressure can be varied through the `--v4-tool-*` coordinates, Wide Retrieval pressure through `--v4-retrieval-*`, cross-artifact pressure through `--v4-cross-*`, Epistemic Twins pressure through `--v4-epistemic-*`, and black-box reconstruction pressure through `--v4-black-box-*`. All effective pressure coordinates are recorded in execution identity. The desktop service consumes the same normalized family registry, so even families without dedicated GUI pressure editors retain their canonical defaults in run identity.
 
 ### Frontier v4 generated long-horizon pressure
 
@@ -89,6 +91,23 @@ aiosbench --suite frontier_v4 --piagent --model MODEL horizon
 ```
 
 `--repeats`, `--seed`, skill ablations and matched multi-harness execution remain available. In `horizon` mode the benchmark-owned profile owns the exact pressure vectors, so manual `--v4-*` pressure options are not consulted. `--total-timeout` remains the existing per-runner active-execution budget and therefore resets for each pressure cell; no hidden profile-wide timeout was introduced.
+
+### Frontier v4 black-box reconstruction
+
+V4.8 adds `software_black_box_001`, a Tier-5 reconstruction task backed by the `black_box_reconstruction` parametric family. The generated variant changes the number of enabled hidden rules, public-example count, live probe budget, ignored distractor-field count and numeric input span. Those effective coordinates are part of normal run identity and can be controlled from the engineering CLI:
+
+```bash
+aiosbench --suite frontier_v4 --piagent --model MODEL \
+  --v4-black-box-rules 8 \
+  --v4-black-box-public-examples 20 \
+  --v4-black-box-probe-budget 64 \
+  --v4-black-box-distractor-fields 5 \
+  --v4-black-box-max-units 900
+```
+
+The bounded reference API exists only while the task runtime is active. It never writes the hidden reference specification into the workspace, enforces authentication and a successful-probe budget, and records benchmark-owned probe provenance outside the agent workspace. Hidden verification occurs only after that service is closed. The candidate implementation receives JSONL over stdin and must emit exactly one strict output object per input line; stdout commentary, missing/extra lines or malformed objects are protocol failures.
+
+The hidden verifier deliberately includes generated property cases, exact boundary combinations and high-range transfer cases outside the public-example distribution. It fails closed if grader-hidden sandboxing is unavailable. A passing task therefore means the reconstructed implementation generalized independently of the live reference service rather than replaying cached probe outputs or public examples. `summary.json` exposes dedicated black-box diagnostic aggregates including strict pass rate, property accuracy, transfer accuracy, exact-case accuracy, output-field accuracy, protocol-error rate and probe-budget utilization; none of these partial diagnostics substitutes for strict task success.
 
 Only `benchmarks/tasks/frontier_v3/` and `benchmarks/tasks/frontier_v4/` are active Frontier catalogs. Root-level task JSON files and `frontier_v2.json` are retained historical assets and are not loaded by the desktop/current Frontier services. See `benchmarks/tasks/README.md`.
 
@@ -118,11 +137,11 @@ The file rotates at 2 MiB with three backups. If the state directory cannot be c
 .venv/bin/ruff check main.py config core ui tests
 ```
 
-CI runs these checks on supported Python 3.12+ versions and performs the Qt/WebEngine smoke test offscreen. Ruff enables the complete `F` (Pyflakes) correctness family in addition to `E9`; broader style migrations such as import sorting or pyupgrade remain separate changes.
+CI runs these checks on supported Python 3.12+ versions, verifies that Bubblewrap can actually create the grader-hidden sandbox used by V4.8, and performs the Qt/WebEngine smoke test offscreen. Ruff enables the complete `F` (Pyflakes) correctness family in addition to `E9`; broader style migrations such as import sorting or pyupgrade remain separate changes.
 
 ## Benchmark properties
 
-AIOS-Bench uses deterministic evaluators rather than an LLM judge. Results record execution identity, model/provider metadata, benchmark semantic fingerprints and failure taxonomy. Frontier v4 additionally records seeded variant identity and pressure coordinates. V4.3 adds deterministic tool-recovery diagnoses for tool selection, schema/argument misuse, excessive retry loops and failed recovery. V4.4 adds deterministic `INCOMPLETE_RETRIEVAL` and `WRONG_AUTHORITY` diagnoses plus dedicated retrieval-quality metrics in `summary.json`. V4.5 adds independent machine/human artifact accuracy, cross-artifact reconciliation metrics and the deterministic `CROSS_ARTIFACT_MISMATCH` diagnosis. V4.6 adds deterministic `FALSE_PREMISE_COMPLIANCE`, `OVERCAUTIOUS_REFUSAL` and `EPISTEMIC_DISCRIMINATION_FAILURE` diagnoses plus dedicated paired-premise metrics in `summary.json`. V4.7 adds benchmark-owned generated pressure profiles and exact family-specific capability response curves while preserving the original family graders and explicit joint pressure vectors. Strict task success still requires all fatal acceptance checks to pass; partial family metrics remain diagnostic rather than a way to convert an incorrect decision set into a pass.
+AIOS-Bench uses deterministic evaluators rather than an LLM judge. Results record execution identity, model/provider metadata, benchmark semantic fingerprints and failure taxonomy. Frontier v4 additionally records seeded variant identity and pressure coordinates. V4.3 adds deterministic tool-recovery diagnoses for tool selection, schema/argument misuse, excessive retry loops and failed recovery. V4.4 adds deterministic `INCOMPLETE_RETRIEVAL` and `WRONG_AUTHORITY` diagnoses plus dedicated retrieval-quality metrics in `summary.json`. V4.5 adds independent machine/human artifact accuracy, cross-artifact reconciliation metrics and the deterministic `CROSS_ARTIFACT_MISMATCH` diagnosis. V4.6 adds deterministic `FALSE_PREMISE_COMPLIANCE`, `OVERCAUTIOUS_REFUSAL` and `EPISTEMIC_DISCRIMINATION_FAILURE` diagnoses plus dedicated paired-premise metrics in `summary.json`. V4.7 adds benchmark-owned generated pressure profiles and exact family-specific capability response curves while preserving the original family graders and explicit joint pressure vectors. V4.8 adds deterministic black-box reconstruction with a bounded reference probe, post-runtime hidden property/transfer verification, `VERIFICATION_FAILURE` diagnosis and dedicated generalization/probe-use metrics. Strict task success still requires all fatal acceptance checks to pass; partial family metrics remain diagnostic rather than a way to convert an incorrect decision set into a pass.
 
 Execution/scoring source files are included in suite semantic fingerprints by default, reducing the risk that a new engine module changes benchmark behavior without invalidating resume/comparability metadata. Derived reporting and benchmark-owned experiment-profile/orchestration modules remain outside that semantic boundary; long-horizon profiles carry their own digest so changing an experiment path does not masquerade as a task-semantic revision.
 
