@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Mapping
 
+from core.benchmark.aios_index import AIOS_INDEX_PROFILES, get_aios_index_profile
+from core.benchmark.aios_index_execution import execute_aios_index_profile
 from core.benchmark.config import AGENTS
 from core.benchmark.experiments import make_experiment_id
 from core.benchmark.frontier_runner import FrontierRunner
@@ -43,6 +45,7 @@ class RunRequest:
     skill_mode: str = "no_skill"
     skill_ablation: bool = False
     horizon_profile: str | None = None
+    index_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,7 @@ class BenchmarkService:
             raise ValueError(f"Unknown suite: {suite}")
         tasks = load_tasks(self.tasks_root, suite)
         horizon_profiles = []
+        index_profiles = []
         if suite == "frontier_v4":
             horizon_profiles = [
                 {
@@ -76,11 +80,21 @@ class BenchmarkService:
                 }
                 for profile in HORIZON_PROFILES.values()
             ]
+            index_profiles = [
+                {
+                    "id": profile.id,
+                    "task_count": len(profile.task_ids),
+                    "task_ids": list(profile.task_ids),
+                    "profile_digest": profile.digest,
+                }
+                for profile in AIOS_INDEX_PROFILES.values()
+            ]
         return {
             "suite": suite,
             "suites": list(SUITES),
             "skill_modes": list(SKILL_MODES) if suite == "frontier_v4" else [],
             "horizon_profiles": horizon_profiles,
+            "aios_index_profiles": index_profiles,
             "harnesses": [
                 {"id": name, "name": config.display_name}
                 for name, config in AGENTS.items()
@@ -120,6 +134,10 @@ class BenchmarkService:
         profile = get_horizon_profile(profile_id)
         return tuple(dict.fromkeys(cell.task_id for cell in profile.cells))
 
+    @staticmethod
+    def _index_task_ids(profile_id: str) -> tuple[str, ...]:
+        return get_aios_index_profile(profile_id).task_ids
+
     def validate_request(self, request: RunRequest) -> list[Task]:
         if not isinstance(request.suite, str) or request.suite not in SUITES:
             raise ValueError(f"Unknown suite: {request.suite}")
@@ -150,6 +168,11 @@ class BenchmarkService:
             raise ValueError("Skill interventions are available only for Frontier v4")
         if request.horizon_profile is not None and not isinstance(request.horizon_profile, str):
             raise ValueError("Long-horizon profile must be a string or null")
+        if request.index_profile is not None and not isinstance(request.index_profile, str):
+            raise ValueError("AIOS-Index profile must be a string or null")
+        if request.horizon_profile is not None and request.index_profile is not None:
+            raise ValueError("Long-horizon and AIOS-Index profiles are mutually exclusive")
+
         if request.horizon_profile is not None:
             if request.suite != "frontier_v4":
                 raise ValueError("Long-horizon profiles are available only for Frontier v4")
@@ -159,6 +182,19 @@ class BenchmarkService:
                 raise ValueError(str(exc)) from exc
         else:
             required_horizon_tasks = ()
+
+        if request.index_profile is not None:
+            if request.suite != "frontier_v4":
+                raise ValueError("AIOS-Index profiles are available only for Frontier v4")
+            if request.skill_ablation or request.skill_mode != "no_skill":
+                raise ValueError("AIOS-Index uses the canonical no-skill condition")
+            try:
+                required_index_tasks = self._index_task_ids(request.index_profile)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+        else:
+            required_index_tasks = ()
+
         if not isinstance(request.model, str):
             raise ValueError("Model must be a string")
         for value, label in (
@@ -181,6 +217,11 @@ class BenchmarkService:
             raise ValueError(
                 "Long-horizon profile owns task selection; required tasks: "
                 + ", ".join(required_horizon_tasks)
+            )
+        if required_index_tasks and set(request.task_ids) != set(required_index_tasks):
+            raise ValueError(
+                "AIOS-Index profile owns task selection; required tasks: "
+                + ", ".join(required_index_tasks)
             )
 
         selected = set(request.task_ids)
@@ -225,6 +266,11 @@ class BenchmarkService:
             if run_request.horizon_profile is not None
             else None
         )
+        index = (
+            get_aios_index_profile(run_request.index_profile)
+            if run_request.index_profile is not None
+            else None
+        )
         work_items = len(horizon.cells) if horizon is not None else len(tasks)
         total_units = (
             work_items
@@ -245,11 +291,13 @@ class BenchmarkService:
         experiment_id = make_experiment_id(run_request.suite)
         if horizon is not None:
             experiment_id += "-horizon"
+        elif index is not None:
+            experiment_id += "-aios-index"
         try:
             if horizon is not None:
                 by_id = {task.id: task for task in tasks}
 
-                def runner_factory(
+                def horizon_runner_factory(
                     harness: str,
                     run_id: str,
                     orchestration_seed: int,
@@ -275,7 +323,36 @@ class BenchmarkService:
                     repeats=run_request.repeats,
                     base_seed=run_request.seed,
                     experiment_id=experiment_id,
-                    runner_factory=runner_factory,
+                    runner_factory=horizon_runner_factory,
+                ).exit_code
+                token.raise_if_cancelled()
+            elif index is not None:
+
+                def index_runner_factory(
+                    harness: str,
+                    run_id: str,
+                    orchestration_seed: int,
+                    parameters: Mapping[str, Mapping[str, int]],
+                ) -> ObservableFrontierRunner:
+                    return self._build_runner(
+                        run_request,
+                        harness,
+                        run_id,
+                        orchestration_seed,
+                        emit,
+                        token,
+                        skill_mode="no_skill",
+                        parametric_parameters=parameters,
+                    )
+
+                exit_code = execute_aios_index_profile(
+                    index,
+                    tasks=tasks,
+                    harnesses=run_request.harnesses,
+                    repeats=run_request.repeats,
+                    base_seed=run_request.seed,
+                    experiment_id=experiment_id,
+                    runner_factory=index_runner_factory,
                 ).exit_code
                 token.raise_if_cancelled()
             else:
