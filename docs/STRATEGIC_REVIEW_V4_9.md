@@ -1,6 +1,6 @@
 # Frontier V4.9 strategic review — AIOS-Index and benchmark health
 
-Status: implementation and strategic review complete; formal milestone closure requires the canonical CI matrix on this review commit to pass.
+Status: **CLOSED** — implementation, strategic review and canonical CI validation complete.
 
 This review supplements `docs/STRATEGIC_REVIEW.md` and closes the Frontier v4 roadmap sequence started with V4.1. V4.9 does not add another capability family. It consolidates the existing benchmark into a compact routine-development profile, a benchmark-construction health gate and a simpler parametric-family integration boundary.
 
@@ -190,7 +190,7 @@ V4.9-specific deterministic coverage includes:
 - health budget validation;
 - regression coverage preventing distinct compact profile revisions from sharing one comparison identity.
 
-Before this review commit, implementation commit `5e828b1f1c95bff4a7475d1a1017bd718f7f646e` passed the complete GitHub Actions matrix on Python 3.12, 3.13 and 3.14. The Python 3.12 job observed:
+Implementation commit `5e828b1f1c95bff4a7475d1a1017bd718f7f646e` passed the complete GitHub Actions matrix on Python 3.12, 3.13 and 3.14. The Python 3.12 job observed:
 
 - installation and critical Qt imports successful;
 - Bubblewrap functional sandbox probe successful;
@@ -198,6 +198,8 @@ Before this review commit, implementation commit `5e828b1f1c95bff4a7475d1a1017bd
 - Ruff: `All checks passed!`;
 - pytest: `451 passed in 19.39s`;
 - no Python/project warning summary.
+
+The formal strategic-review commit `25ea0984674852ad8f2901f1c05632d6c7babe28` also passed the canonical matrix on Python 3.12, 3.13 and 3.14. Every job completed installation, Bubblewrap verification, compileall, Ruff and pytest successfully; the Python 3.13 run observed `451 passed in 33.33s`.
 
 ## Deliberate deferrals
 
@@ -223,4 +225,4 @@ V4.9 completes the intended Frontier v4 roadmap without adding a parallel benchm
 
 The milestone review found and resolved three correctness/maintainability issues that ordinary green unit tests did not expose: unrelated pressure coordinates in compact-profile identity, orchestration modules contaminating suite semantic revisions, and health validation covering only one representative task. It also made compact-profile comparison identity fail closed across profile revisions, removed the remaining Python test warning and brought documentation up to date.
 
-No high-impact tactical workaround or duplicated scientific source of truth remains in the V4.9 path. Formal V4.9 closure requires this review commit to pass the canonical Python 3.12, 3.13 and 3.14 CI matrix with installation, Bubblewrap verification, compileall, Ruff and pytest observed green.
+No high-impact tactical workaround or duplicated scientific source of truth remains in the V4.9 path. The strategic-review commit passed the complete canonical CI matrix, so **Frontier V4.9 is formally closed** on branch `v4.9-aios-index-benchmark-health`. Integration into `main` remains a separate operation.
