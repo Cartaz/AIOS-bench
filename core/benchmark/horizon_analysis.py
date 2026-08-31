@@ -94,7 +94,7 @@ def long_horizon_response_curves(
     is never converted into an assumed difficulty score.
     """
     groups: dict[
-        tuple[str, str, str, str, str, str, str, str],
+        tuple[str, str, str, str, str, str, str, str, str],
         list[dict[str, Any]],
     ] = defaultdict(list)
     for row in rows:
@@ -123,7 +123,8 @@ def long_horizon_response_curves(
             profile_id,
             profile_digest,
             family,
-            f"{model_fingerprint}|{landscape_profile}",
+            model_fingerprint,
+            landscape_profile,
         )
         groups[key].append(row)
 
@@ -201,7 +202,7 @@ def long_horizon_response_curves(
         seed_control_consistent = bool(seed_control) and all(
             len(values) == 1 for values in seed_control.values()
         )
-        model_fingerprint, landscape_profile = key[7].split("|", 1)
+        model_fingerprint = key[7]
         output.append({
             "schema": HORIZON_RESPONSE_SCHEMA,
             "harness": key[0],
@@ -214,7 +215,7 @@ def long_horizon_response_curves(
             "model_identity_fingerprint": (
                 None if model_fingerprint == "unverified" else model_fingerprint
             ),
-            "landscape_execution_fingerprint": landscape_profile,
+            "landscape_execution_fingerprint": key[8],
             "strict_model_comparable": (
                 model_fingerprint != "unverified" and all_strict
             ),
