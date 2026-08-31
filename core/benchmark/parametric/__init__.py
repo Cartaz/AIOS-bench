@@ -404,8 +404,8 @@ def start_variant_runtime(
     task_id: str,
     oracle: Mapping[str, Any],
 ) -> TaskRuntime:
-    spec = _family_spec(family)
-    if spec.runtime is None:
+    spec = FAMILY_SPECS.get(family)
+    if spec is None or spec.runtime is None:
         return TaskRuntime()
     return spec.runtime(workspace, run_dir, task_id, oracle)
 
@@ -419,7 +419,9 @@ def evaluate_variant(
     task_id: str | None = None,
 ) -> VariantGrade:
     """Grade one generated family through a common structured contract."""
-    spec = _family_spec(family)
+    spec = FAMILY_SPECS.get(family)
+    if spec is None:
+        return VariantGrade.binary(False, f"unknown parametric family: {family}")
     return spec.grader(workspace, oracle, run_dir, task_id)
 
 
@@ -448,8 +450,8 @@ def diagnose_variant_failure(
     run_dir: Path | None = None,
     task_id: str | None = None,
 ) -> str | None:
-    spec = _family_spec(family)
-    if spec.diagnose is None:
+    spec = FAMILY_SPECS.get(family)
+    if spec is None or spec.diagnose is None:
         return None
     return spec.diagnose(oracle, run_dir, task_id)
 
