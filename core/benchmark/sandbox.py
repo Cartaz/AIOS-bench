@@ -144,7 +144,9 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     cannot leak golden solutions, graders, docs or prior results. Agent Zero is
     a special transport case: its model runs in a separately isolated service,
     while the trusted local client retains only the package access it needs and
-    masks benchmark-owned answer material explicitly.
+    masks benchmark-owned answer material explicitly. Hidden black-box verifier
+    processes additionally receive a private network namespace so reconstructed
+    code cannot depend on a live service or external endpoint during grading.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
@@ -168,6 +170,10 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             prefix += _workspace_rebind_args(workspace)
             grader_hidden = True
             strategy = "bubblewrap_repo_hidden_workspace_only"
+
+        if adapter_name == "blackbox-verifier":
+            prefix += ("--unshare-net",)
+            strategy += "_network_isolated"
 
         if adapter_name == "piagent":
             pi_state = Path.home() / ".pi" / "agent"
