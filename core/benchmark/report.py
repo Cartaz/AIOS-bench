@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from .ablations import skill_ablation_pairs
 from .cross_artifact_analysis import cross_artifact_metrics
 from .epistemic_analysis import epistemic_twin_metrics
+from .horizon_analysis import long_horizon_response_curves
 from .landscapes import pressure_landscapes, pressure_paired_comparisons
 from .raw import latest_attempts, load_attempts, source_index
 from .retrieval_analysis import wide_retrieval_metrics
@@ -341,6 +342,7 @@ def build_summary(root: Path) -> dict[str, Any]:
         "raw_source_file_count": sources["file_count"],
         "pressure_landscapes": pressure_landscapes(canonical_rows, **filters),
         "pressure_paired_comparisons": pressure_paired_comparisons(canonical_rows, **filters),
+        "long_horizon_response_curves": long_horizon_response_curves(canonical_rows, **filters),
         "wide_retrieval_metrics": wide_retrieval_metrics(canonical_rows, **filters),
         "cross_artifact_metrics": cross_artifact_metrics(canonical_rows, **filters),
         "epistemic_twin_metrics": epistemic_twin_metrics(canonical_rows, **filters),
