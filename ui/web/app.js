@@ -20,6 +20,13 @@ function toggleSet(set, value, enabled) {
   enabled ? set.add(value) : set.delete(value);
 }
 
+function activeHorizonProfile() {
+  if (!state.catalog) return null;
+  const id = $('horizonProfile').value;
+  if (!id) return null;
+  return (state.catalog.horizon_profiles || []).find(profile => profile.id === id) || null;
+}
+
 function setRunState(value) {
   state.running = Boolean(value.running);
   state.busy = Boolean(value.busy ?? value.running);
@@ -63,21 +70,37 @@ function renderHarnesses() {
 
 function renderTasks() {
   if (!state.catalog) return;
+  const profile = activeHorizonProfile();
+  const locked = Boolean(profile);
   const groups = {};
   state.catalog.tasks.forEach(task => (groups[task.category] ||= []).push(task));
   $('tasks').innerHTML = Object.entries(groups).map(([category, tasks]) => `
     <section>
       <div class="group-title">${esc(category)}</div>
       <div class="group-items">${tasks.map(task => `
-        <div class="task ${state.tasks.has(task.id) ? 'selected' : ''}" tabindex="0"
-             role="checkbox" aria-checked="${state.tasks.has(task.id)}" data-task="${esc(task.id)}">
+        <div class="task ${state.tasks.has(task.id) ? 'selected' : ''}" tabindex="${locked ? '-1' : '0'}"
+             role="checkbox" aria-checked="${state.tasks.has(task.id)}" aria-disabled="${locked}"
+             data-task="${esc(task.id)}">
           <span class="dot"></span>
           <div><strong>${esc(task.id)}</strong>
             <div class="task-meta">T${task.tier} · ${esc(task.mode)}${task.depends_on.length ? ` · richiede ${esc(task.depends_on.join(', '))}` : ''}</div>
           </div>
         </div>`).join('')}</div>
     </section>`).join('');
-  $('taskSummary').textContent = `${state.tasks.size} / ${state.catalog.tasks.length} selezionati`;
+  $('selectAllTasks').disabled = locked;
+  $('selectNoTasks').disabled = locked;
+  $('taskSummary').textContent = profile
+    ? `${state.tasks.size} test fissati dal profilo · ${profile.cell_count} celle di pressione`
+    : `${state.tasks.size} / ${state.catalog.tasks.length} selezionati`;
+}
+
+function applyHorizonSelection() {
+  if (!state.catalog) return;
+  const profile = activeHorizonProfile();
+  state.tasks = new Set(
+    profile ? profile.task_ids : state.catalog.tasks.map(task => task.id),
+  );
+  renderTasks();
 }
 
 function renderDoctor() {
@@ -126,6 +149,17 @@ async function loadCatalog() {
     $('skillMode').value = 'no_skill';
     $('skillAblation').checked = false;
   }
+
+  const profiles = catalog.horizon_profiles || [];
+  $('horizonProfile').innerHTML = [
+    '<option value="">Run standard</option>',
+    ...profiles.map(profile => (
+      `<option value="${esc(profile.id)}">Long-horizon · ${profile.cell_count} celle</option>`
+    )),
+  ].join('');
+  $('horizonProfile').disabled = profiles.length === 0;
+  $('horizonProfile').value = '';
+
   renderHarnesses();
   renderTasks();
 }
@@ -171,7 +205,9 @@ function bindUiEvents() {
     if (view) showView(view);
     if (state.catalog) {
       activateSelector('[data-harness]', 'harness', state.harnesses, renderHarnesses, event);
-      activateSelector('[data-task]', 'task', state.tasks, renderTasks, event);
+      if (!activeHorizonProfile()) {
+        activateSelector('[data-task]', 'task', state.tasks, renderTasks, event);
+      }
     }
     const hAction = event.target.dataset?.harnessAction;
     if (hAction && state.catalog) {
@@ -179,7 +215,7 @@ function bindUiEvents() {
       renderHarnesses();
     }
     const tAction = event.target.dataset?.taskAction;
-    if (tAction && state.catalog) {
+    if (tAction && state.catalog && !activeHorizonProfile()) {
       state.tasks = new Set(tAction === 'all' ? state.catalog.tasks.map(t => t.id) : []);
       renderTasks();
     }
@@ -205,6 +241,7 @@ function bindUiEvents() {
   });
 
   $('suite').addEventListener('change', () => void loadCatalog());
+  $('horizonProfile').addEventListener('change', applyHorizonSelection);
   $('refreshDoctor').addEventListener('click', () => {
     if (!state.busy) void loadDoctor();
   });
@@ -227,6 +264,7 @@ function bindUiEvents() {
   $('start').addEventListener('click', () => {
     $('error').textContent = '';
     const totalTimeout = $('totalTimeout').value.trim();
+    const horizonProfile = $('horizonProfile').value;
     const payload = {
       suite: $('suite').value,
       harnesses: [...state.harnesses],
@@ -238,6 +276,7 @@ function bindUiEvents() {
       total_timeout: totalTimeout ? Number(totalTimeout) : null,
       skill_mode: $('skillMode').value,
       skill_ablation: $('skillAblation').checked,
+      horizon_profile: horizonProfile || null,
     };
     void state.backend.startRun(payload).then(ok => {
       if (ok) setRunState({ running: true, busy: true });
