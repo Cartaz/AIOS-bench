@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .ablations import skill_ablation_pairs
+from .aios_index import AIOS_INDEX_CONTEXT_KIND
 from .cross_artifact_analysis import cross_artifact_metrics
 from .epistemic_analysis import epistemic_twin_metrics
 from .horizon import HORIZON_CONTEXT_KIND
@@ -78,9 +79,20 @@ def load_results(root: Path) -> list[dict[str, Any]]:
     return latest_attempts(load_attempts(root))
 
 
-def _is_horizon_context(row: dict[str, Any]) -> bool:
+def _context_kind(row: dict[str, Any]) -> str | None:
     context = row.get("experiment_context")
-    return isinstance(context, dict) and context.get("kind") == HORIZON_CONTEXT_KIND
+    if not isinstance(context, dict):
+        return None
+    kind = context.get("kind")
+    return str(kind) if kind not in (None, "") else None
+
+
+def _is_horizon_context(row: dict[str, Any]) -> bool:
+    return _context_kind(row) == HORIZON_CONTEXT_KIND
+
+
+def _is_aios_index_context(row: dict[str, Any]) -> bool:
+    return _context_kind(row) == AIOS_INDEX_CONTEXT_KIND
 
 
 def _baseline_condition_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -94,14 +106,15 @@ def _baseline_condition_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, A
 def canonical_capability_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return rows suitable for ordinary capability/reliability aggregates.
 
-    Curated skills and deliberate long-horizon pressure sweeps are experimental
-    interventions. They have dedicated analyses and must not silently change
-    the ordinary leaderboard, reliability, failure or efficiency aggregates.
+    Curated skills, deliberate long-horizon pressure sweeps and the compact
+    AIOS-Index profile have dedicated analyses. They must not silently alter
+    the ordinary full-suite leaderboard, reliability, failure or efficiency
+    aggregates.
     """
     return [
         row
         for row in _baseline_condition_rows(rows)
-        if not _is_horizon_context(row)
+        if not _is_horizon_context(row) and not _is_aios_index_context(row)
     ]
 
 
@@ -197,16 +210,20 @@ def _summarize_run(metadata: dict[str, Any], items: list[dict[str, Any]]) -> dic
     if not isinstance(experiment_context, dict) and items:
         candidate = items[0].get("experiment_context")
         experiment_context = candidate if isinstance(candidate, dict) else None
-    pressure_profile = (
-        isinstance(experiment_context, dict)
-        and experiment_context.get("kind") == HORIZON_CONTEXT_KIND
+    experiment_kind = (
+        str(experiment_context.get("kind"))
+        if isinstance(experiment_context, dict) and experiment_context.get("kind") not in (None, "")
+        else None
     )
+    pressure_profile = experiment_kind == HORIZON_CONTEXT_KIND
+    index_profile = experiment_kind == AIOS_INDEX_CONTEXT_KIND
     eligible = (
         complete
         and not legacy
         and not dry_run
         and not experimental_intervention
         and not pressure_profile
+        and not index_profile
     )
     if legacy:
         eligibility_reason = "legacy"
@@ -216,6 +233,8 @@ def _summarize_run(metadata: dict[str, Any], items: list[dict[str, Any]]) -> dic
         eligibility_reason = "experimental_intervention"
     elif pressure_profile:
         eligibility_reason = "pressure_profile"
+    elif index_profile:
+        eligibility_reason = "aios_index_profile"
     elif not complete:
         eligibility_reason = "incomplete"
     else:
@@ -237,12 +256,20 @@ def _summarize_run(metadata: dict[str, Any], items: list[dict[str, Any]]) -> dic
         "execution_fingerprint": metadata.get("execution_fingerprint"),
         "skill_mode": skill_mode,
         "skill_catalog_digest": metadata.get("skill_catalog_digest"),
-        "experiment_kind": (
-            experiment_context.get("kind") if isinstance(experiment_context, dict) else None
-        ),
+        "experiment_kind": experiment_kind,
         "horizon_profile_id": (
             experiment_context.get("profile_id")
             if isinstance(experiment_context, dict) and pressure_profile
+            else None
+        ),
+        "aios_index_profile_id": (
+            experiment_context.get("profile_id")
+            if isinstance(experiment_context, dict) and index_profile
+            else None
+        ),
+        "aios_index_profile_digest": (
+            experiment_context.get("profile_digest")
+            if isinstance(experiment_context, dict) and index_profile
             else None
         ),
         "started_at": metadata.get("started_at"),
@@ -307,6 +334,7 @@ def selected_suite_revision(runs: Iterable[dict[str, Any]]) -> tuple[str, str] |
             "dry_run",
             "experimental_intervention",
             "pressure_profile",
+            "aios_index_profile",
         }
     ]
     if not candidates:
@@ -362,6 +390,37 @@ def latest_eligible(runs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [latest[key] for key in sorted(latest)]
 
 
+def latest_aios_index(runs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Select latest complete compact-profile run per profile/harness/model."""
+    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for run in runs:
+        if run.get("eligibility_reason") != "aios_index_profile" or not run.get("complete"):
+            continue
+        profile_id = _text(run.get("aios_index_profile_id"), "unknown")
+        key = (
+            profile_id,
+            _text(run.get("harness"), "unknown"),
+            _text(run.get("model"), "unknown"),
+        )
+        candidate_order = (
+            _timestamp(run.get("finished_at")),
+            _timestamp(run.get("started_at")),
+            _text(run.get("run_id"), "legacy"),
+        )
+        current = latest.get(key)
+        if current is None:
+            latest[key] = run
+            continue
+        current_order = (
+            _timestamp(current.get("finished_at")),
+            _timestamp(current.get("started_at")),
+            _text(current.get("run_id"), "legacy"),
+        )
+        if candidate_order > current_order:
+            latest[key] = run
+    return [latest[key] for key in sorted(latest)]
+
+
 def build_summary(root: Path) -> dict[str, Any]:
     attempts = load_attempts(root)
     rows = latest_attempts(attempts)
@@ -370,6 +429,7 @@ def build_summary(root: Path) -> dict[str, Any]:
     runs = summarize_rows(rows, _manifests(root))
     selected = selected_suite_revision(runs)
     sources = source_index(root)
+    index_runs = [run for run in runs if run.get("eligibility_reason") == "aios_index_profile"]
     filters = {
         "suite": selected[0] if selected else None,
         "suite_revision": selected[1] if selected else None,
@@ -378,6 +438,10 @@ def build_summary(root: Path) -> dict[str, Any]:
         "analysis_schema": ANALYSIS_SCHEMA,
         "runs": runs,
         "leaderboard": latest_eligible(runs),
+        "aios_index": {
+            "run_count": len(index_runs),
+            "latest_runs": latest_aios_index(runs),
+        },
         "selected_suite": selected[0] if selected else None,
         "selected_suite_revision": selected[1] if selected else None,
         "raw_attempt_count": len(attempts),
