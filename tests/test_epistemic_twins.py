@@ -39,7 +39,7 @@ def _materialize(tmp_path: Path, name: str = "world", seed: int = 42):
 
 
 def test_pressure_rejects_impossible_or_unmediated_coordinates() -> None:
-    with pytest.raises(ValueError, match="2\*pair_count"):
+    with pytest.raises(ValueError, match=r"2\*pair_count"):
         EpistemicTwinPressure(pair_count=8, registry_size=12)
     with pytest.raises(ValueError, match="archive_revisions must be positive"):
         EpistemicTwinPressure(distractor_records=1, archive_revisions=0)
