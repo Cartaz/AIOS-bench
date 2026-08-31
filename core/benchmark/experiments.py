@@ -6,7 +6,7 @@ import random
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 
 EXPERIMENT_SCHEMA = "aios-bench/experiment/v2"
@@ -60,6 +60,17 @@ def matched_schedule(task_ids: Iterable[str], harnesses: Iterable[str], orchestr
     return blocks
 
 
+def _normalized_context(context: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if context is None:
+        return None
+    value = dict(context)
+    try:
+        json.dumps(value, sort_keys=True, ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("experiment context must be JSON-serializable") from exc
+    return value
+
+
 def annotate_experiment(
     run_dir: Path,
     *,
@@ -68,8 +79,15 @@ def annotate_experiment(
     orchestration_seed: int,
     schedule_mode: str,
     task_blocks: dict[str, TaskBlock] | None = None,
+    context: Mapping[str, Any] | None = None,
 ) -> None:
-    """Attach experiment and matched-block identity to run metadata and raw rows."""
+    """Attach experiment and matched-block identity to run metadata and raw rows.
+
+    Optional experiment-specific data is stored under one namespaced
+    `experiment_context` object so profile annotations cannot overwrite the
+    canonical experiment, model or task identity fields.
+    """
+    normalized_context = _normalized_context(context)
     metadata_path = run_dir / "run.json"
     metadata: dict = {}
     if metadata_path.is_file():
@@ -81,6 +99,8 @@ def annotate_experiment(
             "orchestration_seed": int(orchestration_seed),
             "schedule_mode": schedule_mode,
         })
+        if normalized_context is not None:
+            metadata["experiment_context"] = normalized_context
         _write_json_atomic(metadata_path, metadata)
 
     model = ((metadata.get("manifest") or {}).get("model") or {}) if isinstance(metadata, dict) else {}
@@ -111,6 +131,8 @@ def annotate_experiment(
             "model_identity_fingerprint": model_fingerprint,
             "model_strictly_comparable": model_strict,
         })
+        if normalized_context is not None:
+            row["experiment_context"] = normalized_context
         block = (task_blocks or {}).get(str(row.get("task_id")))
         if block is not None:
             row.update({
@@ -124,7 +146,13 @@ def annotate_experiment(
     temporary.replace(checkpoint)
 
 
-def annotate_repeat(run_dir: Path, *, repeat: int, orchestration_seed: int) -> None:
+def annotate_repeat(
+    run_dir: Path,
+    *,
+    repeat: int,
+    orchestration_seed: int,
+    context: Mapping[str, Any] | None = None,
+) -> None:
     """Compatibility wrapper for sequential single-harness repetitions."""
     annotate_experiment(
         run_dir,
@@ -132,4 +160,5 @@ def annotate_repeat(run_dir: Path, *, repeat: int, orchestration_seed: int) -> N
         repeat=repeat,
         orchestration_seed=orchestration_seed,
         schedule_mode="sequential",
+        context=context,
     )
