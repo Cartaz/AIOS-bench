@@ -115,6 +115,8 @@ class MatchedInterleavedScheduler:
             f"orchestration_seed={self.orchestration_seed}"
         )
         try:
+            for runner in self.runners.values():
+                self._annotate(runner)
             for block in self.blocks:
                 task = by_id[block.task_id]
                 print(
