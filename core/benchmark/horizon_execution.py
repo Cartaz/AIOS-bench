@@ -49,6 +49,15 @@ def _run_single_cell(
 ) -> int:
     block = matched_schedule([task.id], [logical_name], orchestration_seed)[0]
     block_map = {task.id: block}
+    annotate_experiment(
+        runner.run_dir,
+        experiment_id=experiment_id,
+        repeat=repeat,
+        orchestration_seed=orchestration_seed,
+        schedule_mode="pressure_sweep_sequential",
+        task_blocks=block_map,
+        context=context,
+    )
     try:
         exit_code = runner.run([task])
     except BaseException:
