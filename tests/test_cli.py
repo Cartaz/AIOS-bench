@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -130,6 +131,58 @@ def test_frontier_v4_rejects_invalid_epistemic_pressure(monkeypatch):
     )
     with pytest.raises(SystemExit, match="invalid Frontier v4 epistemic-twin pressure"):
         cli.main()
+
+
+def test_horizon_is_frontier_v4_only(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["aiosbench", "--piagent", "horizon"])
+
+    with pytest.raises(SystemExit, match="horizon requires --suite frontier_v4"):
+        cli.main()
+
+
+def test_horizon_uses_benchmark_owned_profile_and_ignores_manual_pressure_flags(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    observed = {}
+
+    def fake_execute(profile, **kwargs):
+        observed["profile"] = profile
+        observed.update(kwargs)
+        return SimpleNamespace(exit_code=0)
+
+    summary = tmp_path / "summary.json"
+    summary.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(cli, "execute_horizon_profile", fake_execute)
+    monkeypatch.setattr(cli, "_summary", lambda root: summary)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "aiosbench",
+            "--suite",
+            "frontier_v4",
+            "--piagent",
+            "--run-id",
+            "horizon-test",
+            "--v4-expense-rows",
+            "5",
+            "horizon",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 0
+    profile = observed["profile"]
+    assert profile.id == cli.DEFAULT_HORIZON_PROFILE
+    assert len(profile.cells) == 15
+    assert observed["harnesses"] == ("piagent",)
+    assert observed["skill_modes"] == ("no_skill",)
+    assert observed["experiment_id"] == "horizon-test"
+    parameters = profile.parameters_for(profile.cells[0])
+    assert parameters[profile.cells[0].family] == dict(profile.cells[0].parameters)
+    assert parameters["expense_report"]["rows"] == 48
 
 
 def test_publish_reads_local_results_writes_sealed_snapshots_and_verifies(monkeypatch, tmp_path: Path, capsys):
