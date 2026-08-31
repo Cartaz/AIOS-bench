@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from .ablations import skill_ablation_pairs
 from .cross_artifact_analysis import cross_artifact_metrics
 from .epistemic_analysis import epistemic_twin_metrics
+from .horizon import HORIZON_CONTEXT_KIND
 from .horizon_analysis import long_horizon_response_curves
 from .landscapes import pressure_landscapes, pressure_paired_comparisons
 from .raw import latest_attempts, load_attempts, source_index
@@ -28,6 +29,7 @@ _METADATA_FIELDS = (
     "task_count",
     "dry_run",
     "run_type",
+    "experiment_context",
 )
 
 
@@ -75,18 +77,30 @@ def load_results(root: Path) -> list[dict[str, Any]]:
     return latest_attempts(load_attempts(root))
 
 
-def canonical_capability_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return baseline rows suitable for capability/reliability leaderboards.
+def _is_horizon_context(row: dict[str, Any]) -> bool:
+    context = row.get("experiment_context")
+    return isinstance(context, dict) and context.get("kind") == HORIZON_CONTEXT_KIND
 
-    `no_skill` is the Frontier v4 baseline condition. Curated guidance is an
-    experimental intervention and is analyzed only through the dedicated
-    matched-ablation path so it cannot inflate canonical capability metrics.
-    Legacy rows without intervention metadata remain baseline-compatible.
-    """
+
+def _baseline_condition_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         row
         for row in rows
         if row.get("skill_mode") in {None, "", "no_skill"}
+    ]
+
+
+def canonical_capability_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return rows suitable for ordinary capability/reliability aggregates.
+
+    Curated skills and deliberate long-horizon pressure sweeps are experimental
+    interventions. They have dedicated analyses and must not silently change
+    the ordinary leaderboard, reliability, failure or efficiency aggregates.
+    """
+    return [
+        row
+        for row in _baseline_condition_rows(rows)
+        if not _is_horizon_context(row)
     ]
 
 
@@ -178,13 +192,29 @@ def _summarize_run(metadata: dict[str, Any], items: list[dict[str, Any]]) -> dic
         skill_mode_raw = items[0].get("skill_mode")
     skill_mode = str(skill_mode_raw) if skill_mode_raw not in (None, "") else None
     experimental_intervention = skill_mode not in {None, "no_skill"}
-    eligible = complete and not legacy and not dry_run and not experimental_intervention
+    experiment_context = metadata.get("experiment_context")
+    if not isinstance(experiment_context, dict) and items:
+        candidate = items[0].get("experiment_context")
+        experiment_context = candidate if isinstance(candidate, dict) else None
+    pressure_profile = (
+        isinstance(experiment_context, dict)
+        and experiment_context.get("kind") == HORIZON_CONTEXT_KIND
+    )
+    eligible = (
+        complete
+        and not legacy
+        and not dry_run
+        and not experimental_intervention
+        and not pressure_profile
+    )
     if legacy:
         eligibility_reason = "legacy"
     elif dry_run:
         eligibility_reason = "dry_run"
     elif experimental_intervention:
         eligibility_reason = "experimental_intervention"
+    elif pressure_profile:
+        eligibility_reason = "pressure_profile"
     elif not complete:
         eligibility_reason = "incomplete"
     else:
@@ -206,6 +236,14 @@ def _summarize_run(metadata: dict[str, Any], items: list[dict[str, Any]]) -> dic
         "execution_fingerprint": metadata.get("execution_fingerprint"),
         "skill_mode": skill_mode,
         "skill_catalog_digest": metadata.get("skill_catalog_digest"),
+        "experiment_kind": (
+            experiment_context.get("kind") if isinstance(experiment_context, dict) else None
+        ),
+        "horizon_profile_id": (
+            experiment_context.get("profile_id")
+            if isinstance(experiment_context, dict) and pressure_profile
+            else None
+        ),
         "started_at": metadata.get("started_at"),
         "finished_at": metadata.get("finished_at"),
         "status": declared_status,
@@ -260,10 +298,15 @@ def _timestamp(value: Any) -> datetime:
 
 
 def selected_suite_revision(runs: Iterable[dict[str, Any]]) -> tuple[str, str] | None:
-    """Choose the newest observed real suite identity from lifecycle metadata."""
+    """Choose the newest observed ordinary suite identity from lifecycle metadata."""
     candidates = [
         run for run in runs
-        if run.get("eligibility_reason") not in {"legacy", "dry_run"}
+        if run.get("eligibility_reason") not in {
+            "legacy",
+            "dry_run",
+            "experimental_intervention",
+            "pressure_profile",
+        }
     ]
     if not candidates:
         return None
@@ -321,6 +364,7 @@ def latest_eligible(runs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 def build_summary(root: Path) -> dict[str, Any]:
     attempts = load_attempts(root)
     rows = latest_attempts(attempts)
+    baseline_rows = _baseline_condition_rows(rows)
     canonical_rows = canonical_capability_rows(rows)
     runs = summarize_rows(rows, _manifests(root))
     selected = selected_suite_revision(runs)
@@ -342,7 +386,7 @@ def build_summary(root: Path) -> dict[str, Any]:
         "raw_source_file_count": sources["file_count"],
         "pressure_landscapes": pressure_landscapes(canonical_rows, **filters),
         "pressure_paired_comparisons": pressure_paired_comparisons(canonical_rows, **filters),
-        "long_horizon_response_curves": long_horizon_response_curves(canonical_rows, **filters),
+        "long_horizon_response_curves": long_horizon_response_curves(baseline_rows),
         "wide_retrieval_metrics": wide_retrieval_metrics(canonical_rows, **filters),
         "cross_artifact_metrics": cross_artifact_metrics(canonical_rows, **filters),
         "epistemic_twin_metrics": epistemic_twin_metrics(canonical_rows, **filters),
