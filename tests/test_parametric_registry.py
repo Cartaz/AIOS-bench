@@ -37,6 +37,13 @@ def test_parametric_registry_records_defaults_for_every_family() -> None:
         "archive_revisions": 3,
         "source_depth": 3,
     }
+    assert parameters["black_box_reconstruction"] == {
+        "rule_count": 7,
+        "public_examples": 12,
+        "probe_budget": 48,
+        "distractor_fields": 3,
+        "max_units": 500,
+    }
 
 
 def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> None:
@@ -60,6 +67,7 @@ def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> N
     assert parameters["wide_retrieval"]["target_count"] == 12
     assert parameters["cross_artifact"]["group_count"] == 6
     assert parameters["epistemic_twins"]["pair_count"] == 6
+    assert parameters["black_box_reconstruction"]["probe_budget"] == 48
 
 
 def test_parametric_registry_rejects_unknown_family() -> None:
