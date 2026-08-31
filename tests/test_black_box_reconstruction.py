@@ -189,7 +189,7 @@ def test_black_box_golden_passes_hidden_property_and_transfer_suites(tmp_path: P
     )
 
     assert grade.passed is True, grade.detail
-    assert grade.partial_credit == 1.0
+    assert grade.score == 1.0
     assert grade.metrics["property_accuracy"] == 1.0
     assert grade.metrics["transfer_accuracy"] == 1.0
     assert grade.metrics["verifier_sandboxed"] is True
