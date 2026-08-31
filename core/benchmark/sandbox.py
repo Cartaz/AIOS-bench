@@ -97,10 +97,11 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
             "--chdir", str(workspace),
         )
 
-    # When the workspace itself lives below the repository, preserve it through
-    # an alias before replacing the repository mount. Bubblewrap bind targets
-    # must already exist inside the sandbox, so create the alias explicitly;
-    # then recreate only the canonical workspace parent path and rebind it.
+    # Preserve the writable workspace at a sandbox-only alias before replacing
+    # the repository mount. Bubblewrap resolves bind sources from the parent
+    # namespace, so the alias cannot be used as the source of a later bind.
+    # Recreate the canonical parent directories and point the canonical path at
+    # the already-mounted alias with a sandbox-local symlink instead.
     args: tuple[str, ...] = (
         "--dir", str(_WORKSPACE_ALIAS),
         "--bind", str(workspace), str(_WORKSPACE_ALIAS),
@@ -111,7 +112,7 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
         current /= part
         args += ("--dir", str(current))
     args += (
-        "--bind", str(_WORKSPACE_ALIAS), str(workspace),
+        "--symlink", str(_WORKSPACE_ALIAS), str(workspace),
         "--chdir", str(workspace),
     )
     return args
