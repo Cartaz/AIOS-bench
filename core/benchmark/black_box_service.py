@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -130,8 +131,11 @@ class BlackBoxReferenceService:
     budget: int
     log_path: Path
     probes_used: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def contract(self) -> dict[str, Any]:
+        with self._lock:
+            probes_used = int(self.probes_used)
         return {
             "schema": "aios-bench/black-box-contract/v1",
             "input": {
@@ -154,28 +158,31 @@ class BlackBoxReferenceService:
                 "flags": "sorted unique string array",
             },
             "probe_budget": int(self.budget),
-            "probes_remaining": max(0, int(self.budget) - int(self.probes_used)),
+            "probes_remaining": max(0, int(self.budget) - probes_used),
         }
 
     def probe(self, record: Mapping[str, Any]) -> dict[str, Any]:
-        if self.probes_used >= self.budget:
-            raise BlackBoxInputError("probe budget exhausted")
         normalized = validate_record(record, max_units=int(self.spec["max_units"]))
-        output = reference_transform(self.spec, normalized)
-        self.probes_used += 1
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "index": self.probes_used,
-            "input_sha256": hashlib.sha256(
-                json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("utf-8")
-            ).hexdigest(),
-        }
-        with self.log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        with self._lock:
+            if self.probes_used >= self.budget:
+                raise BlackBoxInputError("probe budget exhausted")
+            output = reference_transform(self.spec, normalized)
+            self.probes_used += 1
+            probe_index = self.probes_used
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "index": probe_index,
+                "input_sha256": hashlib.sha256(
+                    json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                ).hexdigest(),
+            }
+            with self.log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, sort_keys=True) + "\n")
+            remaining = self.budget - probe_index
         return {
             "output": output,
-            "probes_used": self.probes_used,
-            "probes_remaining": self.budget - self.probes_used,
+            "probes_used": probe_index,
+            "probes_remaining": remaining,
         }
 
 
