@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from ..black_box_api import start_black_box_runtime, write_black_box_client
 from ..task_runtime import TaskRuntime
@@ -74,31 +75,292 @@ from .workspace_lineage import (
 )
 
 
-FAMILIES = {
-    "expense_report",
-    "config_traversal",
-    "stateful_world",
-    "dependency_world",
-    "workspace_lineage",
-    "tool_recovery",
-    "wide_retrieval",
-    "cross_artifact",
-    "epistemic_twins",
-    "black_box_reconstruction",
+Generator = Callable[..., dict[str, Any]]
+PostMaterializer = Callable[[Path, dict[str, Any]], dict[str, Any]]
+RuntimeStarter = Callable[[Path, Path, str, Mapping[str, Any]], TaskRuntime]
+Grader = Callable[
+    [Path, Mapping[str, Any], Path | None, str | None],
+    VariantGrade,
+]
+FailureDiagnoser = Callable[[Mapping[str, Any], Path | None, str | None], str | None]
+
+
+@dataclass(frozen=True)
+class ParametricFamilySpec:
+    """One declarative generated-family integration contract.
+
+    Pressure validation, generation, optional workspace/runtime adaptation and
+    deterministic grading are registered once. Public dispatch functions below
+    remain stable while family-specific complexity stays behind these callables.
+    """
+
+    pressure_type: Any
+    generator: Generator
+    grader: Grader
+    post_materialize: PostMaterializer | None = None
+    runtime: RuntimeStarter | None = None
+    diagnose: FailureDiagnoser | None = None
+
+
+def _reseal_variant(oracle: dict[str, Any]) -> dict[str, Any]:
+    core = {key: value for key, value in oracle.items() if key != "variant_digest"}
+    payload = json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    oracle["variant_digest"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return oracle
+
+
+def _post_black_box(workspace: Path, oracle: dict[str, Any]) -> dict[str, Any]:
+    write_black_box_client(workspace)
+    return _reseal_variant(oracle)
+
+
+def _post_tool_recovery(workspace: Path, oracle: dict[str, Any]) -> dict[str, Any]:
+    write_tool_recovery_client(workspace)
+    return _reseal_variant(oracle)
+
+
+def _post_stateful_world(workspace: Path, oracle: dict[str, Any]) -> dict[str, Any]:
+    write_world_api_client(workspace)
+    oracle["mutation_interface"] = SupportWorldService.contract()
+    return _reseal_variant(oracle)
+
+
+def _post_dependency_world(workspace: Path, oracle: dict[str, Any]) -> dict[str, Any]:
+    write_world_api_client(workspace)
+    oracle["mutation_interface"] = SupportDependencyWorldService.contract()
+    return _reseal_variant(oracle)
+
+
+def _grade_expense(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    passed, detail = check_expense_variant(workspace, oracle)
+    return VariantGrade.binary(passed, detail)
+
+
+def _grade_config(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    passed, detail = check_config_traversal_variant(workspace, oracle)
+    return VariantGrade.binary(passed, detail)
+
+
+def _grade_lineage(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    passed, detail = check_workspace_lineage_variant(workspace, oracle)
+    return VariantGrade.binary(passed, detail)
+
+
+def _grade_wide_retrieval(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    return grade_wide_retrieval_variant(workspace, oracle)
+
+
+def _grade_cross_artifact(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    return grade_cross_artifact_variant(workspace, oracle)
+
+
+def _grade_epistemic_twins(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    return grade_epistemic_twins_variant(workspace, oracle)
+
+
+def _grade_black_box(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    return grade_black_box_reconstruction_variant(
+        workspace,
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+
+
+def _check_mediated_world(
+    checker: Callable[[Path, Mapping[str, Any]], tuple[bool, str]],
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    *,
+    run_dir: Path | None,
+    task_id: str | None,
+) -> tuple[bool, str]:
+    passed, detail = checker(workspace, oracle)
+    if not passed:
+        return passed, detail
+    provenance_ok, provenance_detail = verify_support_action_log(
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+    if not provenance_ok:
+        return False, provenance_detail
+    return True, f"{detail}; {provenance_detail}"
+
+
+def _grade_stateful_world(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    passed, detail = _check_mediated_world(
+        check_stateful_world_variant,
+        workspace,
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+    return VariantGrade.binary(passed, detail)
+
+
+def _grade_dependency_world(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    passed, detail = _check_mediated_world(
+        check_dependency_world_variant,
+        workspace,
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+    return VariantGrade.binary(passed, detail)
+
+
+def _grade_tool_recovery(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    passed, detail = check_tool_recovery_variant(workspace, oracle)
+    if passed:
+        provenance_ok, provenance_detail = verify_tool_recovery_log(
+            oracle,
+            run_dir=run_dir,
+            task_id=task_id,
+        )
+        if provenance_ok:
+            return VariantGrade.binary(True, f"{detail}; {provenance_detail}")
+        detail = provenance_detail
+    failure_kind = diagnose_tool_recovery_failure(
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+    return VariantGrade.binary(False, detail, failure_kind=failure_kind)
+
+
+def _diagnose_tool_recovery(
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> str | None:
+    return diagnose_tool_recovery_failure(
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+
+
+FAMILY_SPECS: dict[str, ParametricFamilySpec] = {
+    "expense_report": ParametricFamilySpec(
+        ExpensePressure,
+        generate_expense_variant,
+        _grade_expense,
+    ),
+    "config_traversal": ParametricFamilySpec(
+        ConfigTraversalPressure,
+        generate_config_traversal_variant,
+        _grade_config,
+    ),
+    "stateful_world": ParametricFamilySpec(
+        StatefulWorldPressure,
+        generate_stateful_world_variant,
+        _grade_stateful_world,
+        post_materialize=_post_stateful_world,
+        runtime=start_support_world_runtime,
+    ),
+    "dependency_world": ParametricFamilySpec(
+        DependencyWorldPressure,
+        generate_dependency_world_variant,
+        _grade_dependency_world,
+        post_materialize=_post_dependency_world,
+        runtime=start_dependency_world_runtime,
+    ),
+    "workspace_lineage": ParametricFamilySpec(
+        WorkspaceLineagePressure,
+        generate_workspace_lineage_variant,
+        _grade_lineage,
+    ),
+    "tool_recovery": ParametricFamilySpec(
+        ToolRecoveryPressure,
+        generate_tool_recovery_variant,
+        _grade_tool_recovery,
+        post_materialize=_post_tool_recovery,
+        runtime=start_tool_recovery_runtime,
+        diagnose=_diagnose_tool_recovery,
+    ),
+    "wide_retrieval": ParametricFamilySpec(
+        WideRetrievalPressure,
+        generate_wide_retrieval_variant,
+        _grade_wide_retrieval,
+    ),
+    "cross_artifact": ParametricFamilySpec(
+        CrossArtifactPressure,
+        generate_cross_artifact_variant,
+        _grade_cross_artifact,
+    ),
+    "epistemic_twins": ParametricFamilySpec(
+        EpistemicTwinPressure,
+        generate_epistemic_twins_variant,
+        _grade_epistemic_twins,
+    ),
+    "black_box_reconstruction": ParametricFamilySpec(
+        BlackBoxReconstructionPressure,
+        generate_black_box_reconstruction_variant,
+        _grade_black_box,
+        post_materialize=_post_black_box,
+        runtime=start_black_box_runtime,
+    ),
 }
 
-_PRESSURE_TYPES = {
-    "expense_report": ExpensePressure,
-    "config_traversal": ConfigTraversalPressure,
-    "stateful_world": StatefulWorldPressure,
-    "dependency_world": DependencyWorldPressure,
-    "workspace_lineage": WorkspaceLineagePressure,
-    "tool_recovery": ToolRecoveryPressure,
-    "wide_retrieval": WideRetrievalPressure,
-    "cross_artifact": CrossArtifactPressure,
-    "epistemic_twins": EpistemicTwinPressure,
-    "black_box_reconstruction": BlackBoxReconstructionPressure,
-}
+FAMILIES = set(FAMILY_SPECS)
+
+
+def _family_spec(family: str) -> ParametricFamilySpec:
+    try:
+        return FAMILY_SPECS[family]
+    except KeyError as exc:
+        raise ValueError(f"unknown parametric family: {family}") from exc
 
 
 def normalize_parameters(
@@ -114,16 +376,9 @@ def normalize_parameters(
     if unknown:
         raise ValueError(f"unknown parametric families: {sorted(unknown)}")
     return {
-        family: pressure_type.from_mapping(supplied.get(family, {})).to_dict()
-        for family, pressure_type in _PRESSURE_TYPES.items()
+        family: spec.pressure_type.from_mapping(supplied.get(family, {})).to_dict()
+        for family, spec in FAMILY_SPECS.items()
     }
-
-
-def _reseal_variant(oracle: dict[str, Any]) -> dict[str, Any]:
-    core = {key: value for key, value in oracle.items() if key != "variant_digest"}
-    payload = json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    oracle["variant_digest"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    return oracle
 
 
 def materialize_variant(
@@ -133,55 +388,12 @@ def materialize_variant(
     seed: int,
     parameters: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if family == "expense_report":
-        pressure = ExpensePressure.from_mapping(parameters or {})
-        return generate_expense_variant(workspace, seed=int(seed), pressure=pressure)
-    if family == "config_traversal":
-        pressure = ConfigTraversalPressure.from_mapping(parameters or {})
-        return generate_config_traversal_variant(workspace, seed=int(seed), pressure=pressure)
-    if family == "workspace_lineage":
-        pressure = WorkspaceLineagePressure.from_mapping(parameters or {})
-        return generate_workspace_lineage_variant(workspace, seed=int(seed), pressure=pressure)
-    if family == "wide_retrieval":
-        pressure = WideRetrievalPressure.from_mapping(parameters or {})
-        return generate_wide_retrieval_variant(workspace, seed=int(seed), pressure=pressure)
-    if family == "cross_artifact":
-        pressure = CrossArtifactPressure.from_mapping(parameters or {})
-        return generate_cross_artifact_variant(workspace, seed=int(seed), pressure=pressure)
-    if family == "epistemic_twins":
-        pressure = EpistemicTwinPressure.from_mapping(parameters or {})
-        return generate_epistemic_twins_variant(workspace, seed=int(seed), pressure=pressure)
-    if family == "black_box_reconstruction":
-        pressure = BlackBoxReconstructionPressure.from_mapping(parameters or {})
-        oracle = generate_black_box_reconstruction_variant(
-            workspace,
-            seed=int(seed),
-            pressure=pressure,
-        )
-        write_black_box_client(workspace)
-        return _reseal_variant(oracle)
-    if family == "tool_recovery":
-        pressure = ToolRecoveryPressure.from_mapping(parameters or {})
-        oracle = generate_tool_recovery_variant(
-            workspace,
-            seed=int(seed),
-            pressure=pressure,
-        )
-        write_tool_recovery_client(workspace)
-        return _reseal_variant(oracle)
-    if family == "stateful_world":
-        pressure = StatefulWorldPressure.from_mapping(parameters or {})
-        oracle = generate_stateful_world_variant(workspace, seed=int(seed), pressure=pressure)
-        write_world_api_client(workspace)
-        oracle["mutation_interface"] = SupportWorldService.contract()
-        return _reseal_variant(oracle)
-    if family == "dependency_world":
-        pressure = DependencyWorldPressure.from_mapping(parameters or {})
-        oracle = generate_dependency_world_variant(workspace, seed=int(seed), pressure=pressure)
-        write_world_api_client(workspace)
-        oracle["mutation_interface"] = SupportDependencyWorldService.contract()
-        return _reseal_variant(oracle)
-    raise ValueError(f"unknown parametric family: {family}")
+    spec = _family_spec(family)
+    pressure = spec.pressure_type.from_mapping(parameters or {})
+    oracle = spec.generator(workspace, seed=int(seed), pressure=pressure)
+    if spec.post_materialize is not None:
+        oracle = spec.post_materialize(workspace, oracle)
+    return oracle
 
 
 def start_variant_runtime(
@@ -192,60 +404,10 @@ def start_variant_runtime(
     task_id: str,
     oracle: Mapping[str, Any],
 ) -> TaskRuntime:
-    if family == "stateful_world":
-        return start_support_world_runtime(workspace, run_dir, task_id, oracle)
-    if family == "dependency_world":
-        return start_dependency_world_runtime(workspace, run_dir, task_id, oracle)
-    if family == "tool_recovery":
-        return start_tool_recovery_runtime(workspace, run_dir, task_id, oracle)
-    if family == "black_box_reconstruction":
-        return start_black_box_runtime(workspace, run_dir, task_id, oracle)
-    return TaskRuntime()
-
-
-def _check_mediated_world(
-    family: str,
-    workspace: Path,
-    oracle: Mapping[str, Any],
-    *,
-    run_dir: Path | None,
-    task_id: str | None,
-) -> tuple[bool, str]:
-    checker = {
-        "stateful_world": check_stateful_world_variant,
-        "dependency_world": check_dependency_world_variant,
-    }[family]
-    passed, detail = checker(workspace, oracle)
-    if not passed:
-        return passed, detail
-    provenance_ok, provenance_detail = verify_support_action_log(
-        oracle,
-        run_dir=run_dir,
-        task_id=task_id,
-    )
-    if not provenance_ok:
-        return False, provenance_detail
-    return True, f"{detail}; {provenance_detail}"
-
-
-def _check_tool_recovery(
-    workspace: Path,
-    oracle: Mapping[str, Any],
-    *,
-    run_dir: Path | None,
-    task_id: str | None,
-) -> tuple[bool, str]:
-    passed, detail = check_tool_recovery_variant(workspace, oracle)
-    if not passed:
-        return passed, detail
-    provenance_ok, provenance_detail = verify_tool_recovery_log(
-        oracle,
-        run_dir=run_dir,
-        task_id=task_id,
-    )
-    if not provenance_ok:
-        return False, provenance_detail
-    return True, f"{detail}; {provenance_detail}"
+    spec = _family_spec(family)
+    if spec.runtime is None:
+        return TaskRuntime()
+    return spec.runtime(workspace, run_dir, task_id, oracle)
 
 
 def evaluate_variant(
@@ -257,49 +419,8 @@ def evaluate_variant(
     task_id: str | None = None,
 ) -> VariantGrade:
     """Grade one generated family through a common structured contract."""
-    if family == "wide_retrieval":
-        return grade_wide_retrieval_variant(workspace, oracle)
-    if family == "cross_artifact":
-        return grade_cross_artifact_variant(workspace, oracle)
-    if family == "epistemic_twins":
-        return grade_epistemic_twins_variant(workspace, oracle)
-    if family == "black_box_reconstruction":
-        return grade_black_box_reconstruction_variant(
-            workspace,
-            oracle,
-            run_dir=run_dir,
-            task_id=task_id,
-        )
-    if family == "expense_report":
-        passed, detail = check_expense_variant(workspace, oracle)
-    elif family == "config_traversal":
-        passed, detail = check_config_traversal_variant(workspace, oracle)
-    elif family == "workspace_lineage":
-        passed, detail = check_workspace_lineage_variant(workspace, oracle)
-    elif family == "tool_recovery":
-        passed, detail = _check_tool_recovery(
-            workspace,
-            oracle,
-            run_dir=run_dir,
-            task_id=task_id,
-        )
-        failure_kind = None if passed else diagnose_tool_recovery_failure(
-            oracle,
-            run_dir=run_dir,
-            task_id=task_id,
-        )
-        return VariantGrade.binary(passed, detail, failure_kind=failure_kind)
-    elif family in {"stateful_world", "dependency_world"}:
-        passed, detail = _check_mediated_world(
-            family,
-            workspace,
-            oracle,
-            run_dir=run_dir,
-            task_id=task_id,
-        )
-    else:
-        return VariantGrade.binary(False, f"unknown parametric family: {family}")
-    return VariantGrade.binary(passed, detail)
+    spec = _family_spec(family)
+    return spec.grader(workspace, oracle, run_dir, task_id)
 
 
 def check_variant(
@@ -327,13 +448,10 @@ def diagnose_variant_failure(
     run_dir: Path | None = None,
     task_id: str | None = None,
 ) -> str | None:
-    if family == "tool_recovery":
-        return diagnose_tool_recovery_failure(
-            oracle,
-            run_dir=run_dir,
-            task_id=task_id,
-        )
-    return None
+    spec = _family_spec(family)
+    if spec.diagnose is None:
+        return None
+    return spec.diagnose(oracle, run_dir, task_id)
 
 
 __all__ = [
@@ -343,12 +461,14 @@ __all__ = [
     "DependencyWorldPressure",
     "EpistemicTwinPressure",
     "ExpensePressure",
+    "FAMILIES",
+    "FAMILY_SPECS",
+    "ParametricFamilySpec",
     "StatefulWorldPressure",
     "ToolRecoveryPressure",
+    "VariantGrade",
     "WideRetrievalPressure",
     "WorkspaceLineagePressure",
-    "FAMILIES",
-    "VariantGrade",
     "check_variant",
     "diagnose_variant_failure",
     "evaluate_variant",
