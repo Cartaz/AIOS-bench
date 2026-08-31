@@ -15,6 +15,7 @@ from .horizon_execution import execute_horizon_profile
 from .interventions import SKILL_MODES
 from .models import Trajectory
 from .parametric import (
+    BlackBoxReconstructionPressure,
     ConfigTraversalPressure,
     CrossArtifactPressure,
     DependencyWorldPressure,
@@ -178,6 +179,18 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 epistemic-twin pressure: {exc}") from exc
+    try:
+        black_box = BlackBoxReconstructionPressure(
+            rule_count=args.v4_black_box_rules,
+            public_examples=args.v4_black_box_public_examples,
+            probe_budget=args.v4_black_box_probe_budget,
+            distractor_fields=args.v4_black_box_distractor_fields,
+            max_units=args.v4_black_box_max_units,
+        )
+    except ValueError as exc:
+        raise SystemExit(
+            f"invalid Frontier v4 black-box reconstruction pressure: {exc}"
+        ) from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
@@ -188,6 +201,7 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         "wide_retrieval": wide_retrieval.to_dict(),
         "cross_artifact": cross_artifact.to_dict(),
         "epistemic_twins": epistemic_twins.to_dict(),
+        "black_box_reconstruction": black_box.to_dict(),
     }
 
 
@@ -407,6 +421,11 @@ def main() -> None:
     parser.add_argument("--v4-epistemic-distractor-records", type=int, default=12, help="Frontier v4 epistemic stale-record distractor coordinate")
     parser.add_argument("--v4-epistemic-archive-revisions", type=int, default=3, help="Frontier v4 epistemic archived policy/registry revision coordinate")
     parser.add_argument("--v4-epistemic-source-depth", type=int, default=3, help="Frontier v4 epistemic authoritative source-depth coordinate")
+    parser.add_argument("--v4-black-box-rules", type=int, default=7, help="Frontier v4 black-box enabled-rule count coordinate")
+    parser.add_argument("--v4-black-box-public-examples", type=int, default=12, help="Frontier v4 black-box public-example count coordinate")
+    parser.add_argument("--v4-black-box-probe-budget", type=int, default=48, help="Frontier v4 black-box live reference-probe budget coordinate")
+    parser.add_argument("--v4-black-box-distractor-fields", type=int, default=3, help="Frontier v4 black-box ignored input-field count coordinate")
+    parser.add_argument("--v4-black-box-max-units", type=int, default=500, help="Frontier v4 black-box numeric input-span coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
