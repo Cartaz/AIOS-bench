@@ -3,7 +3,7 @@ from pathlib import Path
 from core.benchmark.sandbox import workspace_sandbox
 
 
-def test_black_box_verifier_uses_private_network_namespace(monkeypatch, tmp_path: Path) -> None:
+def test_black_box_verifier_uses_private_network_and_pid_namespaces(monkeypatch, tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     workspace = repo / "results" / ".local" / "piagent" / "model" / "runs" / "run" / "workspaces" / "task"
     workspace.mkdir(parents=True)
@@ -14,5 +14,6 @@ def test_black_box_verifier_uses_private_network_namespace(monkeypatch, tmp_path
     command = plan.wrap(["python", "solution/reconstruct.py"])
 
     assert plan.grader_hidden is True
-    assert plan.strategy == "bubblewrap_repo_hidden_workspace_only_network_isolated"
+    assert plan.strategy == "bubblewrap_repo_hidden_workspace_only_network_pid_isolated"
     assert "--unshare-net" in command
+    assert "--unshare-pid" in command
