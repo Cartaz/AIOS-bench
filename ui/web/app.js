@@ -20,11 +20,35 @@ function toggleSet(set, value, enabled) {
   enabled ? set.add(value) : set.delete(value);
 }
 
-function activeHorizonProfile() {
+function activeRunProfile() {
   if (!state.catalog) return null;
-  const id = $('horizonProfile').value;
-  if (!id) return null;
-  return (state.catalog.horizon_profiles || []).find(profile => profile.id === id) || null;
+  const value = $('runProfile').value;
+  if (!value) return null;
+  const separator = value.indexOf(':');
+  if (separator < 1) return null;
+  const kind = value.slice(0, separator);
+  const id = value.slice(separator + 1);
+  const profiles = kind === 'horizon'
+    ? (state.catalog.horizon_profiles || [])
+    : kind === 'index'
+      ? (state.catalog.aios_index_profiles || [])
+      : [];
+  const profile = profiles.find(item => item.id === id);
+  return profile ? { kind, ...profile } : null;
+}
+
+function renderSkillControls() {
+  if (!state.catalog) return;
+  const supportsSkills = state.catalog.suite === 'frontier_v4'
+    && (state.catalog.skill_modes || []).length > 0;
+  const compactProfile = activeRunProfile()?.kind === 'index';
+  const enabled = supportsSkills && !compactProfile;
+  $('skillMode').disabled = !enabled;
+  $('skillAblation').disabled = !enabled;
+  if (!enabled) {
+    $('skillMode').value = 'no_skill';
+    $('skillAblation').checked = false;
+  }
 }
 
 function setRunState(value) {
@@ -70,7 +94,7 @@ function renderHarnesses() {
 
 function renderTasks() {
   if (!state.catalog) return;
-  const profile = activeHorizonProfile();
+  const profile = activeRunProfile();
   const locked = Boolean(profile);
   const groups = {};
   state.catalog.tasks.forEach(task => (groups[task.category] ||= []).push(task));
@@ -89,17 +113,22 @@ function renderTasks() {
     </section>`).join('');
   $('selectAllTasks').disabled = locked;
   $('selectNoTasks').disabled = locked;
-  $('taskSummary').textContent = profile
-    ? `${state.tasks.size} test fissati dal profilo · ${profile.cell_count} celle di pressione`
-    : `${state.tasks.size} / ${state.catalog.tasks.length} selezionati`;
+  if (!profile) {
+    $('taskSummary').textContent = `${state.tasks.size} / ${state.catalog.tasks.length} selezionati`;
+  } else if (profile.kind === 'horizon') {
+    $('taskSummary').textContent = `${state.tasks.size} test fissati dal profilo · ${profile.cell_count} celle di pressione`;
+  } else {
+    $('taskSummary').textContent = `${state.tasks.size} test AIOS-Index · profilo compatto ad alto segnale`;
+  }
 }
 
-function applyHorizonSelection() {
+function applyRunProfileSelection() {
   if (!state.catalog) return;
-  const profile = activeHorizonProfile();
+  const profile = activeRunProfile();
   state.tasks = new Set(
     profile ? profile.task_ids : state.catalog.tasks.map(task => task.id),
   );
+  renderSkillControls();
   renderTasks();
 }
 
@@ -142,24 +171,22 @@ async function loadCatalog() {
   state.catalog = catalog;
   state.harnesses = new Set(catalog.harnesses.map(h => h.id));
   state.tasks = new Set(catalog.tasks.map(t => t.id));
-  const supportsSkills = catalog.suite === 'frontier_v4' && (catalog.skill_modes || []).length > 0;
-  $('skillMode').disabled = !supportsSkills;
-  $('skillAblation').disabled = !supportsSkills;
-  if (!supportsSkills) {
-    $('skillMode').value = 'no_skill';
-    $('skillAblation').checked = false;
-  }
 
-  const profiles = catalog.horizon_profiles || [];
-  $('horizonProfile').innerHTML = [
+  const horizonProfiles = catalog.horizon_profiles || [];
+  const indexProfiles = catalog.aios_index_profiles || [];
+  $('runProfile').innerHTML = [
     '<option value="">Run standard</option>',
-    ...profiles.map(profile => (
-      `<option value="${esc(profile.id)}">Long-horizon · ${profile.cell_count} celle</option>`
+    ...indexProfiles.map(profile => (
+      `<option value="index:${esc(profile.id)}">AIOS-Index · ${profile.task_count} test</option>`
+    )),
+    ...horizonProfiles.map(profile => (
+      `<option value="horizon:${esc(profile.id)}">Long-horizon · ${profile.cell_count} celle</option>`
     )),
   ].join('');
-  $('horizonProfile').disabled = profiles.length === 0;
-  $('horizonProfile').value = '';
+  $('runProfile').disabled = horizonProfiles.length === 0 && indexProfiles.length === 0;
+  $('runProfile').value = '';
 
+  renderSkillControls();
   renderHarnesses();
   renderTasks();
 }
@@ -205,7 +232,7 @@ function bindUiEvents() {
     if (view) showView(view);
     if (state.catalog) {
       activateSelector('[data-harness]', 'harness', state.harnesses, renderHarnesses, event);
-      if (!activeHorizonProfile()) {
+      if (!activeRunProfile()) {
         activateSelector('[data-task]', 'task', state.tasks, renderTasks, event);
       }
     }
@@ -215,7 +242,7 @@ function bindUiEvents() {
       renderHarnesses();
     }
     const tAction = event.target.dataset?.taskAction;
-    if (tAction && state.catalog && !activeHorizonProfile()) {
+    if (tAction && state.catalog && !activeRunProfile()) {
       state.tasks = new Set(tAction === 'all' ? state.catalog.tasks.map(t => t.id) : []);
       renderTasks();
     }
@@ -241,7 +268,7 @@ function bindUiEvents() {
   });
 
   $('suite').addEventListener('change', () => void loadCatalog());
-  $('horizonProfile').addEventListener('change', applyHorizonSelection);
+  $('runProfile').addEventListener('change', applyRunProfileSelection);
   $('refreshDoctor').addEventListener('click', () => {
     if (!state.busy) void loadDoctor();
   });
@@ -264,7 +291,7 @@ function bindUiEvents() {
   $('start').addEventListener('click', () => {
     $('error').textContent = '';
     const totalTimeout = $('totalTimeout').value.trim();
-    const horizonProfile = $('horizonProfile').value;
+    const profile = activeRunProfile();
     const payload = {
       suite: $('suite').value,
       harnesses: [...state.harnesses],
@@ -276,7 +303,8 @@ function bindUiEvents() {
       total_timeout: totalTimeout ? Number(totalTimeout) : null,
       skill_mode: $('skillMode').value,
       skill_ablation: $('skillAblation').checked,
-      horizon_profile: horizonProfile || null,
+      horizon_profile: profile?.kind === 'horizon' ? profile.id : null,
+      index_profile: profile?.kind === 'index' ? profile.id : null,
     };
     void state.backend.startRun(payload).then(ok => {
       if (ok) setRunState({ running: true, busy: true });
