@@ -45,6 +45,7 @@ NON_SEMANTIC_MODULES = frozenset({
     "paths.py",
     "publication.py",
     "raw.py",
+    "reconstruction_analysis.py",
     "report.py",
     "retrieval_analysis.py",
     "smoke.py",
