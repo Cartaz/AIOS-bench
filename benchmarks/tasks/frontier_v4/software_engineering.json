@@ -1,0 +1,16 @@
+[
+  {
+    "id": "software_black_box_001",
+    "category": "coding",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Reconstruct the generated hidden JSON transformer as a compatible local implementation. Read README.md, docs/contract.md, and examples/public_examples.jsonl. While the task runtime is active, use the bounded tools/reference_api.py contract/probe interface strategically to infer behavior; there is no reference implementation in the workspace. Create solution/reconstruct.py implementing the documented JSONL stdin/stdout protocol. Hidden verification runs after the reference service is shut down and includes generated property cases, boundary combinations, and transfer inputs outside the public-example distribution. Do not modify benchmark-owned documentation or example files, do not rely on fixture-specific constants or cached probe outputs, and do not emit commentary on stdout. Rule count, public-example count, probe budget, ignored distractor-field count and numeric input span vary by seed and pressure coordinates.",
+    "mode": "cold",
+    "tags": ["coding", "frontier_v4", "parametric", "black_box", "reconstruction", "reverse_engineering", "property_testing", "generalization", "hidden_tests"],
+    "required_capabilities": ["benchmark_local_runtime"],
+    "acceptance": [
+      {"type": "exists", "path": "solution/reconstruct.py", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "black_box_reconstruction", "task_id": "software_black_box_001", "weight": 9, "fatal": true}
+    ]
+  }
+]
