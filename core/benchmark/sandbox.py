@@ -8,7 +8,7 @@ from pathlib import Path
 from .paths import BENCHMARK_PACKAGE_ROOT, REPO_ROOT
 
 
-_WORKSPACE_ALIAS = Path("/workspace")
+_WORKSPACE_ALIAS = Path("/tmp/aios-bench-workspace")
 
 
 @dataclass(frozen=True)
@@ -97,11 +97,12 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
             "--chdir", str(workspace),
         )
 
-    # Preserve the writable workspace at a sandbox-only alias before replacing
-    # the repository mount. Bubblewrap resolves bind sources from the parent
-    # namespace, so the alias cannot be used as the source of a later bind.
-    # Recreate the canonical parent directories and point the canonical path at
-    # the already-mounted alias with a sandbox-local symlink instead.
+    # Preserve the writable workspace below the private /tmp mount before
+    # replacing the repository. The host root is read-only in the sandbox, so
+    # aliases directly below / cannot be created. Bubblewrap also resolves bind
+    # sources from the parent namespace, which rules out rebinding the alias as
+    # a later source. Recreate only the canonical parent directories and restore
+    # the canonical workspace path with a sandbox-local symlink to the alias.
     args: tuple[str, ...] = (
         "--dir", str(_WORKSPACE_ALIAS),
         "--bind", str(workspace), str(_WORKSPACE_ALIAS),
