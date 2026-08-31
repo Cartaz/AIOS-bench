@@ -140,6 +140,7 @@ def _write_run(root: Path, row: dict, *, started: str) -> None:
         "task_count": 1,
         "started_at": started,
         "finished_at": started,
+        "experiment_context": row["experiment_context"],
         "manifest": {
             "intervention": {
                 "schema": "aios-bench/intervention/v1",
@@ -152,7 +153,9 @@ def _write_run(root: Path, row: dict, *, started: str) -> None:
     (directory / "results.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
 
 
-def test_summary_reports_only_baseline_horizon_curves(tmp_path: Path) -> None:
+def test_summary_reports_horizon_curves_without_polluting_canonical_leaderboard(
+    tmp_path: Path,
+) -> None:
     profile = get_horizon_profile()
     cells = profile.family_cells("dependency_world")
     for index, cell in enumerate(cells, 1):
@@ -166,7 +169,11 @@ def test_summary_reports_only_baseline_horizon_curves(tmp_path: Path) -> None:
 
     summary = build_summary(tmp_path)
 
-    assert summary["canonical_result_count"] == 3
+    assert summary["canonical_result_count"] == 0
+    assert summary["leaderboard"] == []
+    assert summary["selected_suite"] is None
+    reasons = {run["eligibility_reason"] for run in summary["runs"]}
+    assert reasons == {"pressure_profile", "experimental_intervention"}
     assert len(summary["long_horizon_response_curves"]) == 1
     curve = summary["long_horizon_response_curves"][0]
     assert curve["observed_cells"] == 3
