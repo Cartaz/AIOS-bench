@@ -49,4 +49,14 @@ assert QWebChannel and QWebEngineView and AppController and Bridge
 print("[OK] Critical Python/Qt imports verified")
 PY
 
+if command -v bwrap >/dev/null 2>&1; then
+  if bwrap --die-with-parent --new-session --ro-bind / / --proc /proc --dev /dev -- /bin/true >/dev/null 2>&1; then
+    echo "[OK] bubblewrap sandbox verified (required for strict black-box reconstruction grading)"
+  else
+    echo "[WARN] bubblewrap is installed but cannot create a sandbox; strict black-box reconstruction grading will fail closed." >&2
+  fi
+else
+  echo "[WARN] bubblewrap not found; strict black-box reconstruction grading is unavailable until it is installed and usable." >&2
+fi
+
 echo "[OK] AIOS-Bench installed. Launch with: .venv/bin/python main.py"
