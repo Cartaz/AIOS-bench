@@ -15,12 +15,16 @@ from .statistics import augment_summary_file
 PUBLICATION_SCHEMA = "aios-bench/publication/v1"
 DERIVED_FILES = ("summary.json", "dashboard.html")
 ANALYSIS_IMPLEMENTATION_FILES = (
-    "raw.py",
-    "report.py",
-    "statistics.py",
-    "landscapes.py",
+    "ablations.py",
+    "cross_artifact_analysis.py",
+    "epistemic_analysis.py",
     "horizon.py",
     "horizon_analysis.py",
+    "landscapes.py",
+    "raw.py",
+    "report.py",
+    "retrieval_analysis.py",
+    "statistics.py",
     "dashboard.py",
     "publication.py",
 )
