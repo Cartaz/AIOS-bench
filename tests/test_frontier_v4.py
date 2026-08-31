@@ -55,6 +55,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "data_cross_artifact_001",
         "reasoning_epistemic_001",
         "retrieval_wide_001",
+        "software_black_box_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
         "tool_recovery_001",
@@ -66,6 +67,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "data_cross_artifact_001": 1,
         "reasoning_epistemic_001": 1,
         "retrieval_wide_001": 1,
+        "software_black_box_001": 1,
         "tool_use_config_001": 4,
         "tool_use_lineage_001": 1,
         "tool_recovery_001": 1,
@@ -76,12 +78,14 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         if task.id in {
             "stateful_support_001",
             "support_dependency_001",
+            "software_black_box_001",
             "tool_recovery_001",
         }
     }
     assert set(runtime_tasks) == {
         "stateful_support_001",
         "support_dependency_001",
+        "software_black_box_001",
         "tool_recovery_001",
     }
     assert all(
@@ -183,6 +187,9 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
     paths = semantic_source_paths(ROOT)
     names = {path.name for path in paths}
     assert {
+        "black_box_api.py",
+        "black_box_reconstruction.py",
+        "black_box_service.py",
         "cross_artifact.py",
         "dependency_world.py",
         "epistemic_twins.py",
@@ -201,6 +208,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
     assert "ablations.py" not in names
     assert "cross_artifact_analysis.py" not in names
     assert "epistemic_analysis.py" not in names
+    assert "reconstruction_analysis.py" not in names
     assert "report.py" not in names
     assert "dashboard.py" not in names
     assert any("parametric" in path.parts for path in paths)
