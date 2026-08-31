@@ -386,14 +386,19 @@ def server_efficiency_groups(
 
 
 def augment_summary_file(summary_path: Any, results_root: Any) -> None:
-    """Add derived reliability, paired, failure, and efficiency statistics."""
+    """Add canonical reliability, paired, failure, and efficiency statistics.
+
+    Experimental skill arms and deliberate long-horizon pressure sweeps have
+    dedicated analyses. Reuse the report layer's single canonical-row policy so
+    those interventions cannot leak into ordinary derived statistics.
+    """
     import json
     from pathlib import Path
-    from .report import load_results
+    from .report import canonical_capability_rows, load_results
 
     path = Path(summary_path)
     summary = json.loads(path.read_text(encoding="utf-8"))
-    rows = load_results(Path(results_root))
+    rows = canonical_capability_rows(load_results(Path(results_root)))
     filters = {
         "suite": summary.get("selected_suite"),
         "suite_revision": summary.get("selected_suite_revision"),

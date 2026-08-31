@@ -11,6 +11,9 @@ from core.benchmark.sandbox import (
 )
 
 
+WORKSPACE_ALIAS = "/tmp/aios-bench-workspace"
+
+
 def _has_sequence(command: list[str], sequence: list[str]) -> bool:
     width = len(sequence)
     return any(command[index:index + width] == sequence for index in range(len(command) - width + 1))
@@ -29,9 +32,10 @@ def test_bubblewrap_hides_repository_and_rebinds_only_workspace(monkeypatch, tmp
     assert plan.strategy == "bubblewrap_repo_hidden_workspace_only"
     assert plan.grader_hidden is True
     assert _has_sequence(command, ["--ro-bind", "/", "/"])
-    assert _has_sequence(command, ["--bind", str(workspace.resolve()), "/workspace"])
+    assert _has_sequence(command, ["--tmpfs", "/tmp"])
+    assert _has_sequence(command, ["--bind", str(workspace.resolve()), WORKSPACE_ALIAS])
     assert _has_sequence(command, ["--tmpfs", str(repo.resolve())])
-    assert _has_sequence(command, ["--bind", "/workspace", str(workspace.resolve())])
+    assert _has_sequence(command, ["--symlink", WORKSPACE_ALIAS, str(workspace.resolve())])
     assert _has_sequence(command, ["--chdir", str(workspace.resolve())])
     assert command[-3:] == ["pi", "--mode", "rpc"]
 

@@ -142,6 +142,73 @@ def test_dashboard_renders_reliability_paired_failure_and_efficiency_panels(tmp_
     assert "20.0" in dashboard  # paired mean score delta and server generation tok/s
 
 
+def test_dashboard_renders_exhaustive_retrieval_metrics(tmp_path: Path) -> None:
+    directory = tmp_path / "piagent" / "ornith" / "runs" / "retrieval"
+    directory.mkdir(parents=True)
+    metadata = {
+        "harness": "piagent",
+        "model": "ornith",
+        "run_id": "retrieval",
+        "suite": "frontier_v4",
+        "suite_revision": "revision-v44",
+        "status": "completed",
+        "task_count": 1,
+        "started_at": "2026-08-30T10:00:00Z",
+        "finished_at": "2026-08-30T10:01:00Z",
+        "manifest": {
+            "intervention": {
+                "schema": "aios-bench/intervention/v1",
+                "skill_mode": "no_skill",
+                "skill_catalog_digest": "catalog",
+            }
+        },
+    }
+    row = {
+        "task_id": "retrieval_wide_001",
+        "task_revision": 1,
+        "variant_family": "wide_retrieval",
+        "status": "failed",
+        "success": False,
+        "score": 49,
+        "category": "retrieval",
+        "tier": 5,
+        "evaluation": {
+            "metrics": {
+                "wide_retrieval": {
+                    "strict_complete_pass": False,
+                    "record_precision": 1.0,
+                    "record_recall": 0.75,
+                    "record_f1": 0.857142857,
+                    "field_accuracy": 0.9,
+                    "provenance_recall": 0.5,
+                    "expected_records": 12,
+                    "predicted_rows": 9,
+                    "missing_record_count": 3,
+                    "extra_record_count": 0,
+                    "duplicate_prediction_count": 0,
+                    "wrong_authority_count": 2,
+                    "stale_source_count": 1,
+                    "mirror_source_count": 1,
+                }
+            }
+        },
+    }
+    (directory / "run.json").write_text(json.dumps(metadata), encoding="utf-8")
+    (directory / "results.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    dashboard = build_dashboard(tmp_path).read_text(encoding="utf-8")
+
+    section = dashboard.split("<h2>Exhaustive retrieval and provenance</h2>", 1)[1]
+    assert "Precision" in section
+    assert "Recall" in section
+    assert "Provenance recall" in section
+    assert "100.0%" in section
+    assert "75.0%" in section
+    assert "50.0%" in section
+    assert ">3<" in section
+    assert ">2<" in section
+
+
 def test_dashboard_can_be_published_outside_raw_results(tmp_path: Path) -> None:
     raw = tmp_path / "raw"
     published = tmp_path / "published"

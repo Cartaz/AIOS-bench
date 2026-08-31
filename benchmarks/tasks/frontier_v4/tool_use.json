@@ -11,5 +11,32 @@
       {"type": "exists", "path": "reports/effective_config.md", "weight": 1, "fatal": true},
       {"type": "parametric_reference", "family": "config_traversal", "task_id": "tool_use_config_001", "weight": 9, "fatal": true}
     ]
+  },
+  {
+    "id": "tool_use_lineage_001",
+    "category": "tool_use",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Reconstruct the active deployment lineage from the generated workspace. Start with README.md and the revision-pinned current release, then follow every exact node dependency through the lineage DAG. Merge settings only from sources referenced by the active pinned graph, identify every source that belongs only to inactive revisions (including older historical and newer unreleased revisions), ignore unrelated legacy configuration, and record the consumer path. Save the result exactly as described by README.md in reports/workspace_lineage.json. Do not modify any existing file. Lineage depth, branch count, inactive revision count, distractor count, and effective-setting count vary by seed and pressure coordinates, so derive everything from the workspace rather than fixture-specific constants or filename recency.",
+    "mode": "cold",
+    "tags": ["tool_use", "frontier_v4", "parametric", "grounded", "workspace_lineage", "dag", "provenance", "revision_pinning", "stale_sources"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/workspace_lineage.json", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "workspace_lineage", "task_id": "tool_use_lineage_001", "weight": 9, "fatal": true}
+    ]
+  },
+  {
+    "id": "tool_recovery_001",
+    "category": "tool_use",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Complete the generated typed-tool case-processing workflow. Read README.md and the authoritative current policy, inspect the complete tool schema, use only active exact tool names with valid typed arguments, resolve every incomplete list row before deciding, and process exactly the cases that satisfy the current policy. The runtime injects deterministic retryable read failures and may return response_lost after a non-idempotent write has already committed; recover without duplicating side effects by following the declared error/idempotency contract. Ignore similarly named legacy/compatibility tools, verify the observable final state, and write reports/tool_recovery_summary.json exactly as specified in README.md. Case count, target count, distractor-tool count, transient-failure count and incomplete-response count vary by seed and pressure coordinates, so derive the solution from the generated workspace and runtime rather than fixture-specific constants.",
+    "mode": "cold",
+    "tags": ["tool_use", "frontier_v4", "parametric", "typed_tools", "tool_selection", "schema", "recovery", "idempotency", "transient_failure", "negative_constraints"],
+    "required_capabilities": ["benchmark_local_runtime"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/tool_recovery_summary.json", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "tool_recovery", "task_id": "tool_recovery_001", "weight": 9, "fatal": true}
+    ]
   }
 ]

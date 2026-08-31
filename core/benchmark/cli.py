@@ -10,8 +10,22 @@ from .doctor import apply_profile_environment, run_wizard
 from .experiments import annotate_repeat, make_experiment_id
 from .frontier_v3_runner import FrontierV3Runner
 from .frontier_v4_runner import FrontierV4Runner
+from .horizon import DEFAULT_HORIZON_PROFILE, HORIZON_PROFILES, get_horizon_profile
+from .horizon_execution import execute_horizon_profile
+from .interventions import SKILL_MODES
 from .models import Trajectory
-from .parametric import ConfigTraversalPressure, ExpensePressure, StatefulWorldPressure
+from .parametric import (
+    BlackBoxReconstructionPressure,
+    ConfigTraversalPressure,
+    CrossArtifactPressure,
+    DependencyWorldPressure,
+    EpistemicTwinPressure,
+    ExpensePressure,
+    StatefulWorldPressure,
+    ToolRecoveryPressure,
+    WideRetrievalPressure,
+    WorkspaceLineagePressure,
+)
 from .paths import REPO_ROOT, RESULTS_ROOT, TASKS_ROOT
 from .publication import render_derived, verify_publication, write_publication_manifest
 from .report import write_summary
@@ -47,6 +61,17 @@ def _selected_harnesses(args: argparse.Namespace) -> list[str]:
     if len(selected) > 1:
         raise SystemExit("Select one harness or --all, not both.")
     return list(AGENTS) if selected == ["__all__"] else selected
+
+
+def _validate_skill_options(args: argparse.Namespace) -> None:
+    if args.suite != "frontier_v4" and (
+        args.skill_ablation or args.skill_mode != "no_skill"
+    ):
+        raise SystemExit("skill interventions are available only with --suite frontier_v4")
+
+
+def _execution_skill_modes(args: argparse.Namespace) -> tuple[str, ...]:
+    return SKILL_MODES if args.skill_ablation else (str(args.skill_mode),)
 
 
 def _summary(root: Path, output: Path | None = None) -> Path:
@@ -94,10 +119,89 @@ def _v4_parameters(args: argparse.Namespace) -> dict[str, dict[str, int]]:
         )
     except ValueError as exc:
         raise SystemExit(f"invalid Frontier v4 stateful pressure: {exc}") from exc
+    try:
+        dependency = DependencyWorldPressure(
+            entity_count=args.v4_dependency_entities,
+            account_count=args.v4_dependency_accounts,
+            required_mutations=args.v4_dependency_mutations,
+            distractor_policies=args.v4_dependency_policy_distractors,
+            negative_constraints=args.v4_dependency_negative_constraints,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 dependency pressure: {exc}") from exc
+    try:
+        lineage = WorkspaceLineagePressure(
+            lineage_depth=args.v4_lineage_depth,
+            branch_count=args.v4_lineage_branches,
+            stale_revisions=args.v4_lineage_stale_revisions,
+            distractor_files=args.v4_lineage_distractors,
+            extra_settings=args.v4_lineage_extra_settings,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 lineage pressure: {exc}") from exc
+    try:
+        tool_recovery = ToolRecoveryPressure(
+            case_count=args.v4_tool_cases,
+            required_actions=args.v4_tool_actions,
+            distractor_tools=args.v4_tool_distractors,
+            transient_failures=args.v4_tool_transient_failures,
+            incomplete_responses=args.v4_tool_incomplete_responses,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 tool recovery pressure: {exc}") from exc
+    try:
+        wide_retrieval = WideRetrievalPressure(
+            corpus_size=args.v4_retrieval_corpus_size,
+            target_count=args.v4_retrieval_targets,
+            duplicate_records=args.v4_retrieval_duplicates,
+            conflict_records=args.v4_retrieval_conflicts,
+            source_depth=args.v4_retrieval_source_depth,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 retrieval pressure: {exc}") from exc
+    try:
+        cross_artifact = CrossArtifactPressure(
+            row_count=args.v4_cross_rows,
+            group_count=args.v4_cross_groups,
+            excluded_rows=args.v4_cross_excluded,
+            adjustment_rows=args.v4_cross_adjustments,
+            distractor_files=args.v4_cross_distractors,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 cross-artifact pressure: {exc}") from exc
+    try:
+        epistemic_twins = EpistemicTwinPressure(
+            pair_count=args.v4_epistemic_pairs,
+            registry_size=args.v4_epistemic_registry_size,
+            distractor_records=args.v4_epistemic_distractor_records,
+            archive_revisions=args.v4_epistemic_archive_revisions,
+            source_depth=args.v4_epistemic_source_depth,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"invalid Frontier v4 epistemic-twin pressure: {exc}") from exc
+    try:
+        black_box = BlackBoxReconstructionPressure(
+            rule_count=args.v4_black_box_rules,
+            public_examples=args.v4_black_box_public_examples,
+            probe_budget=args.v4_black_box_probe_budget,
+            distractor_fields=args.v4_black_box_distractor_fields,
+            max_units=args.v4_black_box_max_units,
+        )
+    except ValueError as exc:
+        raise SystemExit(
+            f"invalid Frontier v4 black-box reconstruction pressure: {exc}"
+        ) from exc
     return {
         "expense_report": expense.to_dict(),
         "config_traversal": config.to_dict(),
         "stateful_world": stateful.to_dict(),
+        "dependency_world": dependency.to_dict(),
+        "workspace_lineage": lineage.to_dict(),
+        "tool_recovery": tool_recovery.to_dict(),
+        "wide_retrieval": wide_retrieval.to_dict(),
+        "cross_artifact": cross_artifact.to_dict(),
+        "epistemic_twins": epistemic_twins.to_dict(),
+        "black_box_reconstruction": black_box.to_dict(),
     }
 
 
@@ -107,6 +211,8 @@ def _build_runner(
     *,
     run_id: str | None,
     orchestration_seed: int,
+    skill_mode: str | None = None,
+    parametric_parameters: dict[str, dict[str, int]] | None = None,
 ):
     common = dict(
         repo_root=ROOT,
@@ -121,7 +227,12 @@ def _build_runner(
         return FrontierV4Runner(
             **common,
             variant_base_seed=orchestration_seed,
-            parametric_parameters=_v4_parameters(args),
+            parametric_parameters=(
+                parametric_parameters
+                if parametric_parameters is not None
+                else _v4_parameters(args)
+            ),
+            skill_mode=skill_mode or args.skill_mode,
         )
     return FrontierV3Runner(**common)
 
@@ -142,6 +253,7 @@ def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> 
             harness,
             run_id=run_id,
             orchestration_seed=orchestration_seed,
+            skill_mode=args.skill_mode,
         )
         try:
             exit_code = max(exit_code, runner.run(tasks))
@@ -156,18 +268,26 @@ def _run_single_harness(args: argparse.Namespace, harness: str, tasks: list) -> 
 def _run_matched_interleaved(args: argparse.Namespace, harnesses: list[str], tasks: list) -> int:
     exit_code = 0
     experiment_id = args.run_id or make_experiment_id(args.suite)
+    skill_modes = _execution_skill_modes(args)
     for repeat in range(1, args.repeats + 1):
         orchestration_seed = args.seed + repeat - 1
-        run_id = experiment_id if args.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
-        runners = {
-            harness: _build_runner(
-                args,
-                harness,
-                run_id=run_id,
-                orchestration_seed=orchestration_seed,
-            )
-            for harness in harnesses
-        }
+        base_run_id = experiment_id if args.repeats == 1 else f"{experiment_id}-r{repeat:02d}"
+        runners = {}
+        for harness in harnesses:
+            for skill_mode in skill_modes:
+                logical_name = (
+                    harness if len(skill_modes) == 1 else f"{harness}:{skill_mode}"
+                )
+                run_id = base_run_id
+                if len(skill_modes) > 1:
+                    run_id = f"{base_run_id}-{skill_mode.replace('_', '-')}"
+                runners[logical_name] = _build_runner(
+                    args,
+                    harness,
+                    run_id=run_id,
+                    orchestration_seed=orchestration_seed,
+                    skill_mode=skill_mode,
+                )
         scheduler = MatchedInterleavedScheduler(
             runners,
             tasks,
@@ -178,6 +298,45 @@ def _run_matched_interleaved(args: argparse.Namespace, harnesses: list[str], tas
         result = scheduler.run()
         exit_code = max(exit_code, result.exit_code)
     return exit_code
+
+
+def _run_horizon(args: argparse.Namespace, harnesses: list[str], tasks: list) -> int:
+    if args.suite != "frontier_v4":
+        raise SystemExit("horizon requires --suite frontier_v4")
+    profile = get_horizon_profile(args.horizon_profile)
+    by_id = {task.id: task for task in tasks}
+    experiment_id = args.run_id or f"{make_experiment_id('frontier_v4')}-horizon"
+
+    def runner_factory(
+        harness: str,
+        run_id: str,
+        orchestration_seed: int,
+        skill_mode: str,
+        parameters: dict[str, dict[str, int]],
+    ):
+        return _build_runner(
+            args,
+            harness,
+            run_id=run_id,
+            orchestration_seed=orchestration_seed,
+            skill_mode=skill_mode,
+            parametric_parameters=parameters,
+        )
+
+    result = execute_horizon_profile(
+        profile,
+        tasks=by_id,
+        harnesses=tuple(harnesses),
+        skill_modes=_execution_skill_modes(args),
+        repeats=args.repeats,
+        base_seed=args.seed,
+        experiment_id=experiment_id,
+        runner_factory=runner_factory,
+    )
+    print(f"\nLong-horizon profile: {profile.id}")
+    print(f"Profile digest:       {profile.digest}")
+    print(f"Pressure cells:       {len(profile.cells)} × {args.repeats} repeat(s)")
+    return result.exit_code
 
 
 def main() -> None:
@@ -201,6 +360,26 @@ def main() -> None:
         default=42,
         help="Base orchestration seed; in Frontier v4 it also deterministically derives task variants",
     )
+    parser.add_argument(
+        "--skill-mode",
+        choices=SKILL_MODES,
+        default="no_skill",
+        help="Frontier v4 inference condition for benchmark-owned procedural skills",
+    )
+    parser.add_argument(
+        "--skill-ablation",
+        action="store_true",
+        help="Frontier v4 matched interleaving of no_skill and curated_skill arms",
+    )
+    parser.add_argument(
+        "--horizon-profile",
+        choices=tuple(HORIZON_PROFILES),
+        default=DEFAULT_HORIZON_PROFILE,
+        help=(
+            "Benchmark-owned Frontier v4 generated pressure profile used by the horizon command; "
+            "its exact cells override manual --v4-* pressure coordinates"
+        ),
+    )
     parser.add_argument("--v4-expense-rows", type=int, default=48, help="Frontier v4 expense-family row pressure coordinate")
     parser.add_argument("--v4-expense-malformed", type=int, default=2, help="Frontier v4 expense-family malformed-row pressure coordinate")
     parser.add_argument("--v4-expense-distractors", type=int, default=3, help="Frontier v4 expense-family distractor-file pressure coordinate")
@@ -212,6 +391,41 @@ def main() -> None:
     parser.add_argument("--v4-stateful-mutations", type=int, default=5, help="Frontier v4 stateful-world required-mutation coordinate")
     parser.add_argument("--v4-stateful-policy-distractors", type=int, default=3, help="Frontier v4 stateful-world archived-policy distractor coordinate")
     parser.add_argument("--v4-stateful-negative-constraints", type=int, default=4, help="Frontier v4 stateful-world near-miss preservation coordinate")
+    parser.add_argument("--v4-dependency-entities", type=int, default=30, help="Frontier v4 dependency-world ticket-count coordinate")
+    parser.add_argument("--v4-dependency-accounts", type=int, default=12, help="Frontier v4 dependency-world account-count coordinate")
+    parser.add_argument("--v4-dependency-mutations", type=int, default=5, help="Frontier v4 dependency-world required-mutation coordinate")
+    parser.add_argument("--v4-dependency-policy-distractors", type=int, default=3, help="Frontier v4 dependency-world archived-policy distractor coordinate")
+    parser.add_argument("--v4-dependency-negative-constraints", type=int, default=6, help="Frontier v4 dependency-world near-miss preservation coordinate")
+    parser.add_argument("--v4-lineage-depth", type=int, default=4, help="Frontier v4 workspace-lineage root-to-leaf depth coordinate")
+    parser.add_argument("--v4-lineage-branches", type=int, default=3, help="Frontier v4 workspace-lineage branch-count coordinate")
+    parser.add_argument("--v4-lineage-stale-revisions", type=int, default=2, help="Frontier v4 workspace-lineage historical-revision coordinate")
+    parser.add_argument("--v4-lineage-distractors", type=int, default=4, help="Frontier v4 workspace-lineage unrelated-distractor coordinate")
+    parser.add_argument("--v4-lineage-extra-settings", type=int, default=2, help="Frontier v4 workspace-lineage extra-setting coordinate")
+    parser.add_argument("--v4-tool-cases", type=int, default=24, help="Frontier v4 tool-recovery case-count coordinate")
+    parser.add_argument("--v4-tool-actions", type=int, default=5, help="Frontier v4 tool-recovery required-action coordinate")
+    parser.add_argument("--v4-tool-distractors", type=int, default=4, help="Frontier v4 tool-recovery distractor-tool coordinate")
+    parser.add_argument("--v4-tool-transient-failures", type=int, default=3, help="Frontier v4 tool-recovery injected transient-failure coordinate")
+    parser.add_argument("--v4-tool-incomplete-responses", type=int, default=8, help="Frontier v4 tool-recovery incomplete-list-response coordinate")
+    parser.add_argument("--v4-retrieval-corpus-size", type=int, default=96, help="Frontier v4 retrieval authoritative-corpus size coordinate")
+    parser.add_argument("--v4-retrieval-targets", type=int, default=12, help="Frontier v4 retrieval target-set size coordinate")
+    parser.add_argument("--v4-retrieval-duplicates", type=int, default=12, help="Frontier v4 retrieval mirrored-duplicate count coordinate")
+    parser.add_argument("--v4-retrieval-conflicts", type=int, default=10, help="Frontier v4 retrieval stale-conflict count coordinate")
+    parser.add_argument("--v4-retrieval-source-depth", type=int, default=3, help="Frontier v4 retrieval authoritative source-depth coordinate")
+    parser.add_argument("--v4-cross-rows", type=int, default=72, help="Frontier v4 cross-artifact ledger row-count coordinate")
+    parser.add_argument("--v4-cross-groups", type=int, default=6, help="Frontier v4 cross-artifact account-group coordinate")
+    parser.add_argument("--v4-cross-excluded", type=int, default=12, help="Frontier v4 cross-artifact excluded-row coordinate")
+    parser.add_argument("--v4-cross-adjustments", type=int, default=8, help="Frontier v4 cross-artifact negative-adjustment coordinate")
+    parser.add_argument("--v4-cross-distractors", type=int, default=3, help="Frontier v4 cross-artifact archived-ledger distractor coordinate")
+    parser.add_argument("--v4-epistemic-pairs", type=int, default=6, help="Frontier v4 epistemic-twin pair-count coordinate")
+    parser.add_argument("--v4-epistemic-registry-size", type=int, default=48, help="Frontier v4 epistemic authoritative-registry size coordinate")
+    parser.add_argument("--v4-epistemic-distractor-records", type=int, default=12, help="Frontier v4 epistemic stale-record distractor coordinate")
+    parser.add_argument("--v4-epistemic-archive-revisions", type=int, default=3, help="Frontier v4 epistemic archived policy/registry revision coordinate")
+    parser.add_argument("--v4-epistemic-source-depth", type=int, default=3, help="Frontier v4 epistemic authoritative source-depth coordinate")
+    parser.add_argument("--v4-black-box-rules", type=int, default=7, help="Frontier v4 black-box enabled-rule count coordinate")
+    parser.add_argument("--v4-black-box-public-examples", type=int, default=12, help="Frontier v4 black-box public-example count coordinate")
+    parser.add_argument("--v4-black-box-probe-budget", type=int, default=48, help="Frontier v4 black-box live reference-probe budget coordinate")
+    parser.add_argument("--v4-black-box-distractor-fields", type=int, default=3, help="Frontier v4 black-box ignored input-field count coordinate")
+    parser.add_argument("--v4-black-box-max-units", type=int, default=500, help="Frontier v4 black-box numeric input-span coordinate")
     parser.add_argument(
         "--server-metrics-url",
         default=None,
@@ -238,7 +452,18 @@ def main() -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["run", "smoke", "list", "score", "dashboard", "publish", "verify", "validate", "doctor"],
+        choices=[
+            "run",
+            "horizon",
+            "smoke",
+            "list",
+            "score",
+            "dashboard",
+            "publish",
+            "verify",
+            "validate",
+            "doctor",
+        ],
         default="run",
     )
     parser.add_argument("path", nargs="?", type=Path)
@@ -250,6 +475,7 @@ def main() -> None:
         raise SystemExit(run_wizard(setup=args.setup, check_only=args.check, repair=args.repair))
     if args.setup or args.check or args.repair:
         raise SystemExit("--setup, --check and --repair are only valid with the doctor command")
+    _validate_skill_options(args)
 
     profile = apply_profile_environment()
     if args.model == "unknown" and isinstance(profile.get("model"), str) and profile["model"].strip():
@@ -312,6 +538,15 @@ def main() -> None:
     if args.metrics_poll_interval <= 0:
         raise SystemExit("--metrics-poll-interval must be > 0")
 
+    if args.command == "horizon":
+        exit_code = _run_horizon(args, harnesses, tasks)
+        summary = _summary(RESULTS)
+        print(f"\nSummary:   {summary}")
+        if args.dashboard:
+            dashboard = build_dashboard(RESULTS)
+            print(f"Dashboard: {dashboard}")
+        raise SystemExit(exit_code)
+
     if args.command == "smoke":
         if args.suite != "frontier_v3":
             raise SystemExit("smoke currently targets the Frontier v3 integration contracts")
@@ -342,7 +577,7 @@ def main() -> None:
         print(f"Server metrics ready: {report['server_metrics_ready']}")
         raise SystemExit(0 if report["integration_ok"] else max(exit_code, 1))
 
-    if len(harnesses) == 1:
+    if len(harnesses) == 1 and not args.skill_ablation:
         exit_code = _run_single_harness(args, harnesses[0], tasks)
     else:
         exit_code = _run_matched_interleaved(args, harnesses, tasks)

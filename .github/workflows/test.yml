@@ -19,8 +19,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Qt runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1
+      - name: Install native runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap libegl1 libgl1
+      - name: Verify bubblewrap sandbox capability
+        run: |
+          if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --die-with-parent --new-session --ro-bind / / --proc /proc --dev /dev -- /bin/true
       - name: Install project
         run: |
           chmod +x install.sh

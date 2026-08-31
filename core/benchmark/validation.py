@@ -232,6 +232,8 @@ def validate_parametric_baseline(
                     family,
                     golden_workspace,
                     oracle_golden,
+                    run_dir=golden_run_dir,
+                    task_id=task_id,
                 )
                 positive = evaluate_artifacts(
                     golden_workspace,

@@ -10,7 +10,8 @@ from typing import Any, Mapping, Protocol
 from .experiments import derive_seed
 from .fixtures import materialize_long_horizon_corpus
 from .models import Task
-from .parametric import materialize_variant
+from .parametric import materialize_variant, start_variant_runtime
+from .task_runtime import TaskRuntime
 
 
 class RunnerContext(Protocol):
@@ -22,6 +23,13 @@ class TaskMaterializer(Protocol):
     def prepare(self, runner: RunnerContext, task: Task) -> Path: ...
 
     def identity(self, runner: RunnerContext, task: Task) -> dict[str, Any]: ...
+
+    def start_runtime(
+        self,
+        runner: RunnerContext,
+        task: Task,
+        workspace: Path,
+    ) -> TaskRuntime: ...
 
     def after_task(self, runner: RunnerContext, task: Task) -> None: ...
 
@@ -49,6 +57,14 @@ class StaticTaskMaterializer:
 
     def identity(self, runner: RunnerContext, task: Task) -> dict[str, Any]:
         return {}
+
+    def start_runtime(
+        self,
+        runner: RunnerContext,
+        task: Task,
+        workspace: Path,
+    ) -> TaskRuntime:
+        return TaskRuntime()
 
     def after_task(self, runner: RunnerContext, task: Task) -> None:
         state_name = self._STATE_DIR.get(task.category)
@@ -169,6 +185,23 @@ class ParametricTaskMaterializer:
             "variant_parameters": parameters,
             "variant_digest": variant.get("variant_digest"),
         }
+
+    def start_runtime(
+        self,
+        runner: RunnerContext,
+        task: Task,
+        workspace: Path,
+    ) -> TaskRuntime:
+        oracle = self._variants.get(task.id)
+        if oracle is None:
+            raise RuntimeError(f"task variant was not prepared before runtime startup: {task.id}")
+        return start_variant_runtime(
+            self.family(task),
+            workspace,
+            run_dir=runner.run_dir,
+            task_id=task.id,
+            oracle=oracle,
+        )
 
     def after_task(self, runner: RunnerContext, task: Task) -> None:
         return None

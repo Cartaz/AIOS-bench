@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from aios_bench.experiments import (
     annotate_experiment,
     annotate_repeat,
@@ -64,3 +66,61 @@ def test_matched_annotation_adds_block_and_strict_model_identity(tmp_path: Path)
     assert row["block_seed"] == schedule[0].block_seed
     assert row["model_identity_fingerprint"] == "model-fp"
     assert row["model_strictly_comparable"] is True
+
+
+def test_experiment_context_is_namespaced_and_cannot_replace_identity(tmp_path: Path):
+    (tmp_path / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": "r",
+                "manifest": {
+                    "model": {
+                        "identity_fingerprint": "model-fp",
+                        "strictly_comparable": True,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "results.jsonl").write_text(
+        json.dumps({"task_id": "task-a", "score": 100}) + "\n",
+        encoding="utf-8",
+    )
+    context = {
+        "kind": "long_horizon_pressure",
+        "experiment_id": "attempted-overwrite",
+        "task_id": "attempted-task-overwrite",
+        "cell_id": "cell-1",
+    }
+
+    annotate_experiment(
+        tmp_path,
+        experiment_id="canonical-exp",
+        repeat=1,
+        orchestration_seed=42,
+        schedule_mode="pressure_sweep_sequential",
+        context=context,
+    )
+
+    metadata = json.loads((tmp_path / "run.json").read_text(encoding="utf-8"))
+    row = json.loads((tmp_path / "results.jsonl").read_text(encoding="utf-8"))
+    assert metadata["experiment_id"] == "canonical-exp"
+    assert row["experiment_id"] == "canonical-exp"
+    assert row["task_id"] == "task-a"
+    assert metadata["experiment_context"] == context
+    assert row["experiment_context"] == context
+
+
+def test_experiment_context_must_be_json_serializable(tmp_path: Path):
+    (tmp_path / "run.json").write_text(json.dumps({"run_id": "r"}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="JSON-serializable"):
+        annotate_experiment(
+            tmp_path,
+            experiment_id="exp-1",
+            repeat=1,
+            orchestration_seed=42,
+            schedule_mode="sequential",
+            context={"bad": {1, 2}},
+        )

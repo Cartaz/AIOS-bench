@@ -20,6 +20,37 @@ function toggleSet(set, value, enabled) {
   enabled ? set.add(value) : set.delete(value);
 }
 
+function activeRunProfile() {
+  if (!state.catalog) return null;
+  const value = $('runProfile').value;
+  if (!value) return null;
+  const separator = value.indexOf(':');
+  if (separator < 1) return null;
+  const kind = value.slice(0, separator);
+  const id = value.slice(separator + 1);
+  const profiles = kind === 'horizon'
+    ? (state.catalog.horizon_profiles || [])
+    : kind === 'index'
+      ? (state.catalog.aios_index_profiles || [])
+      : [];
+  const profile = profiles.find(item => item.id === id);
+  return profile ? { kind, ...profile } : null;
+}
+
+function renderSkillControls() {
+  if (!state.catalog) return;
+  const supportsSkills = state.catalog.suite === 'frontier_v4'
+    && (state.catalog.skill_modes || []).length > 0;
+  const compactProfile = activeRunProfile()?.kind === 'index';
+  const enabled = supportsSkills && !compactProfile;
+  $('skillMode').disabled = !enabled;
+  $('skillAblation').disabled = !enabled;
+  if (!enabled) {
+    $('skillMode').value = 'no_skill';
+    $('skillAblation').checked = false;
+  }
+}
+
 function setRunState(value) {
   state.running = Boolean(value.running);
   state.busy = Boolean(value.busy ?? value.running);
@@ -63,21 +94,42 @@ function renderHarnesses() {
 
 function renderTasks() {
   if (!state.catalog) return;
+  const profile = activeRunProfile();
+  const locked = Boolean(profile);
   const groups = {};
   state.catalog.tasks.forEach(task => (groups[task.category] ||= []).push(task));
   $('tasks').innerHTML = Object.entries(groups).map(([category, tasks]) => `
     <section>
       <div class="group-title">${esc(category)}</div>
       <div class="group-items">${tasks.map(task => `
-        <div class="task ${state.tasks.has(task.id) ? 'selected' : ''}" tabindex="0"
-             role="checkbox" aria-checked="${state.tasks.has(task.id)}" data-task="${esc(task.id)}">
+        <div class="task ${state.tasks.has(task.id) ? 'selected' : ''}" tabindex="${locked ? '-1' : '0'}"
+             role="checkbox" aria-checked="${state.tasks.has(task.id)}" aria-disabled="${locked}"
+             data-task="${esc(task.id)}">
           <span class="dot"></span>
           <div><strong>${esc(task.id)}</strong>
             <div class="task-meta">T${task.tier} · ${esc(task.mode)}${task.depends_on.length ? ` · richiede ${esc(task.depends_on.join(', '))}` : ''}</div>
           </div>
         </div>`).join('')}</div>
     </section>`).join('');
-  $('taskSummary').textContent = `${state.tasks.size} / ${state.catalog.tasks.length} selezionati`;
+  $('selectAllTasks').disabled = locked;
+  $('selectNoTasks').disabled = locked;
+  if (!profile) {
+    $('taskSummary').textContent = `${state.tasks.size} / ${state.catalog.tasks.length} selezionati`;
+  } else if (profile.kind === 'horizon') {
+    $('taskSummary').textContent = `${state.tasks.size} test fissati dal profilo · ${profile.cell_count} celle di pressione`;
+  } else {
+    $('taskSummary').textContent = `${state.tasks.size} test AIOS-Index · profilo compatto ad alto segnale`;
+  }
+}
+
+function applyRunProfileSelection() {
+  if (!state.catalog) return;
+  const profile = activeRunProfile();
+  state.tasks = new Set(
+    profile ? profile.task_ids : state.catalog.tasks.map(task => task.id),
+  );
+  renderSkillControls();
+  renderTasks();
 }
 
 function renderDoctor() {
@@ -119,6 +171,22 @@ async function loadCatalog() {
   state.catalog = catalog;
   state.harnesses = new Set(catalog.harnesses.map(h => h.id));
   state.tasks = new Set(catalog.tasks.map(t => t.id));
+
+  const horizonProfiles = catalog.horizon_profiles || [];
+  const indexProfiles = catalog.aios_index_profiles || [];
+  $('runProfile').innerHTML = [
+    '<option value="">Run standard</option>',
+    ...indexProfiles.map(profile => (
+      `<option value="index:${esc(profile.id)}">AIOS-Index · ${profile.task_count} test</option>`
+    )),
+    ...horizonProfiles.map(profile => (
+      `<option value="horizon:${esc(profile.id)}">Long-horizon · ${profile.cell_count} celle</option>`
+    )),
+  ].join('');
+  $('runProfile').disabled = horizonProfiles.length === 0 && indexProfiles.length === 0;
+  $('runProfile').value = '';
+
+  renderSkillControls();
   renderHarnesses();
   renderTasks();
 }
@@ -138,15 +206,21 @@ function activateSelector(selector, attr, set, render, event) {
   render();
 }
 
+function progressIdentity(event) {
+  return event.skill_mode
+    ? `${event.harness} · ${event.skill_mode} · ${event.task_id}`
+    : `${event.harness} · ${event.task_id}`;
+}
+
 function handleProgress(event) {
   const done = event.completed_units || 0;
   const total = event.total_units || 0;
   $('counter').textContent = `${done} / ${total}`;
   $('progressBar').style.width = total ? `${Math.min(100, done / total * 100)}%` : '0%';
-  if (event.type === 'task_started') $('current').textContent = `${event.harness} · ${event.task_id}`;
+  if (event.type === 'task_started') $('current').textContent = progressIdentity(event);
   if (event.type === 'task_finished') {
     const line = document.createElement('div');
-    line.textContent = `${event.harness} · ${event.task_id} · ${event.status || (event.success ? 'PASS' : 'FAIL')}`;
+    line.textContent = `${progressIdentity(event)} · ${event.status || (event.success ? 'PASS' : 'FAIL')}`;
     $('events').prepend(line);
   }
   if (event.type === 'run_cancelled') $('current').textContent = 'Run annullata.';
@@ -158,7 +232,9 @@ function bindUiEvents() {
     if (view) showView(view);
     if (state.catalog) {
       activateSelector('[data-harness]', 'harness', state.harnesses, renderHarnesses, event);
-      activateSelector('[data-task]', 'task', state.tasks, renderTasks, event);
+      if (!activeRunProfile()) {
+        activateSelector('[data-task]', 'task', state.tasks, renderTasks, event);
+      }
     }
     const hAction = event.target.dataset?.harnessAction;
     if (hAction && state.catalog) {
@@ -166,7 +242,7 @@ function bindUiEvents() {
       renderHarnesses();
     }
     const tAction = event.target.dataset?.taskAction;
-    if (tAction && state.catalog) {
+    if (tAction && state.catalog && !activeRunProfile()) {
       state.tasks = new Set(tAction === 'all' ? state.catalog.tasks.map(t => t.id) : []);
       renderTasks();
     }
@@ -192,6 +268,7 @@ function bindUiEvents() {
   });
 
   $('suite').addEventListener('change', () => void loadCatalog());
+  $('runProfile').addEventListener('change', applyRunProfileSelection);
   $('refreshDoctor').addEventListener('click', () => {
     if (!state.busy) void loadDoctor();
   });
@@ -214,6 +291,7 @@ function bindUiEvents() {
   $('start').addEventListener('click', () => {
     $('error').textContent = '';
     const totalTimeout = $('totalTimeout').value.trim();
+    const profile = activeRunProfile();
     const payload = {
       suite: $('suite').value,
       harnesses: [...state.harnesses],
@@ -223,6 +301,10 @@ function bindUiEvents() {
       seed: Number($('seed').value),
       task_timeout: Number($('timeout').value),
       total_timeout: totalTimeout ? Number(totalTimeout) : null,
+      skill_mode: $('skillMode').value,
+      skill_ablation: $('skillAblation').checked,
+      horizon_profile: profile?.kind === 'horizon' ? profile.id : null,
+      index_profile: profile?.kind === 'index' ? profile.id : null,
     };
     void state.backend.startRun(payload).then(ok => {
       if (ok) setRunState({ running: true, busy: true });

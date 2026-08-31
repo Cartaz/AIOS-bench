@@ -8,7 +8,7 @@ from pathlib import Path
 from .paths import BENCHMARK_PACKAGE_ROOT, REPO_ROOT
 
 
-_WORKSPACE_ALIAS = Path("/workspace")
+_WORKSPACE_ALIAS = Path("/tmp/aios-bench-workspace")
 
 
 @dataclass(frozen=True)
@@ -97,10 +97,14 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
             "--chdir", str(workspace),
         )
 
-    # When the workspace itself lives below the repository, preserve it through
-    # an alias before replacing the repository mount, then recreate only its
-    # parent path and bind the alias back at the original absolute location.
+    # Preserve the writable workspace below the private /tmp mount before
+    # replacing the repository. The host root is read-only in the sandbox, so
+    # aliases directly below / cannot be created. Bubblewrap also resolves bind
+    # sources from the parent namespace, which rules out rebinding the alias as
+    # a later source. Recreate only the canonical parent directories and restore
+    # the canonical workspace path with a sandbox-local symlink to the alias.
     args: tuple[str, ...] = (
+        "--dir", str(_WORKSPACE_ALIAS),
         "--bind", str(workspace), str(_WORKSPACE_ALIAS),
         "--tmpfs", str(repo),
     )
@@ -109,7 +113,7 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
         current /= part
         args += ("--dir", str(current))
     args += (
-        "--bind", str(_WORKSPACE_ALIAS), str(workspace),
+        "--symlink", str(_WORKSPACE_ALIAS), str(workspace),
         "--chdir", str(workspace),
     )
     return args
@@ -140,7 +144,10 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     cannot leak golden solutions, graders, docs or prior results. Agent Zero is
     a special transport case: its model runs in a separately isolated service,
     while the trusted local client retains only the package access it needs and
-    masks benchmark-owned answer material explicitly.
+    masks benchmark-owned answer material explicitly. Hidden black-box verifier
+    processes additionally receive private network and PID namespaces so
+    reconstructed code cannot depend on a live endpoint or inspect the grader's
+    host process tree during hidden evaluation.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
@@ -164,6 +171,10 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             prefix += _workspace_rebind_args(workspace)
             grader_hidden = True
             strategy = "bubblewrap_repo_hidden_workspace_only"
+
+        if adapter_name == "blackbox-verifier":
+            prefix += ("--unshare-net", "--unshare-pid")
+            strategy += "_network_pid_isolated"
 
         if adapter_name == "piagent":
             pi_state = Path.home() / ".pi" / "agent"

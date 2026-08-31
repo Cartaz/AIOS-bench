@@ -42,16 +42,72 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
                 "distractor_policies": 3,
                 "negative_constraints": 4,
             },
+            "dependency_world": {
+                "entity_count": 30,
+                "account_count": 12,
+                "required_mutations": 5,
+                "distractor_policies": 3,
+                "negative_constraints": 6,
+            },
+            "workspace_lineage": {
+                "lineage_depth": 4,
+                "branch_count": 3,
+                "stale_revisions": 2,
+                "distractor_files": 4,
+                "extra_settings": 2,
+            },
+            "tool_recovery": {
+                "case_count": 24,
+                "required_actions": 5,
+                "distractor_tools": 4,
+                "transient_failures": 3,
+                "incomplete_responses": 8,
+            },
+            "wide_retrieval": {
+                "corpus_size": 96,
+                "target_count": 12,
+                "duplicate_records": 12,
+                "conflict_records": 10,
+                "source_depth": 3,
+            },
+            "cross_artifact": {
+                "row_count": 72,
+                "group_count": 6,
+                "excluded_rows": 12,
+                "adjustment_rows": 8,
+                "distractor_files": 3,
+            },
+            "epistemic_twins": {
+                "pair_count": 6,
+                "registry_size": 48,
+                "distractor_records": 12,
+                "archive_revisions": 3,
+                "source_depth": 3,
+            },
+            "black_box_reconstruction": {
+                "rule_count": 7,
+                "public_examples": 12,
+                "probe_budget": 48,
+                "distractor_fields": 3,
+                "max_units": 500,
+            },
         },
     )
 
     assert result["schema"] == "aios-bench/parametric-validation/v2"
-    assert result["checked_tasks"] == 3
+    assert result["checked_tasks"] == 10
     assert result["ok"] is True, result["failures"]
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
         "stateful_world",
+        "dependency_world",
+        "workspace_lineage",
+        "tool_recovery",
+        "wide_retrieval",
+        "cross_artifact",
+        "epistemic_twins",
+        "black_box_reconstruction",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True

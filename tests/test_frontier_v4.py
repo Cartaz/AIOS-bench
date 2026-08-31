@@ -51,10 +51,51 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
     assert [task.id for task in v4] == [
         "autonomy_expense_001",
         "stateful_support_001",
+        "support_dependency_001",
+        "data_cross_artifact_001",
+        "reasoning_epistemic_001",
+        "retrieval_wide_001",
+        "software_black_box_001",
         "tool_use_config_001",
+        "tool_use_lineage_001",
+        "tool_recovery_001",
     ]
-    assert all(task.revision == 4 for task in v4)
-    assert all(any(check["type"] == "parametric_reference" for check in task.acceptance) for task in v4)
+    assert {task.id: task.revision for task in v4} == {
+        "autonomy_expense_001": 4,
+        "stateful_support_001": 5,
+        "support_dependency_001": 4,
+        "data_cross_artifact_001": 1,
+        "reasoning_epistemic_001": 1,
+        "retrieval_wide_001": 1,
+        "software_black_box_001": 1,
+        "tool_use_config_001": 4,
+        "tool_use_lineage_001": 1,
+        "tool_recovery_001": 1,
+    }
+    runtime_tasks = {
+        task.id: task
+        for task in v4
+        if task.id in {
+            "stateful_support_001",
+            "support_dependency_001",
+            "software_black_box_001",
+            "tool_recovery_001",
+        }
+    }
+    assert set(runtime_tasks) == {
+        "stateful_support_001",
+        "support_dependency_001",
+        "software_black_box_001",
+        "tool_recovery_001",
+    }
+    assert all(
+        task.required_capabilities == ("benchmark_local_runtime",)
+        for task in runtime_tasks.values()
+    )
+    assert all(
+        any(check["type"] == "parametric_reference" for check in task.acceptance)
+        for task in v4
+    )
 
 
 def test_frontier_v4_uses_scheduler_compatible_task_seed(tmp_path: Path) -> None:
@@ -74,8 +115,12 @@ def test_same_v4_seed_materializes_identical_variant_across_runners_for_every_ac
 
         workspace_a = first._workspace(task)
         workspace_b = second._workspace(task)
-        oracle_a = json.loads((first.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8"))
-        oracle_b = json.loads((second.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8"))
+        oracle_a = json.loads(
+            (first.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8")
+        )
+        oracle_b = json.loads(
+            (second.run_dir / "oracles" / f"{task.id}.json").read_text(encoding="utf-8")
+        )
 
         expected_seed = derive_seed(42, "task", task.id)
         assert oracle_a["variant_digest"] == oracle_b["variant_digest"]
@@ -138,9 +183,32 @@ def test_landscape_profile_excludes_only_pressure_coordinates(tmp_path: Path) ->
     )
 
 
-def test_frontier_v4_semantic_fingerprint_auto_discovers_generators() -> None:
+def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime() -> None:
     paths = semantic_source_paths(ROOT)
     names = {path.name for path in paths}
-    assert "materialization.py" in names
-    assert "suites.py" in names
+    assert {
+        "black_box_api.py",
+        "black_box_reconstruction.py",
+        "black_box_service.py",
+        "cross_artifact.py",
+        "dependency_world.py",
+        "epistemic_twins.py",
+        "grading.py",
+        "interventions.py",
+        "materialization.py",
+        "suites.py",
+        "task_runtime.py",
+        "tool_recovery.py",
+        "tool_recovery_api.py",
+        "tool_recovery_service.py",
+        "wide_retrieval.py",
+        "workspace_lineage.py",
+        "world_api.py",
+    } <= names
+    assert "ablations.py" not in names
+    assert "cross_artifact_analysis.py" not in names
+    assert "epistemic_analysis.py" not in names
+    assert "reconstruction_analysis.py" not in names
+    assert "report.py" not in names
+    assert "dashboard.py" not in names
     assert any("parametric" in path.parts for path in paths)

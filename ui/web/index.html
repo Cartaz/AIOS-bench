@@ -21,14 +21,17 @@
           <div class="section-head"><h2>Configurazione</h2></div>
           <label>Suite<select id="suite"><option value="frontier_v3">Frontier v3</option><option value="frontier_v4">Frontier v4</option></select></label>
           <label>Modello<input id="model" type="text" placeholder="Ornith"></label>
+          <label>Profilo run<select id="runProfile" disabled><option value="">Run standard</option></select></label>
+          <label>Intervento skill<select id="skillMode" disabled><option value="no_skill">Nessuna skill</option><option value="curated_skill">Skill curata</option></select></label>
+          <label class="inline-option"><input id="skillAblation" type="checkbox" disabled> Ablazione appaiata no-skill ↔ skill curata</label>
           <div class="section-head"><h2>Harness</h2><div class="actions"><button data-harness-action="all">Tutti</button><button data-harness-action="none">Nessuno</button></div></div>
           <div id="harnesses" class="toggle-list"></div>
-          <div class="two-col"><label>Repeat<input id="repeats" type="number" min="1" value="1"></label><label>Seed<input id="seed" type="number" value="42"></label><label>Timeout task<input id="timeout" type="number" min="1" value="900"></label><label>Budget harness<input id="totalTimeout" type="number" min="1" placeholder="nessuno" title="Budget massimo di esecuzione attiva per harness e repeat"></label></div>
+          <div class="two-col"><label>Repeat<input id="repeats" type="number" min="1" value="1"></label><label>Seed<input id="seed" type="number" value="42"></label><label>Timeout task<input id="timeout" type="number" min="1" value="900"></label><label>Budget harness<input id="totalTimeout" type="number" min="1" placeholder="nessuno" title="Budget massimo di esecuzione attiva per harness e repeat; nei profili long-horizon si applica a ogni cella"></label></div>
           <div class="actions"><button id="start" class="primary">Avvia benchmark</button><button id="cancel" disabled>Annulla</button></div>
           <p id="error" class="error" role="alert"></p>
         </aside>
 
-        <section class="panel tasks-panel"><div class="section-head"><div><p class="eyebrow">CATALOGO</p><h2>Test</h2></div><div class="actions"><button data-task-action="all">Seleziona tutto</button><button data-task-action="none">Nessuno</button></div></div><div id="taskSummary" class="muted"></div><div id="tasks" class="task-groups"></div></section>
+        <section class="panel tasks-panel"><div class="section-head"><div><p class="eyebrow">CATALOGO</p><h2>Test</h2></div><div class="actions"><button id="selectAllTasks" data-task-action="all">Seleziona tutto</button><button id="selectNoTasks" data-task-action="none">Nessuno</button></div></div><div id="taskSummary" class="muted"></div><div id="tasks" class="task-groups"></div></section>
         <section class="panel progress-panel"><div class="section-head"><h2>Run</h2><span id="counter" class="muted">0 / 0</span></div><div class="progress-track"><div id="progressBar"></div></div><div id="current" class="current">Nessuna run attiva.</div><div id="events" class="events"></div></section>
       </section>
     </section>

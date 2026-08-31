@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .experiments import TaskBlock, annotate_experiment, matched_schedule
 from .models import Task
@@ -35,6 +35,7 @@ class MatchedInterleavedScheduler:
         experiment_id: str,
         repeat: int,
         orchestration_seed: int,
+        experiment_context: Mapping[str, Any] | None = None,
     ) -> None:
         if len(runners) < 2:
             raise ValueError("matched interleaving requires at least two harnesses")
@@ -43,6 +44,7 @@ class MatchedInterleavedScheduler:
         self.experiment_id = experiment_id
         self.repeat = int(repeat)
         self.orchestration_seed = int(orchestration_seed)
+        self.experiment_context = dict(experiment_context) if experiment_context is not None else None
         self.blocks = tuple(matched_schedule((task.id for task in tasks), runners, orchestration_seed))
         self._block_map = {block.task_id: block for block in self.blocks}
 
@@ -54,6 +56,7 @@ class MatchedInterleavedScheduler:
             orchestration_seed=self.orchestration_seed,
             schedule_mode="matched_interleaved",
             task_blocks=self._block_map,
+            context=self.experiment_context,
         )
 
     def _finalize(self, aborted: set[str]) -> int:
@@ -112,6 +115,8 @@ class MatchedInterleavedScheduler:
             f"orchestration_seed={self.orchestration_seed}"
         )
         try:
+            for runner in self.runners.values():
+                self._annotate(runner)
             for block in self.blocks:
                 task = by_id[block.task_id]
                 print(

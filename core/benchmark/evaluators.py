@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
-from .parametric import check_variant
+from .parametric import evaluate_variant
 from .reference_checks import check_task
 
 
@@ -91,6 +91,9 @@ def evaluate_artifacts(
         kind = check["type"]
         path = check.get("path", "")
         detail = ""
+        failure_kind: str | None = None
+        metrics: dict[str, Any] = {}
+        credit: float | None = None
         try:
             if kind == "exists":
                 passed = file_exists(workspace, path)
@@ -143,10 +146,23 @@ def evaluate_artifacts(
                     )
                 passed, detail = reference_result
             elif kind == "parametric_reference":
-                oracle = _load_parametric_oracle(run_dir, str(check["task_id"]))
-                if oracle.get("family") != check.get("family"):
+                task_id = str(check["task_id"])
+                family = str(check["family"])
+                oracle = _load_parametric_oracle(run_dir, task_id)
+                if oracle.get("family") != family:
                     raise EvaluationError("parametric family/oracle mismatch")
-                passed, detail = check_variant(str(check["family"]), workspace, oracle)
+                grade = evaluate_variant(
+                    family,
+                    workspace,
+                    oracle,
+                    run_dir=run_dir,
+                    task_id=task_id,
+                )
+                passed = grade.passed
+                detail = grade.detail
+                failure_kind = grade.failure_kind
+                credit = grade.score
+                metrics = dict(grade.metrics)
             elif kind == "max_files":
                 candidate = _safe_path(workspace, path or ".")
                 count = sum(1 for item in candidate.rglob("*") if item.is_file()) if candidate.exists() else 0
@@ -159,25 +175,47 @@ def evaluate_artifacts(
             # malformed artifact fails its check; it must not abort the suite.
             passed = False
             detail = f"{type(exc).__name__}: {exc}"
+            credit = 0.0
+            metrics = {}
+        if credit is None:
+            credit = 1.0 if passed else 0.0
         results.append({
             "check": check,
             "passed": passed,
             "weight": float(check.get("weight", 1.0)),
+            "credit": float(credit),
             "detail": detail,
+            "failure_kind": failure_kind,
+            "metrics": metrics,
         })
 
     total = sum(result["weight"] for result in results) or 1.0
-    earned = sum(result["weight"] for result in results if result["passed"])
+    earned = sum(result["weight"] * result["credit"] for result in results)
     fatal = any(
         not result["passed"] and result["check"].get("fatal", False)
         for result in results
     )
     score = earned / total
+    failure_kind = next(
+        (
+            str(result["failure_kind"])
+            for result in results
+            if not result["passed"] and result.get("failure_kind")
+        ),
+        None,
+    )
+    parametric_metrics = {
+        str(result["check"]["family"]): result["metrics"]
+        for result in results
+        if result["check"].get("type") == "parametric_reference" and result["metrics"]
+    }
     return {
         "passed": not fatal and score >= 0.80,
         "acceptance_score": score,
         "checks_passed": sum(result["passed"] for result in results),
         "checks_total": len(results),
+        "failure_kind": failure_kind,
+        "metrics": parametric_metrics,
         "results": results,
     }
 

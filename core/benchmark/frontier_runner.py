@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from .failures import classify_failure
+from .interventions import ExecutionCondition
 from .materialization import TaskMaterializer
 from .models import Task
 from .runner import BenchmarkRunner
 from .server_metrics import build_server_metrics_client
 from .task_execution import run_frontier_task
+from .task_runtime import TaskRuntime
 
 
 @dataclass(frozen=True)
@@ -25,15 +27,30 @@ class SuiteDefinition:
 
 
 NON_SEMANTIC_MODULES = frozenset({
+    "ablations.py",
+    "aios_index.py",
+    "aios_index_execution.py",
     "cli.py",
     "config.py",
+    "cross_artifact_analysis.py",
     "dashboard.py",
     "doctor.py",
+    "epistemic_analysis.py",
     "frontier_v3_runner.py",
     "frontier_v4_runner.py",
+    "golden_solutions.py",
+    "health.py",
+    "horizon.py",
+    "horizon_analysis.py",
+    "horizon_execution.py",
+    "landscapes.py",
+    "parametric_goldens.py",
     "paths.py",
     "publication.py",
+    "raw.py",
+    "reconstruction_analysis.py",
     "report.py",
+    "retrieval_analysis.py",
     "smoke.py",
     "statistics.py",
     "validation.py",
@@ -47,6 +64,17 @@ def semantic_source_paths(repo_root: Path) -> tuple[Path, ...]:
         for path in sorted(benchmark_root.rglob("*.py"))
         if "__pycache__" not in path.parts and path.name not in NON_SEMANTIC_MODULES
     )
+
+
+def _manifest_fingerprint(manifest: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            manifest,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 class FrontierRunner(BenchmarkRunner):
@@ -70,8 +98,10 @@ class FrontierRunner(BenchmarkRunner):
         max_output_tokens: int = 65536,
         metrics_poll_interval: float = 1.0,
         cancellation_check: Callable[[], bool] | None = None,
+        execution_condition: ExecutionCondition | None = None,
     ) -> None:
         self.suite = suite
+        self.execution_condition = execution_condition
         self.server_metrics = build_server_metrics_client(server_metrics_url, model=server_metrics_model)
         self.server_metrics_model = server_metrics_model
         self.max_output_tokens = max_output_tokens
@@ -94,6 +124,7 @@ class FrontierRunner(BenchmarkRunner):
             run_id=run_id,
         )
         self.landscape_execution_fingerprint = self._landscape_execution_fingerprint()
+        self.ablation_execution_fingerprint = self._ablation_execution_fingerprint()
 
     def latest_results(self) -> dict[str, dict]:
         return self._latest_results()
@@ -131,6 +162,8 @@ class FrontierRunner(BenchmarkRunner):
         }
         if self.suite.parametric is not None:
             manifest["parametric"] = self.suite.parametric
+        if self.execution_condition is not None:
+            manifest["intervention"] = self.execution_condition.manifest()
         return manifest
 
     def _landscape_execution_fingerprint(self) -> str:
@@ -139,14 +172,15 @@ class FrontierRunner(BenchmarkRunner):
         if isinstance(parametric, dict):
             parametric.pop("pressure_coordinates", None)
             parametric["pressure_coordinates_excluded_from_profile"] = True
-        return hashlib.sha256(
-            json.dumps(
-                profile_manifest,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode("utf-8")
-        ).hexdigest()
+        return _manifest_fingerprint(profile_manifest)
+
+    def _ablation_execution_fingerprint(self) -> str:
+        """Fingerprint the execution profile while excluding only skill arm choice."""
+        profile_manifest = json.loads(json.dumps(self.execution_manifest))
+        intervention = profile_manifest.get("intervention")
+        if isinstance(intervention, dict) and "skill_mode" in intervention:
+            intervention["skill_mode"] = "__paired_skill_variable__"
+        return _manifest_fingerprint(profile_manifest)
 
     def _current_suite_revision(self) -> str:
         return self._revision()
@@ -174,6 +208,20 @@ class FrontierRunner(BenchmarkRunner):
         """Materialize the isolated workspace for one task."""
         return self.suite.materializer.prepare(self, task)
 
+    def start_task_runtime(self, task: Task, workspace: Path) -> TaskRuntime:
+        """Start benchmark-owned services required only while a task executes."""
+        return self.suite.materializer.start_runtime(self, task, workspace)
+
+    def build_task_prompt(self, task: Task) -> str:
+        prompt = (
+            "You are being evaluated by AIOS-bench. Work only inside the provided workspace. "
+            "Complete the task fully, verify the result, and do not modify benchmark files outside "
+            "the workspace.\n\nTASK:\n" + task.prompt
+        )
+        if self.execution_condition is not None:
+            prompt = self.execution_condition.augment_prompt(task, prompt)
+        return prompt
+
     def _workspace(self, task: Task) -> Path:
         """Compatibility alias for existing tests/internal consumers."""
         return self.prepare_workspace(task)
@@ -183,6 +231,9 @@ class FrontierRunner(BenchmarkRunner):
         identity.update(self.suite.materializer.identity(self, task))
         if self.suite.parametric is not None:
             identity["landscape_execution_fingerprint"] = self.landscape_execution_fingerprint
+        if self.execution_condition is not None:
+            identity.update(self.execution_condition.task_identity(task))
+            identity["ablation_execution_fingerprint"] = self.ablation_execution_fingerprint
         return identity
 
     def _write_noncomparable(self, task: Task, status: str, reason: dict, assessment=None) -> None:

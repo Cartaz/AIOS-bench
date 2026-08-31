@@ -23,6 +23,7 @@ from .processes import spawn_owned, terminate_owned
 from .sandbox import workspace_sandbox
 from .scoring import overall_score
 from .server_metrics import NullServerMetricsClient, OutputTokenGuard
+from .task_runtime import TaskRuntime
 from .telemetry import parse_output
 
 
@@ -40,6 +41,10 @@ class TaskExecutionRunner(Protocol):
     cancellation_check: Callable[[], bool] | None
 
     def prepare_workspace(self, task: Task) -> Path: ...
+
+    def start_task_runtime(self, task: Task, workspace: Path) -> TaskRuntime: ...
+
+    def build_task_prompt(self, task: Task) -> str: ...
 
     def record_event(self, event: dict) -> None: ...
 
@@ -149,11 +154,7 @@ def run_frontier_task(
     logs.mkdir(parents=True, exist_ok=True)
     stdout_path = logs / f"{task.id}.stdout.log"
     stderr_path = logs / f"{task.id}.stderr.log"
-    prompt = (
-        "You are being evaluated by AIOS-bench. Work only inside the provided workspace. "
-        "Complete the task fully, verify the result, and do not modify benchmark files outside "
-        "the workspace.\n\nTASK:\n" + task.prompt
-    )
+    prompt = runner.build_task_prompt(task)
     invocation = runner.agent.adapter.build(prompt, workspace, runner.model)
     command = invocation.command
     custom = os.environ.get(f"AIOS_BENCH_{runner.agent.name.upper()}_COMMAND")
@@ -185,6 +186,8 @@ def run_frontier_task(
         poll_interval=runner.metrics_poll_interval,
     )
 
+    runtime = runner.start_task_runtime(task, workspace)
+    env.update(runtime.environment)
     runner.record_event({
         "event": "task_started",
         "task_id": task.id,
@@ -288,7 +291,9 @@ def run_frontier_task(
             "source": "runner",
             "data": {"kind": "runner_error", "error": repr(exc)},
         })
-    trajectory.duration_seconds = time.monotonic() - started
+    finally:
+        trajectory.duration_seconds = time.monotonic() - started
+        runtime.close()
 
     if cancellation_check is not None and cancellation_check():
         raise RunCancelled("Benchmark run cancelled")

@@ -1,0 +1,15 @@
+[
+  {
+    "id": "reasoning_epistemic_001",
+    "category": "reasoning",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Review every generated isolation request as an untrusted claim. Read README.md and the current isolation policy, verify each request against the current authoritative service registry, ignore archived policies and archived registry snapshots as non-authoritative, preserve every existing input unchanged, and write reports/epistemic_decisions.json in the exact documented schema. A request that asserts production/critical/containment-ready facts may be acted on only when all asserted decisive facts are actually supported by the current registry; otherwise mark the premise unsupported and choose do_not_isolate. Process every case independently, include every request exactly once with exact current evidence values, and do not infer a decision from case ordering, identifiers or naming. Pair count, registry size, stale distractor records, archive revisions and authoritative source depth vary by seed and pressure coordinates.",
+    "mode": "cold",
+    "tags": ["reasoning", "frontier_v4", "parametric", "epistemic_twins", "premise_verification", "skepticism", "negative_constraints", "authoritative_source"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/epistemic_decisions.json", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "epistemic_twins", "task_id": "reasoning_epistemic_001", "weight": 9, "fatal": true}
+    ]
+  }
+]

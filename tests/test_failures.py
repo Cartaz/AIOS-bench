@@ -1,16 +1,35 @@
 from aios_bench.failures import (
-    BLOCKED, CRASH, INFRA_ERROR, PASS, REFUSED, RUNAWAY, TIMEOUT, UNSUPPORTED, WRONG,
+    BLOCKED,
+    CRASH,
+    EPISTEMIC_DISCRIMINATION_FAILURE,
+    FALSE_PREMISE_COMPLIANCE,
+    INFRA_ERROR,
+    OVERCAUTIOUS_REFUSAL,
+    PASS,
+    REFUSED,
+    RUNAWAY,
+    TIMEOUT,
+    UNSUPPORTED,
+    WRONG,
     classify_failure,
 )
 
 
-def _classify(status="failed", success=False, execution=False, evaluation=None, events=()):
+def _classify(
+    status="failed",
+    success=False,
+    execution=False,
+    evaluation=None,
+    events=(),
+    evaluation_failure_kind=None,
+):
     return classify_failure(
         status=status,
         success=success,
         execution_success=execution,
         evaluation_passed=evaluation,
         events=events,
+        evaluation_failure_kind=evaluation_failure_kind,
     )
 
 
@@ -32,3 +51,29 @@ def test_refusal_requires_structured_evidence():
     assert _classify(status="failed", execution=True, evaluation=False, events=explicit) == REFUSED
     assert _classify(status="failed", execution=True, evaluation=False, events=assistant) == REFUSED
     assert _classify(status="failed", execution=True, evaluation=False, events=plain_text) == WRONG
+
+
+def test_epistemic_diagnoses_require_successful_execution_and_failed_grading():
+    for kind in (
+        FALSE_PREMISE_COMPLIANCE,
+        OVERCAUTIOUS_REFUSAL,
+        EPISTEMIC_DISCRIMINATION_FAILURE,
+    ):
+        assert _classify(
+            status="failed",
+            execution=True,
+            evaluation=False,
+            evaluation_failure_kind=kind,
+        ) == kind
+        assert _classify(
+            status="timeout",
+            execution=False,
+            evaluation=False,
+            evaluation_failure_kind=kind,
+        ) == TIMEOUT
+        assert _classify(
+            status="failed",
+            execution=False,
+            evaluation=False,
+            evaluation_failure_kind=kind,
+        ) == CRASH
