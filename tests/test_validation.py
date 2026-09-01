@@ -113,7 +113,7 @@ def test_parametric_preflight_checks_all_catalog_families():
     )
 
     assert result["ok"] is True, result["failures"]
-    assert result["checked_tasks"] == 13
+    assert result["checked_tasks"] == 16
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
@@ -126,6 +126,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         "epistemic_twins",
         "black_box_reconstruction",
         "persistent_memory",
+        "learning_transfer",
     }
     for observation in result["observations"]:
         assert observation["same_seed_deterministic"] is True
