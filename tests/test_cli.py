@@ -43,6 +43,7 @@ def test_frontier_v4_list_is_explicit_opt_in(monkeypatch, capsys):
         "retrieval_wide_001",
         "reasoning_epistemic_001",
         "software_black_box_001",
+        "subagents_reconcile_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
         "tool_recovery_001",

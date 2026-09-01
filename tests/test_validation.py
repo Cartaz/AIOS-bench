@@ -113,7 +113,7 @@ def test_parametric_preflight_checks_all_catalog_families():
     )
 
     assert result["ok"] is True, result["failures"]
-    assert result["checked_tasks"] == 16
+    assert result["checked_tasks"] == 17
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
@@ -123,6 +123,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         "tool_recovery",
         "wide_retrieval",
         "cross_artifact",
+        "delegation_reconciliation",
         "epistemic_twins",
         "black_box_reconstruction",
         "persistent_memory",
