@@ -7,7 +7,7 @@ import re
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from .parametric import evaluate_variant
 from .reference_checks import check_task
@@ -79,6 +79,78 @@ def _load_parametric_oracle(run_dir: Path | None, task_id: str) -> dict[str, Any
     return value
 
 
+def _delegation_fields(event: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return normalized structural delegation fields without retaining payload text."""
+    data = event.get("data")
+    if not isinstance(data, Mapping):
+        return {}
+    payload = data.get("payload")
+    if isinstance(payload, Mapping):
+        return payload
+    return data
+
+
+def _delegation_event_id(fields: Mapping[str, Any]) -> str | None:
+    for key in ("call_id", "id"):
+        value = fields.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _structured_delegation_check(
+    events: list[dict[str, Any]],
+    *,
+    min_starts: int,
+    min_completed: int,
+    require_unique_ids: bool,
+) -> tuple[bool, str]:
+    if min_starts <= 0 or min_completed <= 0:
+        raise EvaluationError("structured delegation minima must be positive")
+
+    strong_starts: list[str | None] = []
+    strong_ends: list[str | None] = []
+    for event in events:
+        if not isinstance(event, Mapping):
+            continue
+        event_type = event.get("type")
+        if event_type not in {"subagent_start", "subagent_end"}:
+            continue
+        fields = _delegation_fields(event)
+        if fields.get("inferred") is not False:
+            continue
+        event_id = _delegation_event_id(fields)
+        if event_type == "subagent_start":
+            strong_starts.append(event_id)
+            continue
+        status = str(fields.get("status") or "").strip().lower()
+        if fields.get("is_error") is True or status in {
+            "error", "failed", "failure", "cancelled", "canceled",
+        }:
+            continue
+        strong_ends.append(event_id)
+
+    if require_unique_ids:
+        start_ids = {event_id for event_id in strong_starts if event_id is not None}
+        end_ids = {event_id for event_id in strong_ends if event_id is not None}
+        completed_ids = start_ids.intersection(end_ids)
+        passed = len(start_ids) >= min_starts and len(completed_ids) >= min_completed
+        detail = (
+            f"structured starts={len(start_ids)}, completed={len(completed_ids)}, "
+            f"required_starts={min_starts}, required_completed={min_completed}"
+        )
+        return passed, detail
+
+    starts = len(strong_starts)
+    completed = len(strong_ends)
+    passed = starts >= min_starts and completed >= min_completed
+    detail = (
+        f"structured starts={starts}, completed={completed}, "
+        f"required_starts={min_starts}, required_completed={min_completed}"
+    )
+    return passed, detail
+
+
 def evaluate_artifacts(
     workspace: Path,
     checks: list[dict[str, Any]],
@@ -131,6 +203,13 @@ def evaluate_artifacts(
             elif kind == "command":
                 passed, detail = _run_check_command(
                     workspace, check["command"], float(check.get("timeout", 30))
+                )
+            elif kind == "structured_delegation":
+                passed, detail = _structured_delegation_check(
+                    events or [],
+                    min_starts=int(check.get("min_starts", 1)),
+                    min_completed=int(check.get("min_completed", 1)),
+                    require_unique_ids=bool(check.get("require_unique_ids", False)),
                 )
             elif kind == "reference":
                 reference_result = check_task(

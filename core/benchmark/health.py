@@ -207,7 +207,7 @@ def validate_benchmark_health(
             )
             golden_run_a = root / task_id / "golden-run-a"
             _write_oracle(golden_run_a, task_id, oracle_golden_a)
-            materialize_parametric_golden(
+            events_a = materialize_parametric_golden(
                 family,
                 golden_a,
                 oracle_golden_a,
@@ -219,6 +219,7 @@ def validate_benchmark_health(
                 golden_a,
                 checks,
                 run_dir=golden_run_a,
+                events=events_a,
                 fixture_root=fixture_root,
             )
             grader_seconds = time.monotonic() - started
@@ -233,6 +234,7 @@ def validate_benchmark_health(
                     golden_a,
                     checks,
                     run_dir=golden_run_a,
+                    events=events_a,
                     fixture_root=fixture_root,
                 )
                 missing_artifact_fails = not bool(near_miss["passed"])
@@ -247,7 +249,7 @@ def validate_benchmark_health(
             )
             golden_run_b = root / task_id / "golden-run-b"
             _write_oracle(golden_run_b, task_id, oracle_golden_b)
-            materialize_parametric_golden(
+            events_b = materialize_parametric_golden(
                 family,
                 golden_b,
                 oracle_golden_b,
@@ -258,6 +260,7 @@ def validate_benchmark_health(
                 golden_b,
                 checks,
                 run_dir=golden_run_b,
+                events=events_b,
                 fixture_root=fixture_root,
             )
             comparison_golden_passes = bool(comparison_positive["passed"])

@@ -41,6 +41,11 @@ from .cross_artifact import (
     generate_cross_artifact_variant,
     grade_cross_artifact_variant,
 )
+from .delegation_reconciliation import (
+    DelegationReconciliationPressure,
+    generate_delegation_reconciliation_variant,
+    grade_delegation_reconciliation_variant,
+)
 from .dependency_world import (
     DependencyWorldPressure,
     check_dependency_world_variant,
@@ -190,6 +195,15 @@ def _grade_cross_artifact(
     task_id: str | None,
 ) -> VariantGrade:
     return grade_cross_artifact_variant(workspace, oracle)
+
+
+def _grade_delegation_reconciliation(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    return grade_delegation_reconciliation_variant(workspace, oracle)
 
 
 def _grade_epistemic_twins(
@@ -370,6 +384,11 @@ FAMILY_SPECS: dict[str, ParametricFamilySpec] = {
         generate_cross_artifact_variant,
         _grade_cross_artifact,
     ),
+    "delegation_reconciliation": ParametricFamilySpec(
+        DelegationReconciliationPressure,
+        generate_delegation_reconciliation_variant,
+        _grade_delegation_reconciliation,
+    ),
     "epistemic_twins": ParametricFamilySpec(
         EpistemicTwinPressure,
         generate_epistemic_twins_variant,
@@ -519,6 +538,7 @@ __all__ = [
     "BlackBoxReconstructionPressure",
     "ConfigTraversalPressure",
     "CrossArtifactPressure",
+    "DelegationReconciliationPressure",
     "DependencyWorldPressure",
     "EpistemicTwinPressure",
     "ExpensePressure",

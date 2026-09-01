@@ -62,6 +62,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "reasoning_epistemic_001",
         "retrieval_wide_001",
         "software_black_box_001",
+        "subagents_reconcile_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
         "tool_recovery_001",
@@ -80,6 +81,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "reasoning_epistemic_001": 1,
         "retrieval_wide_001": 1,
         "software_black_box_001": 1,
+        "subagents_reconcile_001": 1,
         "tool_use_config_001": 4,
         "tool_use_lineage_001": 1,
         "tool_recovery_001": 1,
@@ -104,6 +106,8 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         task.required_capabilities == ("benchmark_local_runtime",)
         for task in runtime_tasks.values()
     )
+    delegation_task = next(task for task in v4 if task.id == "subagents_reconcile_001")
+    assert delegation_task.required_capabilities == ("structured_subagent_events",)
     assert all(
         any(check["type"] == "parametric_reference" for check in task.acceptance)
         for task in v4
@@ -203,6 +207,7 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
         "black_box_reconstruction.py",
         "black_box_service.py",
         "cross_artifact.py",
+        "delegation_reconciliation.py",
         "dependency_world.py",
         "epistemic_twins.py",
         "grading.py",

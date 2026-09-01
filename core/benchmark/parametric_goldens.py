@@ -149,6 +149,44 @@ def _cross_artifact_golden(
     return []
 
 
+def _delegation_reconciliation_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    expected_report = oracle.get("expected_report")
+    report_path = oracle.get("report_path")
+    if (
+        not isinstance(expected_report, Mapping)
+        or not isinstance(report_path, str)
+        or not report_path
+    ):
+        raise ValueError("invalid delegation-reconciliation oracle")
+    _write(
+        workspace,
+        report_path,
+        json.dumps(dict(expected_report), indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+    )
+    events: list[dict[str, Any]] = []
+    for index in (1, 2):
+        call_id = f"benchmark-golden-delegate-{index}"
+        events.append({
+            "type": "subagent_start",
+            "source": "benchmark_golden",
+            "data": {"call_id": call_id, "inferred": False},
+        })
+        events.append({
+            "type": "subagent_end",
+            "source": "benchmark_golden",
+            "data": {
+                "call_id": call_id,
+                "inferred": False,
+                "status": "completed",
+                "is_error": False,
+            },
+        })
+    return events
+
+
 def _epistemic_twins_golden(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -435,6 +473,8 @@ def materialize_parametric_golden(
         return _wide_retrieval_golden(workspace, oracle)
     if family == "cross_artifact":
         return _cross_artifact_golden(workspace, oracle)
+    if family == "delegation_reconciliation":
+        return _delegation_reconciliation_golden(workspace, oracle)
     if family == "epistemic_twins":
         return _epistemic_twins_golden(workspace, oracle)
     if family == "black_box_reconstruction":
