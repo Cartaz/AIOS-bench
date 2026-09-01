@@ -30,6 +30,9 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
         "stateful_support_001",
         "support_dependency_001",
         "data_cross_artifact_001",
+        "memory_persist_001",
+        "memory_persist_002",
+        "memory_persist_003",
         "reasoning_epistemic_001",
         "retrieval_wide_001",
         "software_black_box_001",
@@ -82,6 +85,7 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "cross_artifact",
             "epistemic_twins",
             "black_box_reconstruction",
+            "persistent_memory",
         }
         assert coordinates["dependency_world"] == {
             "entity_count": 30,
@@ -131,6 +135,12 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "probe_budget": 48,
             "distractor_fields": 3,
             "max_units": 500,
+        }
+        assert coordinates["persistent_memory"] == {
+            "durable_fact_count": 6,
+            "transient_fact_count": 3,
+            "distractor_fact_count": 4,
+            "update_count": 2,
         }
     finally:
         runner.abort(tasks)

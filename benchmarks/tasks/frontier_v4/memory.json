@@ -1,0 +1,67 @@
+[
+  {
+    "id": "memory_persist_001",
+    "category": "memory",
+    "tier": 3,
+    "revision": 1,
+    "prompt": "Capture durable user preferences from the generated current preference source. Read README.md and notes/current_preferences.json, persist every durable entry and no transient entry in .agent_memory/preferences.json using the documented schema, ignore historical archive distractors, preserve all supplied input files, and save reports/memory_capture.json exactly as requested. Durable-fact count, transient-fact count and distractor count vary by seed and pressure coordinates, so derive the memory state from the generated workspace rather than fixture-specific constants.",
+    "mode": "cold",
+    "tags": ["memory", "frontier_v4", "parametric", "persistent_state", "durability", "negative_constraints"],
+    "acceptance": [
+      {"type": "exists", "path": ".agent_memory/preferences.json", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "reports/memory_capture.json", "weight": 1, "fatal": true},
+      {
+        "type": "parametric_reference",
+        "family": "persistent_memory",
+        "task_id": "memory_persist_001",
+        "variant_context": {"phase": "capture", "state_scope": "persistent_memory_v1"},
+        "weight": 8,
+        "fatal": true
+      }
+    ]
+  },
+  {
+    "id": "memory_persist_002",
+    "depends_on": ["memory_persist_001"],
+    "category": "memory",
+    "tier": 4,
+    "revision": 1,
+    "prompt": "Use the durable memory persisted by memory_persist_001 to satisfy the generated tool-profile request. The request intentionally does not repeat the preference values. Preserve .agent_memory/preferences.json unchanged, preserve all supplied request files, and save reports/memory_application.json with the exact requested durable values and preference token. Do not invent missing preferences or copy transient session values into durable memory.",
+    "mode": "warm",
+    "tags": ["memory", "frontier_v4", "parametric", "persistent_state", "retrieval", "application"],
+    "acceptance": [
+      {"type": "exists", "path": ".agent_memory/preferences.json", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "reports/memory_application.json", "weight": 1, "fatal": true},
+      {
+        "type": "parametric_reference",
+        "family": "persistent_memory",
+        "task_id": "memory_persist_002",
+        "variant_context": {"phase": "apply", "state_scope": "persistent_memory_v1"},
+        "weight": 8,
+        "fatal": true
+      }
+    ]
+  },
+  {
+    "id": "memory_persist_003",
+    "depends_on": ["memory_persist_002"],
+    "category": "memory",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Update the durable memory persisted by the preceding memory tasks using updates/current.json. Apply only durable_changes, preserve every unrelated durable preference, append exact previous/current history for each changed key, reject transient session values from durable storage, preserve all supplied input files, and save reports/memory_update.json exactly as requested. Update count and transient noise vary by seed and pressure coordinates.",
+    "mode": "warm",
+    "tags": ["memory", "frontier_v4", "parametric", "persistent_state", "update", "history", "negative_constraints"],
+    "acceptance": [
+      {"type": "exists", "path": ".agent_memory/preferences.json", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "reports/memory_update.json", "weight": 1, "fatal": true},
+      {
+        "type": "parametric_reference",
+        "family": "persistent_memory",
+        "task_id": "memory_persist_003",
+        "variant_context": {"phase": "update", "state_scope": "persistent_memory_v1"},
+        "weight": 8,
+        "fatal": true
+      }
+    ]
+  }
+]

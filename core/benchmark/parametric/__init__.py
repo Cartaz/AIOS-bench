@@ -53,6 +53,11 @@ from .epistemic_twins import (
 )
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
 from .grading import VariantGrade
+from .persistent_memory import (
+    PersistentMemoryPressure,
+    generate_persistent_memory_variant,
+    grade_persistent_memory_variant,
+)
 from .stateful_world import (
     StatefulWorldPressure,
     check_stateful_world_variant,
@@ -89,9 +94,10 @@ FailureDiagnoser = Callable[[Mapping[str, Any], Path | None, str | None], str | 
 class ParametricFamilySpec:
     """One declarative generated-family integration contract.
 
-    Pressure validation, generation, optional workspace/runtime adaptation and
-    deterministic grading are registered once. Public dispatch functions below
-    remain stable while family-specific complexity stays behind these callables.
+    Pressure validation, generation, optional workspace/runtime adaptation,
+    deterministic grading, and optional benchmark-owned persistent state are
+    registered once. Public dispatch functions below remain stable while
+    family-specific complexity stays behind these callables.
     """
 
     pressure_type: Any
@@ -100,6 +106,8 @@ class ParametricFamilySpec:
     post_materialize: PostMaterializer | None = None
     runtime: RuntimeStarter | None = None
     diagnose: FailureDiagnoser | None = None
+    uses_context: bool = False
+    persistent_paths: tuple[str, ...] = ()
 
 
 def _reseal_variant(oracle: dict[str, Any]) -> dict[str, Any]:
@@ -200,6 +208,15 @@ def _grade_black_box(
         run_dir=run_dir,
         task_id=task_id,
     )
+
+
+def _grade_persistent_memory(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    return grade_persistent_memory_variant(workspace, oracle)
 
 
 def _check_mediated_world(
@@ -351,6 +368,13 @@ FAMILY_SPECS: dict[str, ParametricFamilySpec] = {
         post_materialize=_post_black_box,
         runtime=start_black_box_runtime,
     ),
+    "persistent_memory": ParametricFamilySpec(
+        PersistentMemoryPressure,
+        generate_persistent_memory_variant,
+        _grade_persistent_memory,
+        uses_context=True,
+        persistent_paths=(".agent_memory",),
+    ),
 }
 
 FAMILIES = set(FAMILY_SPECS)
@@ -387,13 +411,27 @@ def materialize_variant(
     *,
     seed: int,
     parameters: Mapping[str, Any] | None = None,
+    context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     spec = _family_spec(family)
     pressure = spec.pressure_type.from_mapping(parameters or {})
-    oracle = spec.generator(workspace, seed=int(seed), pressure=pressure)
+    if spec.uses_context:
+        oracle = spec.generator(
+            workspace,
+            seed=int(seed),
+            pressure=pressure,
+            context=dict(context or {}),
+        )
+    else:
+        oracle = spec.generator(workspace, seed=int(seed), pressure=pressure)
     if spec.post_materialize is not None:
         oracle = spec.post_materialize(workspace, oracle)
     return oracle
+
+
+def persistent_state_paths(family: str) -> tuple[str, ...]:
+    """Return benchmark-owned state paths persisted between related warm tasks."""
+    return _family_spec(family).persistent_paths
 
 
 def start_variant_runtime(
@@ -466,6 +504,7 @@ __all__ = [
     "FAMILIES",
     "FAMILY_SPECS",
     "ParametricFamilySpec",
+    "PersistentMemoryPressure",
     "StatefulWorldPressure",
     "ToolRecoveryPressure",
     "VariantGrade",
@@ -476,5 +515,6 @@ __all__ = [
     "evaluate_variant",
     "materialize_variant",
     "normalize_parameters",
+    "persistent_state_paths",
     "start_variant_runtime",
 ]

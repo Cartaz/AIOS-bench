@@ -246,6 +246,43 @@ for line in sys.stdin:
     return []
 
 
+def _persistent_memory_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    expected_memory = oracle.get("expected_memory")
+    expected_report = oracle.get("expected_report")
+    report_path = oracle.get("report_path")
+    if (
+        not isinstance(expected_memory, Mapping)
+        or not isinstance(expected_report, Mapping)
+        or not isinstance(report_path, str)
+        or not report_path
+    ):
+        raise ValueError("invalid persistent-memory oracle")
+    _write(
+        workspace,
+        ".agent_memory/preferences.json",
+        json.dumps(
+            dict(expected_memory),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        ) + "\n",
+    )
+    _write(
+        workspace,
+        report_path,
+        json.dumps(
+            dict(expected_report),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        ) + "\n",
+    )
+    return []
+
+
 def _mediated_world_golden(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -375,6 +412,8 @@ def materialize_parametric_golden(
         return _epistemic_twins_golden(workspace, oracle)
     if family == "black_box_reconstruction":
         return _black_box_golden(workspace, oracle)
+    if family == "persistent_memory":
+        return _persistent_memory_golden(workspace, oracle)
     return _legacy_materializer(family, workspace, oracle)
 
 
