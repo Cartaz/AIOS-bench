@@ -283,6 +283,33 @@ def _persistent_memory_golden(
     return []
 
 
+def _learning_transfer_golden(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    expected_skill = oracle.get("expected_skill")
+    expected_report = oracle.get("expected_report")
+    report_path = oracle.get("report_path")
+    if (
+        not isinstance(expected_skill, Mapping)
+        or not isinstance(expected_report, Mapping)
+        or not isinstance(report_path, str)
+        or not report_path
+    ):
+        raise ValueError("invalid learning-transfer oracle")
+    _write(
+        workspace,
+        "skills/reporting_workflow.json",
+        json.dumps(dict(expected_skill), indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+    )
+    _write(
+        workspace,
+        report_path,
+        json.dumps(dict(expected_report), indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+    )
+    return []
+
+
 def _mediated_world_golden(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -414,6 +441,8 @@ def materialize_parametric_golden(
         return _black_box_golden(workspace, oracle)
     if family == "persistent_memory":
         return _persistent_memory_golden(workspace, oracle)
+    if family == "learning_transfer":
+        return _learning_transfer_golden(workspace, oracle)
     return _legacy_materializer(family, workspace, oracle)
 
 

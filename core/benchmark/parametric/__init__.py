@@ -53,6 +53,11 @@ from .epistemic_twins import (
 )
 from .expense import ExpensePressure, check_expense_variant, generate_expense_variant
 from .grading import VariantGrade
+from .learning_transfer import (
+    LearningTransferPressure,
+    generate_learning_transfer_variant,
+    grade_learning_transfer_variant,
+)
 from .persistent_memory import (
     PersistentMemoryPressure,
     generate_persistent_memory_variant,
@@ -219,6 +224,15 @@ def _grade_persistent_memory(
     return grade_persistent_memory_variant(workspace, oracle)
 
 
+def _grade_learning_transfer(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    return grade_learning_transfer_variant(workspace, oracle)
+
+
 def _check_mediated_world(
     checker: Callable[[Path, Mapping[str, Any]], tuple[bool, str]],
     workspace: Path,
@@ -375,6 +389,13 @@ FAMILY_SPECS: dict[str, ParametricFamilySpec] = {
         uses_context=True,
         persistent_paths=(".agent_memory",),
     ),
+    "learning_transfer": ParametricFamilySpec(
+        LearningTransferPressure,
+        generate_learning_transfer_variant,
+        _grade_learning_transfer,
+        uses_context=True,
+        persistent_paths=("skills",),
+    ),
 }
 
 FAMILIES = set(FAMILY_SPECS)
@@ -503,6 +524,7 @@ __all__ = [
     "ExpensePressure",
     "FAMILIES",
     "FAMILY_SPECS",
+    "LearningTransferPressure",
     "ParametricFamilySpec",
     "PersistentMemoryPressure",
     "StatefulWorldPressure",

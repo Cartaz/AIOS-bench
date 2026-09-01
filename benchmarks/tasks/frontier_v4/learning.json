@@ -1,0 +1,67 @@
+[
+  {
+    "id": "learning_acquire_001",
+    "category": "learning",
+    "tier": 4,
+    "revision": 1,
+    "prompt": "Learn the generated recurring reporting procedure from the supplied example CSV/result pairs. Read README.md and docs/skill_schema.md, infer the unique procedure that explains every demonstration, persist it at skills/reporting_workflow.json, preserve every supplied example/data/documentation/tool file, and apply the learned skill to data/current.csv to create reports/learning_acquisition.json exactly as requested. Demonstrations, row order, grouping semantics, distractor columns and the hidden procedure vary by seed and pressure coordinates, so derive the reusable procedure rather than hard-coding fixture constants.",
+    "mode": "cold",
+    "tags": ["learning", "frontier_v4", "parametric", "persistent_state", "procedure_induction", "generalization"],
+    "acceptance": [
+      {"type": "exists", "path": "skills/reporting_workflow.json", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "reports/learning_acquisition.json", "weight": 1, "fatal": true},
+      {
+        "type": "parametric_reference",
+        "family": "learning_transfer",
+        "task_id": "learning_acquire_001",
+        "variant_context": {"phase": "acquire", "state_scope": "learning_transfer_v1"},
+        "weight": 8,
+        "fatal": true
+      }
+    ]
+  },
+  {
+    "id": "learning_transfer_001",
+    "depends_on": ["learning_acquire_001"],
+    "category": "learning",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Transfer the reusable reporting skill persisted by learning_acquire_001 to a generated dataset whose concrete schema has changed. The learned rule values are intentionally not repeated. Read README.md and schema/current.json, update only the affected column mappings in skills/reporting_workflow.json while preserving all learned rule semantics, preserve every supplied schema/data/documentation/tool file, and apply the adapted skill to data/transfer.csv to create reports/learning_transfer.json exactly as requested.",
+    "mode": "warm",
+    "tags": ["learning", "frontier_v4", "parametric", "persistent_state", "schema_transfer", "selective_adaptation"],
+    "acceptance": [
+      {"type": "exists", "path": "skills/reporting_workflow.json", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "reports/learning_transfer.json", "weight": 1, "fatal": true},
+      {
+        "type": "parametric_reference",
+        "family": "learning_transfer",
+        "task_id": "learning_transfer_001",
+        "variant_context": {"phase": "transfer", "state_scope": "learning_transfer_v1"},
+        "weight": 8,
+        "fatal": true
+      }
+    ]
+  },
+  {
+    "id": "learning_repair_001",
+    "depends_on": ["learning_transfer_001"],
+    "category": "learning",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Repair the reusable reporting skill persisted by the preceding learning tasks after exactly one learned rule has been silently corrupted. Use the generated validation CSV/expected-result pairs to identify the incorrect rule, correct skills/reporting_workflow.json itself rather than patching only the final output, preserve all supplied validation/data/documentation/tool files, apply the repaired skill to data/current.csv, and save reports/learning_correction.json with the exact summary, correction record and validation_cases_passed requested in README.md.",
+    "mode": "warm",
+    "tags": ["learning", "frontier_v4", "parametric", "persistent_state", "self_correction", "validation"],
+    "acceptance": [
+      {"type": "exists", "path": "skills/reporting_workflow.json", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "reports/learning_correction.json", "weight": 1, "fatal": true},
+      {
+        "type": "parametric_reference",
+        "family": "learning_transfer",
+        "task_id": "learning_repair_001",
+        "variant_context": {"phase": "repair", "state_scope": "learning_transfer_v1"},
+        "weight": 8,
+        "fatal": true
+      }
+    ]
+  }
+]
