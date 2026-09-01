@@ -140,6 +140,7 @@ def validate_benchmark_health(
             task_id = str(getattr(task, "id"))
             try:
                 family = ParametricTaskMaterializer.family(task)  # type: ignore[arg-type]
+                variant_context = ParametricTaskMaterializer.variant_context(task)  # type: ignore[arg-type]
             except ValueError as exc:
                 failures.append({"task_id": task_id, "reason": str(exc)})
                 continue
@@ -153,9 +154,27 @@ def validate_benchmark_health(
             work_a = root / task_id / "a"
             work_a2 = root / task_id / "a2"
             work_b = root / task_id / "b"
-            oracle_a = materialize_variant(family, work_a, seed=seed_a, parameters=pressure)
-            oracle_a2 = materialize_variant(family, work_a2, seed=seed_a, parameters=pressure)
-            oracle_b = materialize_variant(family, work_b, seed=seed_b, parameters=pressure)
+            oracle_a = materialize_variant(
+                family,
+                work_a,
+                seed=seed_a,
+                parameters=pressure,
+                context=variant_context,
+            )
+            oracle_a2 = materialize_variant(
+                family,
+                work_a2,
+                seed=seed_a,
+                parameters=pressure,
+                context=variant_context,
+            )
+            oracle_b = materialize_variant(
+                family,
+                work_b,
+                seed=seed_b,
+                parameters=pressure,
+                context=variant_context,
+            )
 
             same_seed_oracle = oracle_a.get("variant_digest") == oracle_a2.get("variant_digest")
             same_seed_workspace = _tree_digest(work_a) == _tree_digest(work_a2)
@@ -184,10 +203,11 @@ def validate_benchmark_health(
                 golden_a,
                 seed=seed_a,
                 parameters=pressure,
+                context=variant_context,
             )
             golden_run_a = root / task_id / "golden-run-a"
             _write_oracle(golden_run_a, task_id, oracle_golden_a)
-            materialize_parametric_golden(
+            events_a = materialize_parametric_golden(
                 family,
                 golden_a,
                 oracle_golden_a,
@@ -199,6 +219,7 @@ def validate_benchmark_health(
                 golden_a,
                 checks,
                 run_dir=golden_run_a,
+                events=events_a,
                 fixture_root=fixture_root,
             )
             grader_seconds = time.monotonic() - started
@@ -213,6 +234,7 @@ def validate_benchmark_health(
                     golden_a,
                     checks,
                     run_dir=golden_run_a,
+                    events=events_a,
                     fixture_root=fixture_root,
                 )
                 missing_artifact_fails = not bool(near_miss["passed"])
@@ -223,10 +245,11 @@ def validate_benchmark_health(
                 golden_b,
                 seed=seed_b,
                 parameters=pressure,
+                context=variant_context,
             )
             golden_run_b = root / task_id / "golden-run-b"
             _write_oracle(golden_run_b, task_id, oracle_golden_b)
-            materialize_parametric_golden(
+            events_b = materialize_parametric_golden(
                 family,
                 golden_b,
                 oracle_golden_b,
@@ -237,6 +260,7 @@ def validate_benchmark_health(
                 golden_b,
                 checks,
                 run_dir=golden_run_b,
+                events=events_b,
                 fixture_root=fixture_root,
             )
             comparison_golden_passes = bool(comparison_positive["passed"])

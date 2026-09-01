@@ -30,6 +30,12 @@ def test_parametric_registry_records_defaults_for_every_family() -> None:
         "adjustment_rows": 8,
         "distractor_files": 3,
     }
+    assert parameters["delegation_reconciliation"] == {
+        "topic_count": 8,
+        "conflict_count": 4,
+        "distractor_records": 10,
+        "fabricated_claims": 2,
+    }
     assert parameters["epistemic_twins"] == {
         "pair_count": 6,
         "registry_size": 48,
@@ -43,6 +49,14 @@ def test_parametric_registry_records_defaults_for_every_family() -> None:
         "probe_budget": 48,
         "distractor_fields": 3,
         "max_units": 500,
+    }
+    assert parameters["learning_transfer"] == {
+        "demo_count": 3,
+        "rows_per_demo": 54,
+        "evaluation_rows": 60,
+        "group_count": 6,
+        "distractor_columns": 4,
+        "schema_shift_fields": 4,
     }
 
 
@@ -66,8 +80,10 @@ def test_parametric_registry_merges_partial_overrides_with_other_defaults() -> N
     }
     assert parameters["wide_retrieval"]["target_count"] == 12
     assert parameters["cross_artifact"]["group_count"] == 6
+    assert parameters["delegation_reconciliation"]["conflict_count"] == 4
     assert parameters["epistemic_twins"]["pair_count"] == 6
     assert parameters["black_box_reconstruction"]["probe_budget"] == 48
+    assert parameters["learning_transfer"]["schema_shift_fields"] == 4
 
 
 def test_parametric_registry_rejects_unknown_family() -> None:

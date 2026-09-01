@@ -1,0 +1,17 @@
+[
+  {
+    "id": "subagents_reconcile_001",
+    "category": "subagents",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Use at least two native delegated subagents to investigate the two generated evidence streams independently, then reconcile their findings under the policy in docs/reconciliation_policy.md. Read scope.json, delegate substantive evidence review rather than merely claiming delegation in prose, preserve every supplied source/policy/scope file, and create reports/delegation_reconciliation.json containing every scoped topic in topic_id order with the exact resolved value, decision, conflict flag, winning evidence provenance, and rejected claim IDs. AIOS-Bench verifies both the deterministic reconciliation artifact and at least two completed non-inferred structured delegation lifecycles from harness telemetry.",
+    "mode": "cold",
+    "tags": ["subagents", "frontier_v4", "parametric", "delegation", "reconciliation", "provenance"],
+    "required_capabilities": ["structured_subagent_events"],
+    "acceptance": [
+      {"type": "exists", "path": "reports/delegation_reconciliation.json", "weight": 1, "fatal": true},
+      {"type": "structured_delegation", "min_starts": 2, "min_completed": 2, "require_unique_ids": true, "weight": 4, "fatal": true},
+      {"type": "parametric_reference", "family": "delegation_reconciliation", "task_id": "subagents_reconcile_001", "weight": 8, "fatal": true}
+    ]
+  }
+]

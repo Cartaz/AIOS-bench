@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -10,7 +12,7 @@ from typing import Any, Mapping, Protocol
 from .experiments import derive_seed
 from .fixtures import materialize_long_horizon_corpus
 from .models import Task
-from .parametric import materialize_variant, start_variant_runtime
+from .parametric import materialize_variant, persistent_state_paths, start_variant_runtime
 from .task_runtime import TaskRuntime
 
 
@@ -145,7 +147,12 @@ class StaticTaskMaterializer:
 
 @dataclass
 class ParametricTaskMaterializer:
-    """Materialize deterministic variants and keep grader oracles outside workspaces."""
+    """Materialize deterministic variants and keep grader oracles outside workspaces.
+
+    Families may declare benchmark-owned persistent paths. Cold tasks start with
+    fresh state; predecessor work is persisted after execution and restored into
+    later warm tasks in the same state scope.
+    """
 
     base_seed: int = 42
     parameters: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
@@ -154,11 +161,13 @@ class ParametricTaskMaterializer:
     def prepare(self, runner: RunnerContext, task: Task) -> Path:
         workspace = _fresh_workspace(runner.run_dir, task.id)
         family = self.family(task)
+        self._restore_persistent_state(runner, task, workspace, family)
         oracle = materialize_variant(
             family,
             workspace,
             seed=self.task_seed(task),
             parameters=self.parameters.get(family, {}),
+            context=self.variant_context(task),
         )
         oracle_dir = runner.run_dir / "oracles"
         oracle_dir.mkdir(parents=True, exist_ok=True)
@@ -178,13 +187,17 @@ class ParametricTaskMaterializer:
         parameters = variant.get("parameters")
         if not isinstance(parameters, dict):
             parameters = dict(self.parameters.get(family, {}))
-        return {
+        identity = {
             "variant_schema": "aios-bench/parametric/v1",
             "variant_family": family,
             "variant_seed": self.task_seed(task),
             "variant_parameters": parameters,
             "variant_digest": variant.get("variant_digest"),
         }
+        context = self.variant_context(task)
+        if context:
+            identity["variant_context"] = context
+        return identity
 
     def start_runtime(
         self,
@@ -204,10 +217,17 @@ class ParametricTaskMaterializer:
         )
 
     def after_task(self, runner: RunnerContext, task: Task) -> None:
-        return None
+        family = self.family(task)
+        paths = persistent_state_paths(family)
+        if not paths:
+            return
+        workspace = runner.run_dir / "workspaces" / task.id
+        state_root = self._state_root(runner, task, family)
+        for relative in paths:
+            self._persist_path(workspace, state_root, relative)
 
     @staticmethod
-    def family(task: Task) -> str:
+    def _reference(task: Task) -> Mapping[str, Any]:
         checks = [
             check
             for check in task.acceptance
@@ -217,7 +237,98 @@ class ParametricTaskMaterializer:
             raise ValueError(
                 f"Parametric task {task.id} needs exactly one parametric_reference"
             )
-        return str(checks[0]["family"])
+        return checks[0]
+
+    @classmethod
+    def family(cls, task: Task) -> str:
+        return str(cls._reference(task)["family"])
+
+    @classmethod
+    def variant_context(cls, task: Task) -> dict[str, Any]:
+        raw = cls._reference(task).get("variant_context", {})
+        if raw is None:
+            return {}
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"Parametric task {task.id} variant_context must be an object")
+        return {str(key): value for key, value in raw.items()}
 
     def task_seed(self, task: Task) -> int:
         return derive_seed(self.base_seed, "task", task.id)
+
+    def _restore_persistent_state(
+        self,
+        runner: RunnerContext,
+        task: Task,
+        workspace: Path,
+        family: str,
+    ) -> None:
+        if task.mode != "warm":
+            return
+        paths = persistent_state_paths(family)
+        if not paths:
+            return
+        state_root = self._state_root(runner, task, family)
+        for relative in paths:
+            self._restore_path(state_root, workspace, relative)
+
+    def _state_root(
+        self,
+        runner: RunnerContext,
+        task: Task,
+        family: str,
+    ) -> Path:
+        context = self.variant_context(task)
+        scope = str(context.get("state_scope", family))
+        component = self._safe_component(scope)
+        path = runner.run_dir / "persistent_state" / family / component
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @staticmethod
+    def _safe_component(value: str) -> str:
+        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("._")
+        if cleaned and cleaned == value and cleaned not in {".", ".."} and len(cleaned) <= 80:
+            return cleaned
+        suffix = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+        return f"{(cleaned or 'state')[:64]}-{suffix}"
+
+    @staticmethod
+    def _relative_state_path(value: str) -> Path:
+        path = Path(value)
+        if path.is_absolute() or not path.parts or ".." in path.parts:
+            raise ValueError(f"Unsafe persistent state path: {value!r}")
+        return path
+
+    @classmethod
+    def _restore_path(cls, state_root: Path, workspace: Path, relative: str) -> None:
+        path = cls._relative_state_path(relative)
+        source = state_root / path
+        if not source.exists():
+            return
+        destination = workspace / path
+        if destination.is_dir():
+            shutil.rmtree(destination)
+        elif destination.exists():
+            destination.unlink()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, destination)
+        else:
+            shutil.copy2(source, destination)
+
+    @classmethod
+    def _persist_path(cls, workspace: Path, state_root: Path, relative: str) -> None:
+        path = cls._relative_state_path(relative)
+        source = workspace / path
+        destination = state_root / path
+        if destination.is_dir():
+            shutil.rmtree(destination)
+        elif destination.exists():
+            destination.unlink()
+        if not source.exists():
+            return
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, destination)
+        else:
+            shutil.copy2(source, destination)
