@@ -48,7 +48,7 @@
     "category": "memory",
     "tier": 5,
     "revision": 1,
-    "prompt": "Update the durable memory persisted by the preceding memory tasks using updates/current.json. Apply only durable_changes, preserve every unrelated durable preference, append exact previous/current history for each changed key, reject transient session values from durable storage, preserve all supplied input files, and save reports/memory_update.json exactly as requested. Update count and transient noise vary by seed and pressure coordinates.",
+    "prompt": "Update .agent_memory/preferences.json from the durable memory persisted by the preceding memory tasks using updates/current.json. Apply only durable_changes, preserve every unrelated durable preference, append exact previous/current history for each changed key, reject transient session values from durable storage, preserve all supplied input files, and save reports/memory_update.json exactly as requested. Update count and transient noise vary by seed and pressure coordinates.",
     "mode": "warm",
     "tags": ["memory", "frontier_v4", "parametric", "persistent_state", "update", "history", "negative_constraints"],
     "acceptance": [

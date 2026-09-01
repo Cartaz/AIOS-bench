@@ -10,8 +10,9 @@ from .evaluators import evaluate_artifacts
 from .experiments import derive_seed
 from .fixtures import materialize_long_horizon_corpus
 from .golden_solutions import materialize_static_golden
-from .parametric_goldens import materialize_parametric_golden
+from .materialization import ParametricTaskMaterializer
 from .parametric import materialize_variant
+from .parametric_goldens import materialize_parametric_golden
 
 
 def _checks(repo_root: Path, task: object) -> list[dict[str, Any]]:
@@ -155,16 +156,6 @@ def validate_static_baseline(repo_root: Path, tasks: Iterable[object]) -> dict[s
     }
 
 
-def _parametric_family(task: object) -> str:
-    checks = [
-        check for check in getattr(task, "acceptance", ())
-        if check.get("type") == "parametric_reference"
-    ]
-    if len(checks) != 1:
-        raise ValueError(f"task {getattr(task, 'id', 'unknown')} needs one parametric_reference")
-    return str(checks[0]["family"])
-
-
 def _write_oracle(run_dir: Path, task_id: str, oracle: Mapping[str, Any]) -> None:
     directory = run_dir / "oracles"
     directory.mkdir(parents=True, exist_ok=True)
@@ -192,7 +183,8 @@ def validate_parametric_baseline(
         for task in tasks:
             task_id = str(getattr(task, "id"))
             checks = _checks(repo_root, task)
-            family = _parametric_family(task)
+            family = ParametricTaskMaterializer.family(task)  # type: ignore[arg-type]
+            context = ParametricTaskMaterializer.variant_context(task)  # type: ignore[arg-type]
             seed_a = derive_seed(base_seed, "task", task_id)
             seed_b = derive_seed(base_seed + 1, "task", task_id)
             pressure = parameter_map.get(family, {})
@@ -200,9 +192,27 @@ def validate_parametric_baseline(
             work_a = root / task_id / "a"
             work_a2 = root / task_id / "a2"
             work_b = root / task_id / "b"
-            oracle_a = materialize_variant(family, work_a, seed=seed_a, parameters=pressure)
-            oracle_a2 = materialize_variant(family, work_a2, seed=seed_a, parameters=pressure)
-            oracle_b = materialize_variant(family, work_b, seed=seed_b, parameters=pressure)
+            oracle_a = materialize_variant(
+                family,
+                work_a,
+                seed=seed_a,
+                parameters=pressure,
+                context=context,
+            )
+            oracle_a2 = materialize_variant(
+                family,
+                work_a2,
+                seed=seed_a,
+                parameters=pressure,
+                context=context,
+            )
+            oracle_b = materialize_variant(
+                family,
+                work_b,
+                seed=seed_b,
+                parameters=pressure,
+                context=context,
+            )
 
             deterministic = oracle_a.get("variant_digest") == oracle_a2.get("variant_digest")
             varies = oracle_a.get("variant_digest") != oracle_b.get("variant_digest")
@@ -223,6 +233,7 @@ def validate_parametric_baseline(
                 golden_workspace,
                 seed=seed_a,
                 parameters=pressure,
+                context=context,
             )
             golden_run_dir = root / task_id / "golden-run"
             golden_run_dir.mkdir(parents=True, exist_ok=True)
