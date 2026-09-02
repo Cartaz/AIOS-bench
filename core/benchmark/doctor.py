@@ -17,6 +17,7 @@ PROFILE_SCHEMA = "aios-bench/settings/v1"
 DEFAULT_PROFILE = SettingsStore().path
 INSTALL_TIMEOUT_SECONDS = 600.0
 PROFILE_ENV_KEYS = frozenset({"AIOS_BENCH_ENDPOINT", "AIOS_BENCH_CLAUDE_BASE_URL"})
+DEEPSEEK_HARNESS_VERSION = "0.1.2-alpha.5"
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,14 @@ def _claude_recipe() -> InstallRecipe:
     )
 
 
+def _deepseek_recipe() -> InstallRecipe:
+    return _npm_recipe(
+        f"@deepseek-ai/dsh@{DEEPSEEK_HARNESS_VERSION}",
+        "https://github.com/deepseek-ai/deepseek-harness",
+        "Pinned developer-preview release for reproducible benchmark setup. DeepSeek Harness requires Node 22.19+ or Node 24+.",
+    )
+
+
 def _agentzero_recipe() -> InstallRecipe:
     return InstallRecipe(
         None,
@@ -116,6 +125,12 @@ SPECS: dict[str, HarnessDoctorSpec] = {
     "letta": HarnessDoctorSpec("letta", "letta", _letta_recipe, "Use Letta /connect for the local provider and ensure the requested --model is selectable."),
     "agentzero": HarnessDoctorSpec("agentzero", None, _agentzero_recipe, "Set AIOS_BENCH_AGENTZERO_URL plus the project/root/model attestation variables required by the Agent Zero adapter."),
     "claude": HarnessDoctorSpec("claude", "claude", _claude_recipe, "Provide an Anthropic-compatible gateway via AIOS_BENCH_CLAUDE_BASE_URL (or ANTHROPIC_BASE_URL)."),
+    "deepseek": HarnessDoctorSpec(
+        "deepseek",
+        "dsh",
+        _deepseek_recipe,
+        "AIOS-Bench creates an isolated headless DSH profile automatically from the saved OpenAI-compatible URL and requested model. Optional authenticated gateways use AIOS_BENCH_DEEPSEEK_API_KEY.",
+    ),
 }
 
 
