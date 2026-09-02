@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .paths import REPO_ROOT
 from .processes import run_owned, spawn_owned, terminate_owned
-from .runtime_paths import PROJECT_BIN, PROJECT_VENV, npm_environment
+from .runtime_paths import PROJECT_BIN, npm_environment
 
 DEFAULT_NODE_VERSION = "24.20.0"
 INSTALL_TIMEOUT_SECONDS = 600.0
