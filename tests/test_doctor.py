@@ -11,9 +11,21 @@ def test_inspect_reports_all_active_harnesses(monkeypatch):
     monkeypatch.setattr(doctor, "_agentzero_ready", lambda: True)
     report = doctor.inspect()
     names = [item["name"] for item in report["harnesses"]]
-    assert names == ["hermes", "piagent", "opencode", "goose", "letta", "agentzero", "claude"]
+    assert names == ["hermes", "piagent", "opencode", "goose", "letta", "agentzero", "claude", "deepseek"]
     assert report["ready"] is True
     assert all(item["docs"].startswith("https://") for item in report["harnesses"])
+
+
+def test_deepseek_recipe_is_pinned_and_uses_official_cli_package():
+    recipe = doctor._deepseek_recipe()
+    assert recipe.command == (
+        "npm",
+        "install",
+        "-g",
+        f"@deepseek-ai/dsh@{doctor.DEEPSEEK_HARNESS_VERSION}",
+    )
+    assert "deepseek-ai/deepseek-harness" in recipe.docs
+    assert "Node 22.19+" in recipe.note
 
 
 def test_profile_round_trip_and_environment_does_not_override_explicit_values(monkeypatch, tmp_path: Path):
