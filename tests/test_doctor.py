@@ -21,7 +21,7 @@ def test_inspect_reports_all_active_harnesses(monkeypatch):
         "_node_runtime",
         lambda: {"path": "/bin/node", "version": "v24.0.0", "compatible": True},
     )
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(doctor, "resolve_executable", lambda name: f"/bin/{name}")
     monkeypatch.setattr(doctor, "_agentzero_ready", lambda: True)
     report = doctor.inspect()
     names = [item["name"] for item in report["harnesses"]]
@@ -79,7 +79,7 @@ def test_inspect_marks_installed_deepseek_blocked_on_wrong_node(monkeypatch):
         "_node_runtime",
         lambda: {"path": "/bin/node", "version": "v23.11.0", "compatible": False},
     )
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(doctor, "resolve_executable", lambda name: f"/bin/{name}")
     monkeypatch.setattr(doctor, "_agentzero_ready", lambda: True)
 
     report = doctor.inspect()
@@ -110,8 +110,8 @@ def test_inspect_marks_installed_deepseek_blocked_without_bubblewrap(monkeypatch
         lambda: {"path": "/bin/node", "version": "v24.0.0", "compatible": True},
     )
     monkeypatch.setattr(
-        doctor.shutil,
-        "which",
+        doctor,
+        "resolve_executable",
         lambda name: None if name == "bwrap" else f"/bin/{name}",
     )
     monkeypatch.setattr(doctor, "_agentzero_ready", lambda: True)
@@ -145,13 +145,13 @@ def test_profile_round_trip_and_environment_does_not_override_explicit_values(mo
     assert doctor.os.environ["AIOS_BENCH_CLAUDE_BASE_URL"] == "http://127.0.0.1:8082"
 
 
-def test_opencode_recipe_keeps_privileged_pacman_install_manual_on_cachyos(monkeypatch):
+def test_opencode_recipe_uses_project_local_npm_on_cachyos(monkeypatch):
     monkeypatch.setattr(doctor.platform, "system", lambda: "Linux")
     monkeypatch.setattr(doctor, "_linux_id", lambda: "cachyos")
     recipe = doctor._opencode_recipe()
-    assert recipe.command is None
-    assert recipe.shell == "sudo pacman -S --needed opencode"
-    assert "manual" in recipe.note.lower()
+    assert recipe.command == ("npm", "install", "-g", "opencode-ai")
+    assert recipe.shell is None
+    assert "project-local" in recipe.note
 
 
 def test_remote_shell_installers_are_never_executed(monkeypatch):
