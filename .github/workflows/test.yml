@@ -10,6 +10,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       QTWEBENGINE_DISABLE_SANDBOX: "1"
+      AIOS_BENCH_SKIP_MANAGED_HARNESSES: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -37,3 +38,43 @@ jobs:
         run: .venv/bin/ruff check main.py config core ui tests
       - name: Pytest
         run: .venv/bin/python -m pytest -q
+
+  managed-bootstrap:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QTWEBENGINE_DISABLE_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install native runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap libegl1 libgl1
+      - name: Verify bubblewrap sandbox capability
+        run: |
+          if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --die-with-parent --new-session --ro-bind / / --proc /proc --dev /dev -- /bin/true
+      - name: Bootstrap project-local runtimes
+        run: |
+          chmod +x install.sh
+          ./install.sh
+      - name: Verify managed runtime ownership
+        run: |
+          test "$(.venv/bin/node --version)" = "v24.20.0"
+          .venv/bin/npm --version
+          for executable in pi opencode letta claude dsh; do
+            test -x ".venv/bin/$executable"
+          done
+          .venv/bin/python - <<'PY'
+          from pathlib import Path
+          from core.benchmark.runtime_paths import PROJECT_BIN, resolve_executable
+
+          for name in ("node", "npm", "pi", "opencode", "letta", "claude", "dsh"):
+              resolved = resolve_executable(name)
+              assert resolved is not None
+              assert Path(resolved).parent == PROJECT_BIN
+          print("[OK] Managed runtimes resolve from .venv/bin")
+          PY

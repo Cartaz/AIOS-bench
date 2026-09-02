@@ -21,7 +21,7 @@ def test_inspect_reports_all_active_harnesses(monkeypatch):
         "_node_runtime",
         lambda: {"path": "/bin/node", "version": "v24.0.0", "compatible": True},
     )
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(doctor, "resolve_executable", lambda name: f"/bin/{name}")
     monkeypatch.setattr(doctor, "_agentzero_ready", lambda: True)
     report = doctor.inspect()
     names = [item["name"] for item in report["harnesses"]]
@@ -38,6 +38,20 @@ def test_inspect_reports_all_active_harnesses(monkeypatch):
     assert report["ready"] is True
     assert all(item["ready"] for item in report["harnesses"])
     assert all(item["docs"].startswith("https://") for item in report["harnesses"])
+
+
+def test_managed_doctor_recipes_share_pinned_runtime_registry():
+    for name in ("piagent", "opencode", "letta", "claude", "deepseek"):
+        recipe = doctor.SPECS[name].install()
+        managed = doctor.MANAGED_HARNESS_BY_NAME[name]
+        assert recipe.command == managed.install_command
+        assert recipe.docs == managed.docs
+
+    pi = doctor._pi_recipe()
+    assert "@earendil-works/pi-coding-agent@" in pi.command[-1]
+    assert "--ignore-scripts" in pi.command
+    opencode = doctor._opencode_recipe()
+    assert opencode.command[-1] == "opencode-ai@1.18.26"
 
 
 def test_deepseek_recipe_is_pinned_and_uses_official_cli_package():
@@ -79,7 +93,7 @@ def test_inspect_marks_installed_deepseek_blocked_on_wrong_node(monkeypatch):
         "_node_runtime",
         lambda: {"path": "/bin/node", "version": "v23.11.0", "compatible": False},
     )
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(doctor, "resolve_executable", lambda name: f"/bin/{name}")
     monkeypatch.setattr(doctor, "_agentzero_ready", lambda: True)
 
     report = doctor.inspect()
@@ -110,8 +124,8 @@ def test_inspect_marks_installed_deepseek_blocked_without_bubblewrap(monkeypatch
         lambda: {"path": "/bin/node", "version": "v24.0.0", "compatible": True},
     )
     monkeypatch.setattr(
-        doctor.shutil,
-        "which",
+        doctor,
+        "resolve_executable",
         lambda name: None if name == "bwrap" else f"/bin/{name}",
     )
     monkeypatch.setattr(doctor, "_agentzero_ready", lambda: True)
@@ -124,7 +138,10 @@ def test_inspect_marks_installed_deepseek_blocked_without_bubblewrap(monkeypatch
     assert deepseek["issues"] == ["requires Bubblewrap for isolated DSH_HOME"]
 
 
-def test_profile_round_trip_and_environment_does_not_override_explicit_values(monkeypatch, tmp_path: Path):
+def test_profile_round_trip_and_environment_does_not_override_explicit_values(
+    monkeypatch,
+    tmp_path: Path,
+):
     path = tmp_path / "settings.json"
     doctor.write_profile(
         model="Ornith",
@@ -145,18 +162,33 @@ def test_profile_round_trip_and_environment_does_not_override_explicit_values(mo
     assert doctor.os.environ["AIOS_BENCH_CLAUDE_BASE_URL"] == "http://127.0.0.1:8082"
 
 
-def test_opencode_recipe_keeps_privileged_pacman_install_manual_on_cachyos(monkeypatch):
-    monkeypatch.setattr(doctor.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(doctor, "_linux_id", lambda: "cachyos")
-    recipe = doctor._opencode_recipe()
-    assert recipe.command is None
-    assert recipe.shell == "sudo pacman -S --needed opencode"
-    assert "manual" in recipe.note.lower()
+def test_install_harness_uses_canonical_managed_runtime_path(monkeypatch):
+    calls = []
+    cancellation = lambda: False
+    monkeypatch.setattr(
+        doctor,
+        "install_managed_harness",
+        lambda name, **kwargs: calls.append((name, kwargs.get("cancellation_check"))),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "install_recipe",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("managed harness must not use generic npm recipe")
+        ),
+    )
+
+    assert doctor.install_harness("piagent", cancellation_check=cancellation) is True
+    assert calls == [("piagent", cancellation)]
 
 
 def test_remote_shell_installers_are_never_executed(monkeypatch):
     calls = []
-    monkeypatch.setattr(doctor.subprocess, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        doctor.subprocess,
+        "run",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
     answers = iter(["y", "n"])
     monkeypatch.setattr(
         doctor,

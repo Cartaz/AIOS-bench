@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import platform
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,13 +11,15 @@ from typing import Callable
 from config.settings import AppSettings, SettingsStore
 
 from .config import AGENTS
+from .managed_runtimes import MANAGED_HARNESS_BY_NAME, install_managed_harness
 from .processes import run_owned, spawn_owned, terminate_owned
+from .runtime_paths import npm_environment, resolve_executable
 
 PROFILE_SCHEMA = "aios-bench/settings/v1"
 DEFAULT_PROFILE = SettingsStore().path
 INSTALL_TIMEOUT_SECONDS = 600.0
 PROFILE_ENV_KEYS = frozenset({"AIOS_BENCH_ENDPOINT", "AIOS_BENCH_CLAUDE_BASE_URL"})
-DEEPSEEK_HARNESS_VERSION = "0.1.2-alpha.5"
+DEEPSEEK_HARNESS_VERSION = MANAGED_HARNESS_BY_NAME["deepseek"].package.rsplit("@", 1)[-1]
 DEEPSEEK_NODE_RANGE = "^22.19.0 || >=24.0.0"
 _NODE_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$")
 
@@ -51,26 +52,29 @@ def _linux_id() -> str:
         return ""
 
 
-def _npm_recipe(package: str, docs: str, note: str = "") -> InstallRecipe:
-    return InstallRecipe(("npm", "install", "-g", package), None, docs, note)
+def _managed_recipe(name: str, note: str = "") -> InstallRecipe:
+    spec = MANAGED_HARNESS_BY_NAME[name]
+    base_note = "Pinned project-local runtime installed into the AIOS-Bench .venv."
+    return InstallRecipe(
+        spec.install_command,
+        None,
+        spec.docs,
+        f"{base_note} {note}".strip(),
+    )
 
 
 def _pi_recipe() -> InstallRecipe:
-    return _npm_recipe(
-        "@mariozechner/pi-coding-agent",
-        "https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent",
+    return _managed_recipe(
+        "piagent",
+        "Uses the current @earendil-works package and disables npm lifecycle scripts.",
     )
 
 
 def _opencode_recipe() -> InstallRecipe:
-    if platform.system() == "Linux" and _linux_id() in {"arch", "cachyos", "endeavouros", "manjaro"}:
-        return InstallRecipe(
-            None,
-            "sudo pacman -S --needed opencode",
-            "https://opencode.ai/docs/",
-            "Arch-family installation is intentionally manual because the privileged sudo prompt must stay in the user's terminal.",
-        )
-    return _npm_recipe("opencode-ai", "https://opencode.ai/docs/")
+    return _managed_recipe(
+        "opencode",
+        "AIOS-Bench pins the tested stable OpenCode release and supplies isolated inline provider config.",
+    )
 
 
 def _goose_recipe() -> InstallRecipe:
@@ -83,7 +87,7 @@ def _goose_recipe() -> InstallRecipe:
 
 
 def _letta_recipe() -> InstallRecipe:
-    return _npm_recipe("@letta-ai/letta-code", "https://github.com/letta-ai/letta-code")
+    return _managed_recipe("letta")
 
 
 def _hermes_recipe() -> InstallRecipe:
@@ -96,17 +100,15 @@ def _hermes_recipe() -> InstallRecipe:
 
 
 def _claude_recipe() -> InstallRecipe:
-    return _npm_recipe(
-        "@anthropic-ai/claude-code",
-        "https://code.claude.com/docs/",
-        "Claude Code may also offer a native installer; npm remains a portable CLI path.",
+    return _managed_recipe(
+        "claude",
+        "Claude Code remains isolated per workspace; an Anthropic-compatible gateway is configured separately.",
     )
 
 
 def _deepseek_recipe() -> InstallRecipe:
-    return _npm_recipe(
-        f"@deepseek-ai/dsh@{DEEPSEEK_HARNESS_VERSION}",
-        "https://github.com/deepseek-ai/deepseek-harness",
+    return _managed_recipe(
+        "deepseek",
         (
             "Pinned developer-preview release for reproducible benchmark setup. "
             f"DeepSeek Harness requires Node {DEEPSEEK_NODE_RANGE}; Node 23 is not supported."
@@ -124,13 +126,48 @@ def _agentzero_recipe() -> InstallRecipe:
 
 
 SPECS: dict[str, HarnessDoctorSpec] = {
-    "hermes": HarnessDoctorSpec("hermes", "hermes", _hermes_recipe, "Configure a local/custom provider in Hermes, then set AIOS_BENCH_HERMES_PROVIDER if needed."),
-    "piagent": HarnessDoctorSpec("piagent", "pi", _pi_recipe, "Configure your local model/provider in Pi and verify that the benchmark --model identifier resolves there."),
-    "opencode": HarnessDoctorSpec("opencode", "opencode", _opencode_recipe, "Configure an OpenAI-compatible custom provider in OpenCode and use the same model id passed to --model."),
-    "goose": HarnessDoctorSpec("goose", "goose", _goose_recipe, "Configure the local provider used by Goose and set AIOS_BENCH_GOOSE_PROVIDER when the provider id is not implicit."),
-    "letta": HarnessDoctorSpec("letta", "letta", _letta_recipe, "Use Letta /connect for the local provider and ensure the requested --model is selectable."),
-    "agentzero": HarnessDoctorSpec("agentzero", None, _agentzero_recipe, "Set AIOS_BENCH_AGENTZERO_URL plus the project/root/model attestation variables required by the Agent Zero adapter."),
-    "claude": HarnessDoctorSpec("claude", "claude", _claude_recipe, "Provide an Anthropic-compatible gateway via AIOS_BENCH_CLAUDE_BASE_URL (or ANTHROPIC_BASE_URL)."),
+    "hermes": HarnessDoctorSpec(
+        "hermes",
+        "hermes",
+        _hermes_recipe,
+        "Install Hermes manually; AIOS-Bench then pins its OpenAI-compatible endpoint and model at run time.",
+    ),
+    "piagent": HarnessDoctorSpec(
+        "piagent",
+        "pi",
+        _pi_recipe,
+        "AIOS-Bench generates a task-scoped Pi models.json from the saved endpoint/model; personal Pi provider config is not required.",
+    ),
+    "opencode": HarnessDoctorSpec(
+        "opencode",
+        "opencode",
+        _opencode_recipe,
+        "AIOS-Bench supplies isolated inline OpenCode provider/model config; personal OpenCode config is not required.",
+    ),
+    "goose": HarnessDoctorSpec(
+        "goose",
+        "goose",
+        _goose_recipe,
+        "Install Goose manually; AIOS-Bench pins provider, endpoint, main model and fast model at run time.",
+    ),
+    "letta": HarnessDoctorSpec(
+        "letta",
+        "letta",
+        _letta_recipe,
+        "AIOS-Bench selects Letta's llama-cpp provider and binds the saved endpoint/model in an isolated runtime.",
+    ),
+    "agentzero": HarnessDoctorSpec(
+        "agentzero",
+        None,
+        _agentzero_recipe,
+        "Set AIOS_BENCH_AGENTZERO_URL plus the project/root/model attestation variables required by the Agent Zero adapter.",
+    ),
+    "claude": HarnessDoctorSpec(
+        "claude",
+        "claude",
+        _claude_recipe,
+        "Provide an Anthropic-compatible gateway in Setup; AIOS-Bench pins Claude's main, alias and subagent model surfaces.",
+    ),
     "deepseek": HarnessDoctorSpec(
         "deepseek",
         "dsh",
@@ -143,7 +180,7 @@ SPECS: dict[str, HarnessDoctorSpec] = {
 def _probe(executable: str | None) -> tuple[bool, str | None, str | None]:
     if not executable:
         return False, None, None
-    path = shutil.which(executable)
+    path = resolve_executable(executable)
     if not path:
         return False, None, None
 
@@ -187,7 +224,10 @@ def _node_runtime() -> dict[str, object]:
 
 
 def _agentzero_ready() -> bool:
-    return bool(os.environ.get("AIOS_BENCH_AGENTZERO_URL") or os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT"))
+    return bool(
+        os.environ.get("AIOS_BENCH_AGENTZERO_URL")
+        or os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT")
+    )
 
 
 def inspect(
@@ -203,7 +243,7 @@ def inspect(
     absent.
     """
     node_runtime = _node_runtime()
-    bubblewrap = shutil.which("bwrap")
+    bubblewrap = resolve_executable("bwrap")
     harnesses = []
     for name in AGENTS:
         if cancellation_check is not None and cancellation_check():
@@ -249,7 +289,7 @@ def inspect(
             "node": node_runtime["path"],
             "node_version": node_runtime["version"],
             "node_compatible_with_deepseek": node_runtime["compatible"],
-            "npm": shutil.which("npm"),
+            "npm": resolve_executable("npm"),
             "bubblewrap": bubblewrap,
         },
         "harnesses": harnesses,
@@ -317,7 +357,13 @@ def apply_profile_environment(path: Path = DEFAULT_PROFILE) -> dict:
     return profile
 
 
-def write_profile(*, model: str, openai_url: str, anthropic_url: str, path: Path = DEFAULT_PROFILE) -> Path:
+def write_profile(
+    *,
+    model: str,
+    openai_url: str,
+    anthropic_url: str,
+    path: Path = DEFAULT_PROFILE,
+) -> Path:
     return SettingsStore(path).save(
         AppSettings(
             model=model,
@@ -344,12 +390,14 @@ def install_recipe(
     """Execute one argv-only install recipe through the shared process owner."""
     if recipe.command is None:
         return False
+    environment = npm_environment() if recipe.command[0] == "npm" else None
     try:
         outcome = run_owned(
             list(recipe.command),
             timeout=timeout,
             cancellation_check=cancellation_check,
             stdin=subprocess.DEVNULL,
+            env=environment,
         )
     except OSError:
         return False
@@ -361,10 +409,16 @@ def install_harness(
     *,
     cancellation_check: Callable[[], bool] | None = None,
 ) -> bool:
-    """Install a harness only when its recipe has an explicit argv command."""
+    """Install through the one canonical project-local managed-runtime path."""
     spec = SPECS.get(name)
     if spec is None:
         raise ValueError(f"Unknown harness: {name}")
+    if name in MANAGED_HARNESS_BY_NAME:
+        try:
+            install_managed_harness(name, cancellation_check=cancellation_check)
+        except (OSError, RuntimeError):
+            return False
+        return True
     return install_recipe(spec.install(), cancellation_check=cancellation_check)
 
 
@@ -387,7 +441,9 @@ def render_report(report: dict) -> str:
         if issues:
             detail += " | " + "; ".join(str(issue) for issue in issues)
         lines.append(f"  {mark:7} {item['display_name']:<14} {detail}")
-    ready_count = sum(bool(item.get("ready", item["installed"])) for item in report["harnesses"])
+    ready_count = sum(
+        bool(item.get("ready", item["installed"])) for item in report["harnesses"]
+    )
     lines += ["", f"Ready: {ready_count}/{len(report['harnesses'])} harnesses ready"]
     return "\n".join(lines)
 
@@ -411,10 +467,15 @@ def run_wizard(*, setup: bool, repair: bool, check_only: bool, input_fn=input) -
                 printable = " ".join(recipe.command)
                 print(f"  Install: {printable}")
                 if _yes_no("  Run this command now?", True, input_fn):
-                    print("  Result:", "OK" if install_recipe(recipe) else "FAILED")
+                    print(
+                        "  Result:",
+                        "OK" if install_harness(item["name"]) else "FAILED",
+                    )
             elif recipe.shell:
                 print(f"  Manual install: {recipe.shell}")
-                print("  AIOS-Bench does not execute privileged or remote shell commands automatically.")
+                print(
+                    "  AIOS-Bench does not execute privileged or remote shell commands automatically."
+                )
             else:
                 print("  Installation is intentionally manual for this service-backed harness.")
             print(f"  Configure: {spec.config_hint}")
@@ -428,22 +489,43 @@ def run_wizard(*, setup: bool, repair: bool, check_only: bool, input_fn=input) -
         print("\nRuntime requirements:")
         for item in blocked:
             issues = "; ".join(str(issue) for issue in item.get("issues") or [])
-            print(f"  {item['display_name']}: {issues or 'runtime prerequisite not satisfied'}")
+            print(
+                f"  {item['display_name']}: {issues or 'runtime prerequisite not satisfied'}"
+            )
 
     current = load_profile()
     default_model = str(current.get("model") or "")
-    default_openai = str(current.get("openai_compatible_url") or os.environ.get("AIOS_BENCH_ENDPOINT", ""))
-    default_anthropic = str(current.get("anthropic_compatible_url") or os.environ.get("AIOS_BENCH_CLAUDE_BASE_URL", os.environ.get("ANTHROPIC_BASE_URL", "")))
+    default_openai = str(
+        current.get("openai_compatible_url") or os.environ.get("AIOS_BENCH_ENDPOINT", "")
+    )
+    default_anthropic = str(
+        current.get("anthropic_compatible_url")
+        or os.environ.get(
+            "AIOS_BENCH_CLAUDE_BASE_URL",
+            os.environ.get("ANTHROPIC_BASE_URL", ""),
+        )
+    )
     if _yes_no("Create/update the isolated AIOS-bench local-model profile?", True, input_fn):
         model = input_fn(f"Model id [{default_model or 'unknown'}]: ").strip() or default_model
-        openai_url = input_fn(f"OpenAI-compatible URL [{default_openai}]: ").strip() or default_openai
-        anthropic_url = input_fn(f"Anthropic-compatible URL [{default_anthropic}]: ").strip() or default_anthropic
-        path = write_profile(model=model, openai_url=openai_url, anthropic_url=anthropic_url)
+        openai_url = (
+            input_fn(f"OpenAI-compatible URL [{default_openai}]: ").strip() or default_openai
+        )
+        anthropic_url = (
+            input_fn(f"Anthropic-compatible URL [{default_anthropic}]: ").strip()
+            or default_anthropic
+        )
+        path = write_profile(
+            model=model,
+            openai_url=openai_url,
+            anthropic_url=anthropic_url,
+        )
         print(f"Profile: {path}")
 
     final = inspect()
     print("\n" + render_report(final))
     profile = load_profile()
     model = profile.get("model") or "<model>"
-    print(f"\nNext: launch the GUI with .venv/bin/python main.py and run the smoke profile for {model}.")
+    print(
+        f"\nNext: launch the GUI with .venv/bin/python main.py and run the smoke profile for {model}."
+    )
     return 0 if final["ready"] else 1

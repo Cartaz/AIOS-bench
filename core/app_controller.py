@@ -42,18 +42,39 @@ class AppController:
         }
         return json.dumps(payload, ensure_ascii=False)
 
-    def save_doctor_profile(self, payload: str) -> str:
+    def _doctor_profile(self, payload: str) -> DoctorProfile:
         raw = self._json_object(payload, "Doctor profile")
         allowed = {"model", "openai_url", "anthropic_url"}
         unknown = sorted(set(raw) - allowed)
         if unknown:
             raise ValueError(f"Unknown profile settings: {', '.join(unknown)}")
-        profile = DoctorProfile(
+        return DoctorProfile(
             model=self._string(raw.get("model")),
             openai_url=self._string(raw.get("openai_url")),
             anthropic_url=self._string(raw.get("anthropic_url")),
         )
-        return str(self._doctor.save_profile(profile))
+
+    def save_doctor_profile(self, payload: str) -> str:
+        return str(self._doctor.save_profile(self._doctor_profile(payload)))
+
+    def discover_models(
+        self,
+        openai_url: str,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> str:
+        result = self._doctor.discover_models(self._string(openai_url), cancellation_check)
+        return json.dumps(result, ensure_ascii=False)
+
+    def test_and_configure_doctor(
+        self,
+        payload: str,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> str:
+        report = self._doctor.test_and_configure(
+            self._doctor_profile(payload),
+            cancellation_check,
+        )
+        return self._doctor_payload_json(report)
 
     def validate_install_harness(self, name: str) -> None:
         self._doctor.validate_install(name)

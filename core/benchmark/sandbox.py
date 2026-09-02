@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .deepseek_runtime import DEEPSEEK_SANDBOX_HOME, settings_path as deepseek_settings_path
+from .local_gateway import profile_source_dir
 from .paths import BENCHMARK_PACKAGE_ROOT, REPO_ROOT
 
 
@@ -88,22 +89,12 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
     try:
         relative = workspace.relative_to(repo)
     except ValueError:
-        # Custom result roots and tests may live outside the repository. In that
-        # case hiding the repo cannot cover the workspace, so a direct bind is
-        # sufficient and avoids imposing a repository-layout requirement on the
-        # runner interface.
         return (
             "--tmpfs", str(repo),
             "--bind", str(workspace), str(workspace),
             "--chdir", str(workspace),
         )
 
-    # Preserve the writable workspace below the private /tmp mount before
-    # replacing the repository. The host root is read-only in the sandbox, so
-    # aliases directly below / cannot be created. Bubblewrap also resolves bind
-    # sources from the parent namespace, which rules out rebinding the alias as
-    # a later source. Recreate only the canonical parent directories and restore
-    # the canonical workspace path with a sandbox-local symlink to the alias.
     args: tuple[str, ...] = (
         "--dir", str(_WORKSPACE_ALIAS),
         "--bind", str(workspace), str(_WORKSPACE_ALIAS),
@@ -121,13 +112,7 @@ def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
 
 
 def _remote_transport_args(workspace: Path) -> tuple[tuple[str, ...], bool]:
-    """Mask grader material while retaining package code for the Agent Zero client.
-
-    Agent Zero's model executes in a separately isolated service/project and
-    never receives host paths. The local subprocess is trusted transport code,
-    so it retains only the package required for ``python -m`` while benchmark-owned
-    answers, fixtures, docs and result history remain masked.
-    """
+    """Mask grader material while retaining package code for the Agent Zero client."""
     prefix: tuple[str, ...] = ()
     hidden_directories, hidden_files = _benchmark_owned_paths(workspace)
     for path in hidden_directories:
@@ -138,14 +123,7 @@ def _remote_transport_args(workspace: Path) -> tuple[tuple[str, ...], bool]:
 
 
 def _deepseek_home_args(workspace: Path) -> tuple[str, ...]:
-    """Mount only benchmark-owned non-secret settings into a fresh DSH_HOME.
-
-    Bubblewrap's private ``/tmp`` owns profiles, sessions and all other mutable
-    DeepSeek Harness state. The retained settings source stays outside the
-    agent-visible repository view and is mounted read-only, so a task cannot
-    rewrite the pinned endpoint/model for the active process.
-    """
-
+    """Mount only benchmark-owned non-secret settings into a fresh DSH_HOME."""
     source = deepseek_settings_path(workspace)
     if not source.is_file():
         raise RuntimeError(f"DeepSeek Harness settings are missing: {source}")
@@ -157,21 +135,38 @@ def _deepseek_home_args(workspace: Path) -> tuple[str, ...]:
     )
 
 
+def _pi_profile_args(workspace: Path) -> tuple[str, ...]:
+    """Expose only the benchmark-owned Pi model registry, read-only.
+
+    The source lives next to run metadata and is hidden when the repository is
+    replaced by tmpfs. Recreate only its empty parent path inside the sandbox and
+    bind the single models.json from the parent namespace as read-only.
+    """
+    directory = profile_source_dir(workspace, "piagent").resolve()
+    source = directory / "models.json"
+    if not source.is_file():
+        return ()
+    run_dir = workspace.resolve().parent.parent
+    harness_profiles = run_dir / "harness_profiles"
+    task_profiles = harness_profiles / workspace.resolve().name
+    return (
+        "--dir", str(harness_profiles),
+        "--dir", str(task_profiles),
+        "--dir", str(directory),
+        "--ro-bind", str(source), str(source),
+    )
+
+
 def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = None) -> SandboxPlan:
     """Return a cross-harness confinement plan.
 
     Local harnesses receive a read-only host plus one writable task workspace;
     the AIOS-bench repository itself is replaced by an empty tmpfs and therefore
     cannot leak golden solutions, graders, docs or prior results. Agent Zero is
-    a special transport case: its model runs in a separately isolated service,
-    while the trusted local client retains only the package access it needs and
-    masks benchmark-owned answer material explicitly. DeepSeek Harness receives
-    a private process-lifetime DSH_HOME in the sandbox's tmpfs, seeded only with
-    a read-only benchmark-owned provider/model settings document and therefore
-    requires Bubblewrap rather than falling back to ambient harness state. Hidden
-    black-box verifier processes additionally receive private network and PID
-    namespaces so reconstructed code cannot depend on a live endpoint or inspect
-    the grader's host process tree during hidden evaluation.
+    a special transport case whose trusted local client retains package access
+    while benchmark-owned answer material is masked. DeepSeek receives a private
+    DSH_HOME. Pi receives only a read-only benchmark-owned models.json when the
+    canonical local-gateway profile is active, rather than ambient ~/.pi state.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
@@ -210,10 +205,15 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             strategy += "_network_pid_isolated"
 
         if adapter_name == "piagent":
-            pi_state = Path.home() / ".pi" / "agent"
-            if pi_state.is_dir():
-                state = str(pi_state.resolve())
-                prefix += ("--overlay-src", state, "--tmp-overlay", state)
+            pi_profile = _pi_profile_args(workspace)
+            if pi_profile:
+                prefix += pi_profile
+                strategy += "_pi_readonly_gateway_profile"
+            else:
+                pi_state = Path.home() / ".pi" / "agent"
+                if pi_state.is_dir():
+                    state = str(pi_state.resolve())
+                    prefix += ("--overlay-src", state, "--tmp-overlay", state)
 
         agentzero_bridge = False
         if adapter_name == "agentzero":

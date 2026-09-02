@@ -17,7 +17,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-The installer resolves the repository root from any working directory, creates or repairs `.venv`, installs runtime/development requirements, verifies the critical Qt/application imports, and probes whether an installed Bubblewrap can actually create the sandbox required by strict black-box reconstruction grading. Missing or unusable Bubblewrap is reported explicitly without preventing installation of the rest of AIOS-Bench.
+The installer resolves the repository root from any working directory, creates or repairs `.venv`, installs runtime/development requirements, verifies the critical Qt/application imports, provisions a project-local Node/npm runtime, installs the pinned managed Pi/OpenCode/Letta/Claude/DeepSeek harnesses into `.venv`, and probes whether an installed Bubblewrap can actually create the sandbox required by strict black-box reconstruction grading. Missing or unusable Bubblewrap is reported explicitly without preventing installation of the rest of AIOS-Bench. Hermes, Goose and Agent Zero remain intentionally external because their supported installation/service lifecycles are materially different. See `docs/INSTALLATION.md` for the exact pinned runtime contract.
 
 ## Launch
 
@@ -25,9 +25,9 @@ The installer resolves the repository root from any working directory, creates o
 .venv/bin/python main.py
 ```
 
-The desktop UI is currently Italian. It provides suite selection, per-harness toggles, per-task toggles, `Tutti` / `Nessuno` controls, benchmark configuration, progress/results, safe run cancellation, and an integrated Setup / Doctor panel for harness readiness and local-model gateway settings. Frontier v4 additionally exposes the benchmark-owned skill condition, a matched `no_skill` ↔ `curated_skill` ablation toggle, and a unified run-profile selector for the compact AIOS-Index and benchmark-owned generated long-horizon pressure profiles. Selecting either profile locks task selection to the exact canonical tasks owned by that profile; AIOS-Index also fixes the canonical `no_skill` condition, while progress remains expressed in real task executions rather than a synthetic difficulty score.
+The desktop UI is currently Italian. It provides suite selection, per-harness toggles, per-task toggles, `Tutti` / `Nessuno` controls, benchmark configuration, progress/results, safe run cancellation, and an integrated Setup / Doctor panel for harness readiness and local-model gateway settings. Setup can discover the OpenAI-compatible `/models` list and **Test e configura** performs a real inference probe before replacing the saved canonical profile; an optional Anthropic-compatible route is probed separately for Claude Code. Frontier v4 additionally exposes the benchmark-owned skill condition, a matched `no_skill` ↔ `curated_skill` ablation toggle, and a unified run-profile selector for the compact AIOS-Index and benchmark-owned generated long-horizon pressure profiles. Selecting either profile locks task selection to the exact canonical tasks owned by that profile; AIOS-Index also fixes the canonical `no_skill` condition, while progress remains expressed in real task executions rather than a synthetic difficulty score.
 
-Doctor discovery and harness installation run in Qt worker threads. Version probes and installers therefore do not block the GUI event loop. Run cancellation is cooperative: the UI signals Python, the benchmark engine stops at a safe boundary, and active harness process groups are terminated by the benchmark-owned subprocess lifecycle. Qt worker threads are never force-terminated.
+Doctor discovery, gateway probing and harness installation run in Qt worker threads. Version probes, HTTP setup checks and installers therefore do not block the GUI event loop. Run cancellation is cooperative: the UI signals Python, the benchmark engine stops at a safe boundary, and active harness process groups are terminated by the benchmark-owned subprocess lifecycle. Qt worker threads are never force-terminated.
 
 ## Architecture
 
@@ -156,7 +156,7 @@ Saved gateway settings own only environment keys that were not explicitly suppli
 
 ### Sensitive harness environment
 
-Harness processes intentionally start from the application environment because local/provider gateways may require credentials. Treat inherited provider credentials as secrets and never put their values in benchmark prompts, task fixtures or committed configuration. The benchmark-specific sensitive variables currently consumed directly are `AIOS_BENCH_AGENTZERO_API_KEY`, `AIOS_BENCH_CLAUDE_API_KEY` and `AIOS_BENCH_CLAUDE_AUTH_TOKEN`; Claude Code may also inherit `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` when the namespaced overrides are absent. Claude Code enables subprocess credential scrubbing for child commands. Manifests record configuration/presence metadata rather than these credential values.
+Harness processes intentionally start from the application environment because local/provider gateways may require credentials. Treat inherited provider credentials as secrets and never put their values in benchmark prompts, task fixtures or committed configuration. The benchmark-specific sensitive variables currently consumed directly include `AIOS_BENCH_OPENAI_API_KEY`, `AIOS_BENCH_DEEPSEEK_API_KEY`, `AIOS_BENCH_AGENTZERO_API_KEY`, `AIOS_BENCH_CLAUDE_API_KEY` and `AIOS_BENCH_CLAUDE_AUTH_TOKEN`; Claude Code may also inherit `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` when the namespaced overrides are absent. Claude Code enables subprocess credential scrubbing for child commands. Generated provider configuration and manifests record references/presence/identity metadata rather than these credential values.
 
 ### Logging
 
@@ -176,7 +176,7 @@ The file rotates at 2 MiB with three backups. If the state directory cannot be c
 .venv/bin/ruff check main.py config core ui tests
 ```
 
-CI runs these checks on supported Python 3.12+ versions, verifies that Bubblewrap can actually create the grader-hidden sandbox used by V4.8, performs the Qt/WebEngine smoke test offscreen, and runs the full Frontier v4 benchmark-health gate through pytest. Ruff enables the complete `F` (Pyflakes) correctness family in addition to `E9`; broader style migrations such as import sorting or pyupgrade remain separate changes.
+CI runs these checks on supported Python 3.12+ versions, verifies that Bubblewrap can actually create the grader-hidden sandbox used by V4.8, performs the Qt/WebEngine smoke test offscreen, runs the full Frontier v4 benchmark-health gate through pytest, and separately executes the ordinary managed bootstrap to verify project-local Node/npm and managed harness ownership. Ruff enables the complete `F` (Pyflakes) correctness family in addition to `E9`; broader style migrations such as import sorting or pyupgrade remain separate changes.
 
 ## Benchmark properties
 

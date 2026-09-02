@@ -38,8 +38,26 @@
 
     <section id="doctorView" class="view hidden">
       <section class="doctor-grid">
-        <section class="panel doctor-status"><div class="section-head"><div><p class="eyebrow">AMBIENTE</p><h2>Doctor</h2></div><button id="refreshDoctor">Verifica tutto</button></div><div id="systemStatus" class="muted"></div><div id="doctorHarnesses" class="doctor-list"></div></section>
-        <section class="panel profile-panel"><div class="section-head"><div><p class="eyebrow">PROFILO LOCALE</p><h2>Modello e gateway</h2></div></div><label>Model ID<input id="profileModel" type="text" placeholder="aios-llamacpp/Ornith"></label><label>OpenAI-compatible URL<input id="openaiUrl" type="text" placeholder="http://127.0.0.1:8080/v1"></label><label>Anthropic-compatible URL<input id="anthropicUrl" type="text" placeholder="http://127.0.0.1:8080"></label><button id="saveProfile" class="primary">Salva profilo</button><p class="muted">Il profilo viene scritto esclusivamente da Python. Gli installer privilegiati o remoti restano guidati e manuali.</p></section>
+        <section class="panel doctor-status">
+          <div class="section-head"><div><p class="eyebrow">AMBIENTE</p><h2>Doctor</h2></div><button id="refreshDoctor">Verifica tutto</button></div>
+          <div id="systemStatus" class="muted"></div>
+          <div id="doctorHarnesses" class="doctor-list"></div>
+        </section>
+        <section class="panel profile-panel">
+          <div class="section-head"><div><p class="eyebrow">INFERENCE SERVER</p><h2>Modello e gateway</h2></div></div>
+          <label>OpenAI-compatible URL
+            <div class="field-action"><input id="openaiUrl" type="text" placeholder="http://127.0.0.1:8080/v1"><button id="discoverModels" type="button">Trova modelli</button></div>
+          </label>
+          <label>Nome modello<input id="profileModel" type="text" list="modelOptions" placeholder="aios-llamacpp/Ornith"></label>
+          <datalist id="modelOptions"></datalist>
+          <details>
+            <summary>Claude Code / gateway Anthropic opzionale</summary>
+            <label>Anthropic-compatible URL<input id="anthropicUrl" type="text" placeholder="http://127.0.0.1:8082"></label>
+          </details>
+          <div class="actions"><button id="testConfigure" class="primary">Test e configura</button><button id="saveProfile">Salva senza test</button></div>
+          <div id="gatewayStatus" class="muted" aria-live="polite"></div>
+          <p class="muted">AIOS-Bench salva un solo profilo canonico e genera configurazioni isolate per gli harness. Le configurazioni personali non vengono modificate.</p>
+        </section>
       </section>
       <p id="doctorError" class="error" role="alert"></p>
     </section>
