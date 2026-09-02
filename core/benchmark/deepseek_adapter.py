@@ -31,7 +31,7 @@ class DeepSeekHarnessAdapter(Adapter):
 
         endpoint_value = os.environ.get("AIOS_BENCH_ENDPOINT", "")
         endpoint = validate_endpoint(endpoint_value)
-        settings = write_settings(workspace, endpoint=endpoint, model=requested)
+        write_settings(workspace, endpoint=endpoint, model=requested)
         api_key = os.environ.get(DEEPSEEK_API_KEY_ENV, "").strip() or "aios-bench-local"
 
         environment = {
@@ -39,9 +39,6 @@ class DeepSeekHarnessAdapter(Adapter):
             "DSH_PERMISSION_MODE": "danger-full-access",
             "DSH_TELEMETRY_DISABLED": "1",
             DEEPSEEK_API_KEY_ENV: api_key,
-            # Source consumed only by AIOS-Bench's sandbox plan. It is not a
-            # DeepSeek Harness setting and never becomes part of DSH_HOME.
-            "AIOS_BENCH_DEEPSEEK_SETTINGS_SOURCE": str(settings),
         }
         return AgentInvocation(
             command=["dsh", "--profile", "headless", prompt],
