@@ -15,6 +15,7 @@ export class BackendClient {
   constructor(backend, handlers = {}) {
     this.backend = backend;
     this.doctorWaiters = [];
+    this.modelWaiters = [];
     const connect = (signal, handler) => {
       if (typeof handler === 'function') signal.connect(handler);
     };
@@ -23,6 +24,12 @@ export class BackendClient {
       const value = parseObject(raw);
       handlers.doctorChanged?.(value);
       const waiters = this.doctorWaiters.splice(0);
+      waiters.forEach(resolve => resolve(value));
+    });
+    backend.modelsDiscovered.connect(raw => {
+      const value = parseObject(raw);
+      handlers.modelsDiscovered?.(value);
+      const waiters = this.modelWaiters.splice(0);
       waiters.forEach(resolve => resolve(value));
     });
     connect(backend.runStateChanged, raw => handlers.runStateChanged?.(parseObject(raw)));
@@ -35,21 +42,38 @@ export class BackendClient {
     return parseObject(raw);
   }
 
-  _doctorAction(invoker) {
+  _signalAction(waiters, invoker) {
     return new Promise(resolve => {
       const waiter = value => resolve(value);
-      this.doctorWaiters.push(waiter);
+      waiters.push(waiter);
       invoker(ok => {
         if (ok) return;
-        const index = this.doctorWaiters.indexOf(waiter);
-        if (index >= 0) this.doctorWaiters.splice(index, 1);
+        const index = waiters.indexOf(waiter);
+        if (index >= 0) waiters.splice(index, 1);
         resolve({});
       });
     });
   }
 
+  _doctorAction(invoker) {
+    return this._signalAction(this.doctorWaiters, invoker);
+  }
+
   getDoctor() {
     return this._doctorAction(done => this.backend.getDoctor(done));
+  }
+
+  discoverModels(openaiUrl) {
+    return this._signalAction(
+      this.modelWaiters,
+      done => this.backend.discoverModels(openaiUrl, done),
+    );
+  }
+
+  testAndConfigure(profile) {
+    return this._doctorAction(
+      done => this.backend.testAndConfigure(JSON.stringify(profile), done),
+    );
   }
 
   saveDoctorProfile(profile) {
