@@ -32,20 +32,40 @@ def test_pi_binding_uses_benchmark_owned_models_file(monkeypatch, tmp_path: Path
     assert "secret" not in profile.read_text(encoding="utf-8")
 
 
-def test_opencode_binding_uses_inline_isolated_provider(monkeypatch, tmp_path: Path):
+def test_opencode_binding_uses_pinned_stable_inline_provider_schema(monkeypatch, tmp_path: Path):
     workspace = _workspace(tmp_path)
     monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://127.0.0.1:8080/v1")
+    monkeypatch.delenv("AIOS_BENCH_OPENAI_API_KEY", raising=False)
     invocation = AGENTS["opencode"].adapter.build("task", workspace, "Ornith")
 
     assert invocation.provider == "aios-bench"
     assert invocation.model_resolution == "aios_bench_gateway_profile"
     model_index = invocation.command.index("--model")
-    assert invocation.command[model_index + 1] == "aios-bench/benchmark-model"
+    assert invocation.command[model_index + 1] == "aios-bench/Ornith"
     config = json.loads(invocation.environment["OPENCODE_CONFIG_CONTENT"])
-    assert config["providers"]["aios-bench"]["models"]["benchmark-model"]["modelID"] == "Ornith"
-    assert config["providers"]["aios-bench"]["settings"]["baseURL"] == (
-        "http://127.0.0.1:8080/v1"
-    )
+    assert config["model"] == "aios-bench/Ornith"
+    assert config["small_model"] == "aios-bench/Ornith"
+    provider = config["provider"]["aios-bench"]
+    assert provider["npm"] == "@ai-sdk/openai-compatible"
+    assert provider["options"] == {"baseURL": "http://127.0.0.1:8080/v1"}
+    assert provider["models"]["Ornith"] == {"name": "Ornith"}
+    assert "providers" not in config
+    assert "package" not in provider
+    assert "settings" not in provider
+
+
+def test_opencode_binding_references_api_key_without_embedding_secret(monkeypatch, tmp_path: Path):
+    workspace = _workspace(tmp_path)
+    monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://127.0.0.1:8080/v1")
+    monkeypatch.setenv("AIOS_BENCH_OPENAI_API_KEY", "super-secret")
+    invocation = AGENTS["opencode"].adapter.build("task", workspace, "Ornith")
+
+    raw_config = invocation.environment["OPENCODE_CONFIG_CONTENT"]
+    config = json.loads(raw_config)
+    options = config["provider"]["aios-bench"]["options"]
+    assert options["apiKey"] == "{env:AIOS_BENCH_OPENAI_API_KEY}"
+    assert invocation.environment["AIOS_BENCH_OPENAI_API_KEY"] == "super-secret"
+    assert "super-secret" not in raw_config
 
 
 def test_goose_binding_pins_provider_main_and_fast_model(monkeypatch, tmp_path: Path):
