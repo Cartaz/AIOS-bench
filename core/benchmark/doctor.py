@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import platform
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +12,7 @@ from config.settings import AppSettings, SettingsStore
 
 from .config import AGENTS
 from .processes import run_owned, spawn_owned, terminate_owned
+from .runtime_paths import npm_environment, resolve_executable
 
 PROFILE_SCHEMA = "aios-bench/settings/v1"
 DEFAULT_PROFILE = SettingsStore().path
@@ -63,14 +63,11 @@ def _pi_recipe() -> InstallRecipe:
 
 
 def _opencode_recipe() -> InstallRecipe:
-    if platform.system() == "Linux" and _linux_id() in {"arch", "cachyos", "endeavouros", "manjaro"}:
-        return InstallRecipe(
-            None,
-            "sudo pacman -S --needed opencode",
-            "https://opencode.ai/docs/",
-            "Arch-family installation is intentionally manual because the privileged sudo prompt must stay in the user's terminal.",
-        )
-    return _npm_recipe("opencode-ai", "https://opencode.ai/docs/")
+    return _npm_recipe(
+        "opencode-ai",
+        "https://opencode.ai/docs/",
+        "AIOS-Bench prefers the project-local npm installation even on Arch-family systems.",
+    )
 
 
 def _goose_recipe() -> InstallRecipe:
@@ -143,7 +140,7 @@ SPECS: dict[str, HarnessDoctorSpec] = {
 def _probe(executable: str | None) -> tuple[bool, str | None, str | None]:
     if not executable:
         return False, None, None
-    path = shutil.which(executable)
+    path = resolve_executable(executable)
     if not path:
         return False, None, None
 
@@ -203,7 +200,7 @@ def inspect(
     absent.
     """
     node_runtime = _node_runtime()
-    bubblewrap = shutil.which("bwrap")
+    bubblewrap = resolve_executable("bwrap")
     harnesses = []
     for name in AGENTS:
         if cancellation_check is not None and cancellation_check():
@@ -249,7 +246,7 @@ def inspect(
             "node": node_runtime["path"],
             "node_version": node_runtime["version"],
             "node_compatible_with_deepseek": node_runtime["compatible"],
-            "npm": shutil.which("npm"),
+            "npm": resolve_executable("npm"),
             "bubblewrap": bubblewrap,
         },
         "harnesses": harnesses,
@@ -344,12 +341,14 @@ def install_recipe(
     """Execute one argv-only install recipe through the shared process owner."""
     if recipe.command is None:
         return False
+    environment = npm_environment() if recipe.command[0] == "npm" else None
     try:
         outcome = run_owned(
             list(recipe.command),
             timeout=timeout,
             cancellation_check=cancellation_check,
             stdin=subprocess.DEVNULL,
+            env=environment,
         )
     except OSError:
         return False
