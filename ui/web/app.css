@@ -36,6 +36,7 @@ h2 { font-size: 18px; }
 button { border: 0; border-radius: 12px; color: var(--muted); padding: 9px 12px; cursor: pointer; }
 button:hover, button:focus-visible { color: var(--text); outline: none; box-shadow: inset 3px 3px 8px var(--shadow-dark), inset -3px -3px 8px var(--shadow-light), 0 0 0 1px rgba(255, 102, 0, .4); }
 button.primary { width: 100%; margin-top: 22px; padding: 14px; color: var(--accent); font-weight: 800; border: 1px solid rgba(255, 102, 0, .45); }
+.profile-panel .actions button.primary { margin-top: 0; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 label { display: grid; gap: 8px; color: var(--muted); font-size: 13px; margin-bottom: 16px; }
 input, select { width: 100%; border: 0; border-radius: 16px; color: var(--text); padding: 12px 14px; outline: none; }
@@ -74,6 +75,11 @@ input:focus, select:focus { box-shadow: inset 3px 3px 8px var(--shadow-dark), in
 .doctor-item .doctor-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .doctor-item code { display: block; white-space: normal; overflow-wrap: anywhere; color: var(--muted); font-size: 11px; margin-top: 7px; }
 .profile-panel { align-self: start; }
+.profile-panel details { margin: 6px 0 18px; color: var(--muted); }
+.profile-panel summary { cursor: pointer; font-size: 13px; margin-bottom: 14px; }
+.field-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.field-action button { white-space: nowrap; }
+#gatewayStatus { min-height: 42px; margin-top: 16px; line-height: 1.55; }
 .button-link { border-radius: 12px; padding: 9px 12px; color: var(--muted); text-decoration: none; box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light); }
 .button-link:hover, .button-link:focus-visible { color: var(--text); outline: none; box-shadow: inset 3px 3px 8px var(--shadow-dark), inset -3px -3px 8px var(--shadow-light), 0 0 0 1px rgba(255, 102, 0, .4); }
 
@@ -82,4 +88,9 @@ input:focus, select:focus { box-shadow: inset 3px 3px 8px var(--shadow-dark), in
   .grid, .doctor-grid { grid-template-columns: 1fr; }
   .controls { grid-row: auto; }
   .topbar { flex-wrap: wrap; }
+}
+
+@media (max-width: 620px) {
+  .field-action { grid-template-columns: 1fr; }
+  .profile-panel .actions { flex-direction: column; }
 }
