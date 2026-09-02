@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .runtime_paths import with_project_bin
+
 
 @dataclass(frozen=True)
 class OwnedProcessOutcome:
@@ -16,9 +18,15 @@ class OwnedProcessOutcome:
 
 
 def spawn_owned(command: list[str], **kwargs: Any) -> subprocess.Popen:
-    """Start a child owned by AIOS-Bench, isolated in its own POSIX session."""
+    """Start a child owned by AIOS-Bench, isolated in its own POSIX session.
+
+    Project-local harness runtimes in ``.venv/bin`` are always preferred over
+    ambient system installations. This keeps ordinary ``.venv/bin/python``
+    launches reproducible without requiring shell activation.
+    """
     if os.name == "posix":
         kwargs.setdefault("start_new_session", True)
+    kwargs["env"] = with_project_bin(kwargs.get("env"))
     process = subprocess.Popen(command, **kwargs)
     if os.name == "posix" and kwargs.get("start_new_session"):
         # A new session makes the child's PID the process-group ID. Persist it
