@@ -74,6 +74,16 @@ def test_probe_openai_gateway_fails_before_inference_when_model_is_missing(monke
     assert calls == ["http://localhost:8080/v1/models"]
 
 
+def test_probe_openai_gateway_keeps_malformed_endpoint_fail_closed():
+    result = inference_setup.probe_openai_gateway(
+        "http://user:secret@localhost:8080/v1",
+        "Ornith",
+    )
+    assert result.ready is False
+    assert result.endpoint == ""
+    assert "credentials" in (result.error or "")
+
+
 def test_probe_anthropic_gateway_uses_messages_api(monkeypatch):
     observed = {}
 
