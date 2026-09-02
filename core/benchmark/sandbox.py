@@ -167,7 +167,8 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     while the trusted local client retains only the package access it needs and
     masks benchmark-owned answer material explicitly. DeepSeek Harness receives
     a private process-lifetime DSH_HOME in the sandbox's tmpfs, seeded only with
-    a read-only benchmark-owned provider/model settings document. Hidden
+    a read-only benchmark-owned provider/model settings document and therefore
+    requires Bubblewrap rather than falling back to ambient harness state. Hidden
     black-box verifier processes additionally receive private network and PID
     namespaces so reconstructed code cannot depend on a live endpoint or inspect
     the grader's host process tree during hidden evaluation.
@@ -176,6 +177,11 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     if selected not in {"auto", "required", "off"}:
         raise ValueError("AIOS_BENCH_SANDBOX must be auto, required or off")
     if selected == "off":
+        if adapter_name == "deepseek":
+            raise RuntimeError(
+                "DeepSeek Harness requires the AIOS-Bench Bubblewrap sandbox "
+                "for its isolated DSH_HOME"
+            )
         return SandboxPlan("disabled", write_confined=False, grader_hidden=False)
 
     executable = shutil.which("bwrap")
@@ -225,6 +231,7 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             strategy += "_agentzero_project_bridge"
         return SandboxPlan(strategy, prefix, write_confined=True, grader_hidden=grader_hidden)
 
-    if selected == "required":
-        raise RuntimeError("workspace sandbox required but bubblewrap is unavailable")
+    if selected == "required" or adapter_name == "deepseek":
+        requirement = "DeepSeek Harness isolation" if adapter_name == "deepseek" else "workspace sandbox"
+        raise RuntimeError(f"{requirement} requires bubblewrap but it is unavailable")
     return SandboxPlan("cwd_only_unconfined", write_confined=False, grader_hidden=False)
