@@ -10,6 +10,7 @@ from .runtime import DesktopRuntime
 class Bridge(QObject):
     catalogChanged = Signal(str)
     doctorChanged = Signal(str)
+    modelsDiscovered = Signal(str)
     runStateChanged = Signal(str)
     progressChanged = Signal(str)
     errorOccurred = Signal(str)
@@ -20,6 +21,7 @@ class Bridge(QObject):
         self._controller = controller
         self._runtime = runtime
         runtime.doctorChanged.connect(self.doctorChanged)
+        runtime.modelsDiscovered.connect(self.modelsDiscovered)
         runtime.runStateChanged.connect(self.runStateChanged)
         runtime.progressChanged.connect(self.progressChanged)
         runtime.errorOccurred.connect(self.errorOccurred)
@@ -38,6 +40,24 @@ class Bridge(QObject):
         try:
             self._runtime.inspect_doctor()
         except (ValueError, RuntimeError, OSError) as exc:
+            self.errorOccurred.emit(str(exc))
+            return False
+        return True
+
+    @Slot(str, result=bool)
+    def discoverModels(self, openai_url: str) -> bool:
+        try:
+            self._runtime.discover_models(openai_url)
+        except (TypeError, ValueError, RuntimeError, OSError) as exc:
+            self.errorOccurred.emit(str(exc))
+            return False
+        return True
+
+    @Slot(str, result=bool)
+    def testAndConfigure(self, payload: str) -> bool:
+        try:
+            self._runtime.test_and_configure(payload)
+        except (TypeError, ValueError, RuntimeError, OSError) as exc:
             self.errorOccurred.emit(str(exc))
             return False
         return True
