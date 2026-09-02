@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -17,6 +18,9 @@ PROFILE_SCHEMA = "aios-bench/settings/v1"
 DEFAULT_PROFILE = SettingsStore().path
 INSTALL_TIMEOUT_SECONDS = 600.0
 PROFILE_ENV_KEYS = frozenset({"AIOS_BENCH_ENDPOINT", "AIOS_BENCH_CLAUDE_BASE_URL"})
+DEEPSEEK_HARNESS_VERSION = "0.1.2-alpha.5"
+DEEPSEEK_NODE_RANGE = "^22.19.0 || >=24.0.0"
+_NODE_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$")
 
 
 @dataclass(frozen=True)
@@ -87,7 +91,7 @@ def _hermes_recipe() -> InstallRecipe:
         None,
         "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-browser",
         "https://hermes-agent.nousresearch.com/docs/",
-        "Official installer shown for manual use only; AIOS-Bench does not execute remote shell pipelines.",
+        "Official installer shown for manual use only; AIOS-Bench does not execute remote shell pipelines automatically.",
     )
 
 
@@ -96,6 +100,17 @@ def _claude_recipe() -> InstallRecipe:
         "@anthropic-ai/claude-code",
         "https://code.claude.com/docs/",
         "Claude Code may also offer a native installer; npm remains a portable CLI path.",
+    )
+
+
+def _deepseek_recipe() -> InstallRecipe:
+    return _npm_recipe(
+        f"@deepseek-ai/dsh@{DEEPSEEK_HARNESS_VERSION}",
+        "https://github.com/deepseek-ai/deepseek-harness",
+        (
+            "Pinned developer-preview release for reproducible benchmark setup. "
+            f"DeepSeek Harness requires Node {DEEPSEEK_NODE_RANGE}; Node 23 is not supported."
+        ),
     )
 
 
@@ -116,6 +131,12 @@ SPECS: dict[str, HarnessDoctorSpec] = {
     "letta": HarnessDoctorSpec("letta", "letta", _letta_recipe, "Use Letta /connect for the local provider and ensure the requested --model is selectable."),
     "agentzero": HarnessDoctorSpec("agentzero", None, _agentzero_recipe, "Set AIOS_BENCH_AGENTZERO_URL plus the project/root/model attestation variables required by the Agent Zero adapter."),
     "claude": HarnessDoctorSpec("claude", "claude", _claude_recipe, "Provide an Anthropic-compatible gateway via AIOS_BENCH_CLAUDE_BASE_URL (or ANTHROPIC_BASE_URL)."),
+    "deepseek": HarnessDoctorSpec(
+        "deepseek",
+        "dsh",
+        _deepseek_recipe,
+        "AIOS-Bench creates an isolated headless DSH profile automatically from the saved OpenAI-compatible URL and requested model. Optional authenticated gateways use AIOS_BENCH_DEEPSEEK_API_KEY.",
+    ),
 }
 
 
@@ -145,6 +166,26 @@ def _probe(executable: str | None) -> tuple[bool, str | None, str | None]:
     return True, path, version
 
 
+def _node_version_supported(version: str | None) -> bool:
+    """Match DeepSeek Harness' published Node engine range exactly."""
+    if not version:
+        return False
+    match = _NODE_VERSION.fullmatch(version.strip())
+    if match is None:
+        return False
+    major, minor, _patch = (int(value) for value in match.groups())
+    return (major == 22 and minor >= 19) or major >= 24
+
+
+def _node_runtime() -> dict[str, object]:
+    installed, path, version = _probe("node")
+    return {
+        "path": path if installed else None,
+        "version": version,
+        "compatible": bool(installed and _node_version_supported(version)),
+    }
+
+
 def _agentzero_ready() -> bool:
     return bool(os.environ.get("AIOS_BENCH_AGENTZERO_URL") or os.environ.get("AIOS_BENCH_AGENTZERO_PROJECTS_ROOT"))
 
@@ -156,8 +197,13 @@ def inspect(
 
     Individual version probes remain bounded by their four-second subprocess
     timeout. Cancellation is checked before and after each probe, so shutdown
-    never has to wait for a full multi-harness inspection cycle.
+    never has to wait for a full multi-harness inspection cycle. Harness
+    installation and runtime readiness remain separate facts: an installed
+    binary can be blocked by a missing prerequisite without being misreported as
+    absent.
     """
+    node_runtime = _node_runtime()
+    bubblewrap = shutil.which("bwrap")
     harnesses = []
     for name in AGENTS:
         if cancellation_check is not None and cancellation_check():
@@ -169,12 +215,24 @@ def inspect(
             version = os.environ.get("AIOS_BENCH_AGENTZERO_REVISION") or None
         else:
             installed, path, version = _probe(spec.executable)
+
+        issues: list[str] = []
+        ready = installed
+        if name == "deepseek" and installed:
+            if not node_runtime["compatible"]:
+                issues.append(f"requires Node {DEEPSEEK_NODE_RANGE}")
+            if bubblewrap is None:
+                issues.append("requires Bubblewrap for isolated DSH_HOME")
+            ready = not issues
+
         if cancellation_check is not None and cancellation_check():
             raise RuntimeError("Doctor inspection cancelled")
         harnesses.append({
             "name": name,
             "display_name": AGENTS[name].display_name,
             "installed": installed,
+            "ready": ready,
+            "issues": issues,
             "path": path,
             "version": version,
             "docs": spec.install().docs,
@@ -188,12 +246,14 @@ def inspect(
             "machine": platform.machine(),
             "distribution": _linux_id() or None,
             "python": platform.python_version(),
-            "node": shutil.which("node"),
+            "node": node_runtime["path"],
+            "node_version": node_runtime["version"],
+            "node_compatible_with_deepseek": node_runtime["compatible"],
             "npm": shutil.which("npm"),
-            "bubblewrap": shutil.which("bwrap"),
+            "bubblewrap": bubblewrap,
         },
         "harnesses": harnesses,
-        "ready": all(item["installed"] for item in harnesses),
+        "ready": all(item["ready"] for item in harnesses),
     }
 
 
@@ -310,20 +370,25 @@ def install_harness(
 
 def render_report(report: dict) -> str:
     system = report["system"]
+    node_detail = system.get("node_version") or ("present" if system.get("node") else "no")
     lines = [
         "AIOS-bench Doctor",
         "",
         f"System: {system['platform']} {system['release']} ({system['machine']})",
-        f"Python: {system['python']} | Node: {'yes' if system['node'] else 'no'} | npm: {'yes' if system['npm'] else 'no'} | bwrap: {'yes' if system['bubblewrap'] else 'no'}",
+        f"Python: {system['python']} | Node: {node_detail} | npm: {'yes' if system.get('npm') else 'no'} | bwrap: {'yes' if system.get('bubblewrap') else 'no'}",
         "",
         "Harnesses:",
     ]
     for item in report["harnesses"]:
-        mark = "OK" if item["installed"] else "MISSING"
+        ready = bool(item.get("ready", item["installed"]))
+        mark = "OK" if ready else "BLOCKED" if item["installed"] else "MISSING"
         detail = item["version"] or item["path"] or "not detected"
+        issues = item.get("issues") or []
+        if issues:
+            detail += " | " + "; ".join(str(issue) for issue in issues)
         lines.append(f"  {mark:7} {item['display_name']:<14} {detail}")
-    installed = sum(bool(item["installed"]) for item in report["harnesses"])
-    lines += ["", f"Ready: {installed}/{len(report['harnesses'])} harnesses detected"]
+    ready_count = sum(bool(item.get("ready", item["installed"])) for item in report["harnesses"])
+    lines += ["", f"Ready: {ready_count}/{len(report['harnesses'])} harnesses ready"]
     return "\n".join(lines)
 
 
@@ -353,6 +418,17 @@ def run_wizard(*, setup: bool, repair: bool, check_only: bool, input_fn=input) -
             else:
                 print("  Installation is intentionally manual for this service-backed harness.")
             print(f"  Configure: {spec.config_hint}")
+
+    blocked = [
+        item
+        for item in report["harnesses"]
+        if item["installed"] and not item.get("ready", item["installed"])
+    ]
+    if blocked:
+        print("\nRuntime requirements:")
+        for item in blocked:
+            issues = "; ".join(str(issue) for issue in item.get("issues") or [])
+            print(f"  {item['display_name']}: {issues or 'runtime prerequisite not satisfied'}")
 
     current = load_profile()
     default_model = str(current.get("model") or "")

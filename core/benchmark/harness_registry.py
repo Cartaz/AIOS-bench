@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .adapters import ADAPTERS, Adapter, CapabilityAssessment
+from .deepseek_adapter import DeepSeekHarnessAdapter
 
 
 BENCHMARK_LOCAL_RUNTIME = "benchmark_local_runtime"
@@ -27,6 +28,12 @@ _DISPLAY_NAMES = {
     "letta": "Letta",
     "agentzero": "Agent Zero",
     "claude": "Claude Code",
+    "deepseek": "DeepSeek Harness",
+}
+
+_ADAPTER_SOURCES: dict[str, Adapter] = {
+    **ADAPTERS,
+    "deepseek": DeepSeekHarnessAdapter(),
 }
 
 # These harnesses execute workspace tools on the benchmark host and can reach
@@ -40,11 +47,11 @@ def _configured_adapter(name: str, runtime_capabilities: frozenset[str]) -> Adap
 
     Existing runner code deliberately asks the configured adapter for task
     support. Cloning keeps deployment-only capabilities out of the canonical
-    ADAPTERS registry while preserving concrete adapter types (notably the Pi
-    RPC isinstance dispatch).
+    adapter sources while preserving concrete adapter types (notably the Pi RPC
+    isinstance dispatch).
     """
 
-    source = ADAPTERS[name]
+    source = _ADAPTER_SOURCES[name]
     adapter = type(source)()
     adapter.capabilities = source.capabilities.union(runtime_capabilities)
     return adapter

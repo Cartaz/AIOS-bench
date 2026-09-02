@@ -13,7 +13,7 @@ def test_gui_catalog_uses_canonical_harness_and_task_sources():
     service = BenchmarkService(ROOT)
     catalog = service.catalog("frontier_v3")
     assert [item["id"] for item in catalog["harnesses"]] == [
-        "hermes", "piagent", "opencode", "goose", "letta", "agentzero", "claude"
+        "hermes", "piagent", "opencode", "goose", "letta", "agentzero", "claude", "deepseek"
     ]
     task_ids = {item["id"] for item in catalog["tasks"]}
     assert "autonomy_001" in task_ids

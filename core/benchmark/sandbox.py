@@ -5,6 +5,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from .deepseek_runtime import DEEPSEEK_SANDBOX_HOME, settings_path as deepseek_settings_path
 from .paths import BENCHMARK_PACKAGE_ROOT, REPO_ROOT
 
 
@@ -124,7 +125,7 @@ def _remote_transport_args(workspace: Path) -> tuple[tuple[str, ...], bool]:
 
     Agent Zero's model executes in a separately isolated service/project and
     never receives host paths. The local subprocess is trusted transport code,
-    so it retains the package required for ``python -m`` while benchmark-owned
+    so it retains only the package required for ``python -m`` while benchmark-owned
     answers, fixtures, docs and result history remain masked.
     """
     prefix: tuple[str, ...] = ()
@@ -136,6 +137,26 @@ def _remote_transport_args(workspace: Path) -> tuple[tuple[str, ...], bool]:
     return prefix, bool(hidden_directories or hidden_files)
 
 
+def _deepseek_home_args(workspace: Path) -> tuple[str, ...]:
+    """Mount only benchmark-owned non-secret settings into a fresh DSH_HOME.
+
+    Bubblewrap's private ``/tmp`` owns profiles, sessions and all other mutable
+    DeepSeek Harness state. The retained settings source stays outside the
+    agent-visible repository view and is mounted read-only, so a task cannot
+    rewrite the pinned endpoint/model for the active process.
+    """
+
+    source = deepseek_settings_path(workspace)
+    if not source.is_file():
+        raise RuntimeError(f"DeepSeek Harness settings are missing: {source}")
+    home = DEEPSEEK_SANDBOX_HOME
+    target = home / source.name
+    return (
+        "--dir", str(home),
+        "--ro-bind", str(source.resolve()), str(target),
+    )
+
+
 def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = None) -> SandboxPlan:
     """Return a cross-harness confinement plan.
 
@@ -144,15 +165,23 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     cannot leak golden solutions, graders, docs or prior results. Agent Zero is
     a special transport case: its model runs in a separately isolated service,
     while the trusted local client retains only the package access it needs and
-    masks benchmark-owned answer material explicitly. Hidden black-box verifier
-    processes additionally receive private network and PID namespaces so
-    reconstructed code cannot depend on a live endpoint or inspect the grader's
-    host process tree during hidden evaluation.
+    masks benchmark-owned answer material explicitly. DeepSeek Harness receives
+    a private process-lifetime DSH_HOME in the sandbox's tmpfs, seeded only with
+    a read-only benchmark-owned provider/model settings document and therefore
+    requires Bubblewrap rather than falling back to ambient harness state. Hidden
+    black-box verifier processes additionally receive private network and PID
+    namespaces so reconstructed code cannot depend on a live endpoint or inspect
+    the grader's host process tree during hidden evaluation.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
         raise ValueError("AIOS_BENCH_SANDBOX must be auto, required or off")
     if selected == "off":
+        if adapter_name == "deepseek":
+            raise RuntimeError(
+                "DeepSeek Harness requires the AIOS-Bench Bubblewrap sandbox "
+                "for its isolated DSH_HOME"
+            )
         return SandboxPlan("disabled", write_confined=False, grader_hidden=False)
 
     executable = shutil.which("bwrap")
@@ -171,6 +200,10 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             prefix += _workspace_rebind_args(workspace)
             grader_hidden = True
             strategy = "bubblewrap_repo_hidden_workspace_only"
+
+        if adapter_name == "deepseek":
+            prefix += _deepseek_home_args(workspace)
+            strategy += "_deepseek_ephemeral_home"
 
         if adapter_name == "blackbox-verifier":
             prefix += ("--unshare-net", "--unshare-pid")
@@ -200,4 +233,6 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
 
     if selected == "required":
         raise RuntimeError("workspace sandbox required but bubblewrap is unavailable")
+    if adapter_name == "deepseek":
+        raise RuntimeError("DeepSeek Harness isolation requires bubblewrap but it is unavailable")
     return SandboxPlan("cwd_only_unconfined", write_confined=False, grader_hidden=False)

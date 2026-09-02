@@ -16,6 +16,7 @@ from aios_bench.adapters import (
     required_capabilities_for,
 )
 from aios_bench.config import AGENTS
+from aios_bench.deepseek_adapter import DeepSeekHarnessAdapter
 from aios_bench.manifest import build_run_manifest, probe_executable, sanitize_configuration
 
 
@@ -31,7 +32,7 @@ class NativeOnlyDelegationAdapter(Adapter):
 
 def test_active_harness_matrix_excludes_codex():
     assert tuple(AGENTS) == (
-        "hermes", "piagent", "opencode", "goose", "letta", "agentzero", "claude",
+        "hermes", "piagent", "opencode", "goose", "letta", "agentzero", "claude", "deepseek",
     )
     assert "codex" not in AGENTS
 
@@ -42,6 +43,7 @@ def test_capability_assessment_separates_native_feature_from_observability():
     opencode = OpenCodeAdapter().assess_capabilities("subagents")
     letta = LettaAdapter().assess_capabilities("subagents")
     claude = ClaudeCodeAdapter().assess_capabilities("subagents")
+    deepseek = DeepSeekHarnessAdapter().assess_capabilities("subagents")
     assert native_only.status == "unsupported"
     assert native_only.missing == frozenset({"structured_subagent_events"})
     assert structured.status == "supported"
@@ -49,12 +51,16 @@ def test_capability_assessment_separates_native_feature_from_observability():
     assert opencode.status == "supported"
     assert letta.status == "supported"
     assert claude.status == "supported"
+    assert deepseek.status == "unsupported"
+    assert deepseek.missing == frozenset({"structured_subagent_events"})
     assert "structured_subagent_events" in OpenCodeAdapter().capabilities
     assert "structured_subagent_events" in LettaAdapter().capabilities
     assert "structured_subagent_events" in ClaudeCodeAdapter().capabilities
+    assert "structured_subagent_events" not in DeepSeekHarnessAdapter().capabilities
     assert "tool_events" in OpenCodeAdapter().capabilities
     assert "tool_events" in LettaAdapter().capabilities
     assert "tool_events" in ClaudeCodeAdapter().capabilities
+    assert "tool_events" not in DeepSeekHarnessAdapter().capabilities
 
 
 def test_category_and_catalog_tag_requirements_are_composed():
@@ -63,6 +69,7 @@ def test_category_and_catalog_tag_requirements_are_composed():
     assert HermesAdapter().assess_capabilities("browser").is_supported
     assert not PiAgentAdapter().assess_capabilities("browser").is_supported
     assert not ClaudeCodeAdapter().assess_capabilities("browser").is_supported
+    assert not DeepSeekHarnessAdapter().assess_capabilities("browser").is_supported
     assert PiAgentAdapter().assess_capabilities("coding").is_supported
 
 
