@@ -13,11 +13,13 @@ chmod +x install.sh
 
 The installer pins Node.js `24.20.0` inside `.venv` through `nodeenv` and installs the following CLI harnesses with `.venv` as the npm prefix:
 
-- Pi Agent — `@mariozechner/pi-coding-agent`
-- OpenCode — `opencode-ai`
-- Letta Code — `@letta-ai/letta-code`
-- Claude Code — `@anthropic-ai/claude-code`
+- Pi Agent — `@earendil-works/pi-coding-agent@0.84.4`
+- OpenCode — `opencode-ai@1.18.26`
+- Letta Code — `@letta-ai/letta-code@0.31.11`
+- Claude Code — `@anthropic-ai/claude-code@2.1.236`
 - DeepSeek Harness — `@deepseek-ai/dsh@0.1.2-alpha.5`
+
+The Pi package uses the current upstream `@earendil-works` namespace rather than the deprecated `@mariozechner` package. Its RPC and `--no-session` CLI contracts used by AIOS-Bench are preserved.
 
 AIOS-Bench subprocess ownership always prepends `.venv/bin` to child `PATH`. Therefore the canonical launch command:
 
@@ -27,7 +29,7 @@ AIOS-Bench subprocess ownership always prepends `.venv/bin` to child `PATH`. The
 
 finds project-local `node`, `npm` and managed harness executables without activating the virtual environment and without consulting a broken or incompatible system Node installation first.
 
-`AIOS_BENCH_NODE_VERSION` can override the managed Node version for explicit testing. `AIOS_BENCH_SKIP_MANAGED_HARNESSES=1` skips Node/harness downloads; this is used by CI so the Python/Qt test matrix is not coupled to optional external registries.
+`AIOS_BENCH_NODE_VERSION` can override the managed Node version for explicit compatibility testing. `AIOS_BENCH_SKIP_MANAGED_HARNESSES=1` skips Node/harness downloads; the three-version Python/Qt quality matrix uses this opt-out, while a separate CI bootstrap job executes the ordinary installer and verifies the real project-local Node/npm/harness installation path.
 
 ## External runtimes
 
@@ -37,7 +39,7 @@ Three integrations remain intentionally external:
 - **Goose** — upstream distributes the CLI through a remote release installer/binaries.
 - **Agent Zero** — AIOS-Bench integrates with a separately running service/container rather than a simple CLI package.
 
-The canonical installer does not silently execute `curl | bash`, request `sudo`, install Docker, or start persistent services. These runtimes must be installed/configured explicitly when they are needed. Doctor remains available as a diagnostic/repair surface but is no longer required to install the project-local managed harnesses.
+The canonical installer does not silently execute `curl | bash`, request `sudo`, install Docker, or start persistent services. These runtimes must be installed/configured explicitly when they are needed. Doctor remains available for readiness diagnostics and guided repair, but it is no longer part of the normal installation path for the project-local managed harnesses.
 
 ## Verification
 
