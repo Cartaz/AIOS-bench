@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from .adapters import ADAPTERS, Adapter, CapabilityAssessment
 from .deepseek_adapter import DeepSeekHarnessAdapter
+from .local_gateway import bind_invocation
 
 
 BENCHMARK_LOCAL_RUNTIME = "benchmark_local_runtime"
@@ -43,17 +44,29 @@ _LOCAL_RUNTIME_HARNESSES = frozenset(_DISPLAY_NAMES).difference({"agentzero"})
 
 
 def _configured_adapter(name: str, runtime_capabilities: frozenset[str]) -> Adapter:
-    """Clone the stateless adapter and bind capabilities of this deployment.
+    """Clone the stateless adapter and bind deployment-owned runtime behavior.
 
-    Existing runner code deliberately asks the configured adapter for task
-    support. Cloning keeps deployment-only capabilities out of the canonical
-    adapter sources while preserving concrete adapter types (notably the Pi RPC
-    isinstance dispatch).
+    Concrete adapter types are preserved because Pi's execution path relies on
+    its RPC type. A single post-build wrapper applies the canonical local gateway
+    profile, keeping provider/model configuration out of the runner and out of
+    personal harness configuration files.
     """
 
     source = _ADAPTER_SOURCES[name]
     adapter = type(source)()
     adapter.capabilities = source.capabilities.union(runtime_capabilities)
+    original_build = adapter.build
+
+    def build(prompt, workspace, model):
+        invocation = original_build(prompt, workspace, model)
+        return bind_invocation(
+            name,
+            invocation,
+            workspace=workspace,
+            model=model,
+        )
+
+    adapter.build = build
     return adapter
 
 
