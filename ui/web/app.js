@@ -4,6 +4,7 @@ const state = {
   backend: null,
   catalog: null,
   doctor: null,
+  discoveredModels: [],
   harnesses: new Set(),
   tasks: new Set(),
   running: false,
@@ -57,8 +58,9 @@ function setRunState(value) {
   state.cancelling = Boolean(value.cancelling);
   $('start').disabled = state.busy;
   $('cancel').disabled = !state.running || state.cancelling;
-  $('refreshDoctor').disabled = state.busy;
-  $('saveProfile').disabled = state.busy;
+  ['refreshDoctor', 'saveProfile', 'discoverModels', 'testConfigure'].forEach(id => {
+    $(id).disabled = state.busy;
+  });
   $('runBadge').textContent = state.cancelling
     ? 'Annullamento…'
     : state.running
@@ -82,7 +84,10 @@ function showView(name) {
 function renderHarnesses() {
   if (!state.catalog) return;
   const readiness = new Map(
-    (state.doctor?.report?.harnesses || []).map(item => [item.name, item.installed]),
+    (state.doctor?.report?.harnesses || []).map(item => [
+      item.name,
+      Boolean(item.ready ?? item.installed),
+    ]),
   );
   $('harnesses').innerHTML = state.catalog.harnesses.map(h => `
     <div class="toggle ${state.harnesses.has(h.id) ? 'selected' : ''}" tabindex="0"
@@ -125,11 +130,51 @@ function renderTasks() {
 function applyRunProfileSelection() {
   if (!state.catalog) return;
   const profile = activeRunProfile();
-  state.tasks = new Set(
-    profile ? profile.task_ids : state.catalog.tasks.map(task => task.id),
-  );
+  state.tasks = new Set(profile ? profile.task_ids : state.catalog.tasks.map(task => task.id));
   renderSkillControls();
   renderTasks();
+}
+
+function bindingLabel(binding) {
+  if (!binding) return '';
+  const labels = {
+    configured: 'gateway AIOS-Bench configurato',
+    needs_anthropic_endpoint: 'richiede endpoint Anthropic',
+    anthropic_probe_failed: 'gateway Anthropic non verificato',
+    external_service: 'servizio esterno da attestare',
+    external_runtime: 'runtime esterno',
+  };
+  return labels[binding.status] || binding.status || '';
+}
+
+function renderGatewayStatus(report) {
+  const gateway = report.gateway;
+  if (!gateway) {
+    $('gatewayStatus').textContent = '';
+    return;
+  }
+  const openai = gateway.openai || {};
+  const parts = [
+    openai.ready
+      ? `✓ OpenAI-compatible: ${openai.resolved_model || openai.model}`
+      : `✗ OpenAI-compatible: ${openai.error || 'verifica fallita'}`,
+  ];
+  if (gateway.anthropic) {
+    parts.push(gateway.anthropic.ready
+      ? '✓ Anthropic-compatible verificato'
+      : `✗ Anthropic-compatible: ${gateway.anthropic.error || 'verifica fallita'}`);
+  } else {
+    parts.push('Claude Code: endpoint Anthropic opzionale non configurato');
+  }
+  parts.push(gateway.saved ? 'Profilo salvato.' : 'Profilo non salvato.');
+  $('gatewayStatus').textContent = parts.join(' · ');
+}
+
+function renderModelOptions(models = state.discoveredModels) {
+  state.discoveredModels = [...models];
+  $('modelOptions').innerHTML = state.discoveredModels
+    .map(model => `<option value="${esc(model)}"></option>`)
+    .join('');
 }
 
 function renderDoctor() {
@@ -139,12 +184,15 @@ function renderDoctor() {
   $('systemStatus').textContent = `${system.platform} ${system.release} · Python ${system.python} · Node ${system.node ? 'OK' : 'mancante'} · npm ${system.npm ? 'OK' : 'mancante'} · bwrap ${system.bubblewrap ? 'OK' : 'mancante'}`;
   $('doctorHarnesses').innerHTML = report.harnesses.map(item => {
     const install = item.install || {};
+    const ready = Boolean(item.ready ?? item.installed);
     const manual = !item.installed && !install.automatic;
-    return `<article class="doctor-item ${item.installed ? 'ready' : ''}">
+    const binding = bindingLabel(item.binding);
+    const runtimeStatus = ready ? 'Runtime pronto' : item.installed ? 'Runtime bloccato' : 'Setup richiesto';
+    return `<article class="doctor-item ${ready ? 'ready' : ''}">
       <span class="dot"></span>
       <div class="details">
         <strong>${esc(item.display_name)}</strong>
-        <div class="status">${item.installed ? 'Pronto' : 'Setup richiesto'}</div>
+        <div class="status">${esc(runtimeStatus)}${binding ? ` · ${esc(binding)}` : ''}</div>
         <div class="task-meta">${esc(item.version || item.path || item.config_hint)}</div>
         ${manual && install.manual_command ? `<code>${esc(install.manual_command)}</code>` : ''}
         ${install.note ? `<div class="task-meta">${esc(install.note)}</div>` : ''}
@@ -159,9 +207,13 @@ function renderDoctor() {
   $('profileModel').value = profile.model || '';
   $('openaiUrl').value = profile.openai_url || '';
   $('anthropicUrl').value = profile.anthropic_url || '';
+  const discovered = report.gateway?.openai?.available_models || [];
+  if (discovered.length) renderModelOptions(discovered);
+  renderGatewayStatus(report);
   if (!$('model').value && profile.model) $('model').value = profile.model;
-  $('refreshDoctor').disabled = state.busy;
-  $('saveProfile').disabled = state.busy;
+  ['refreshDoctor', 'saveProfile', 'discoverModels', 'testConfigure'].forEach(id => {
+    $(id).disabled = state.busy;
+  });
   renderHarnesses();
 }
 
@@ -198,6 +250,14 @@ async function loadDoctor() {
   renderDoctor();
 }
 
+function profilePayload() {
+  return {
+    model: $('profileModel').value.trim(),
+    openai_url: $('openaiUrl').value.trim(),
+    anthropic_url: $('anthropicUrl').value.trim(),
+  };
+}
+
 function activateSelector(selector, attr, set, render, event) {
   const item = event.target.closest(selector);
   if (!item) return;
@@ -232,9 +292,7 @@ function bindUiEvents() {
     if (view) showView(view);
     if (state.catalog) {
       activateSelector('[data-harness]', 'harness', state.harnesses, renderHarnesses, event);
-      if (!activeRunProfile()) {
-        activateSelector('[data-task]', 'task', state.tasks, renderTasks, event);
-      }
+      if (!activeRunProfile()) activateSelector('[data-task]', 'task', state.tasks, renderTasks, event);
     }
     const hAction = event.target.dataset?.harnessAction;
     if (hAction && state.catalog) {
@@ -272,18 +330,40 @@ function bindUiEvents() {
   $('refreshDoctor').addEventListener('click', () => {
     if (!state.busy) void loadDoctor();
   });
+  $('discoverModels').addEventListener('click', () => {
+    if (state.busy) return;
+    $('doctorError').textContent = '';
+    $('gatewayStatus').textContent = 'Ricerca modelli…';
+    void state.backend.discoverModels($('openaiUrl').value.trim()).then(value => {
+      if (!Array.isArray(value.models)) return;
+      renderModelOptions(value.models);
+      if (!$('profileModel').value && value.models.length === 1) {
+        $('profileModel').value = value.models[0];
+      }
+      $('gatewayStatus').textContent = `${value.models.length} modelli trovati su ${value.endpoint || 'endpoint'}.`;
+    });
+  });
+  $('testConfigure').addEventListener('click', () => {
+    if (state.busy) return;
+    $('doctorError').textContent = '';
+    $('gatewayStatus').textContent = 'Verifica server e modello…';
+    const payload = profilePayload();
+    void state.backend.testAndConfigure(payload).then(value => {
+      if (value.report) {
+        state.doctor = value;
+        if (value.report.gateway?.saved) $('model').value = payload.model;
+        renderDoctor();
+      }
+    });
+  });
   $('saveProfile').addEventListener('click', () => {
     if (state.busy) return;
     $('doctorError').textContent = '';
-    const payload = {
-      model: $('profileModel').value,
-      openai_url: $('openaiUrl').value,
-      anthropic_url: $('anthropicUrl').value,
-    };
+    const payload = profilePayload();
     void state.backend.saveDoctorProfile(payload).then(value => {
       if (value.report) {
         state.doctor = value;
-        $('model').value = payload.model.trim();
+        $('model').value = payload.model;
         renderDoctor();
       }
     });
@@ -331,6 +411,9 @@ async function initialize() {
           state.doctor = value;
           renderDoctor();
         }
+      },
+      modelsDiscovered: value => {
+        if (Array.isArray(value.models)) renderModelOptions(value.models);
       },
       runStateChanged: setRunState,
       progressChanged: handleProgress,
