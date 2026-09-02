@@ -32,8 +32,6 @@ class BackgroundWorker(QObject):
         else:
             self.finished.emit(result)
         finally:
-            # Quit from the worker thread itself so shutdown does not depend on
-            # the GUI event loop delivering a queued thread.quit() invocation.
             QThread.currentThread().quit()
 
 
@@ -41,6 +39,7 @@ class DesktopRuntime(QObject):
     """Own Qt worker lifecycle and translate long-running core work into signals."""
 
     doctorChanged = Signal(str)
+    modelsDiscovered = Signal(str)
     runStateChanged = Signal(str)
     progressChanged = Signal(str)
     errorOccurred = Signal(str)
@@ -66,7 +65,27 @@ class DesktopRuntime(QObject):
         token = CancellationToken()
         self._start(
             "doctor_inspect",
-            lambda _emit: self._controller.doctor_json(
+            lambda _emit: self._controller.doctor_json(lambda: token.is_cancelled),
+            cancellation_token=token,
+        )
+
+    def discover_models(self, openai_url: str) -> None:
+        token = CancellationToken()
+        self._start(
+            "doctor_discover_models",
+            lambda _emit: self._controller.discover_models(
+                openai_url,
+                lambda: token.is_cancelled,
+            ),
+            cancellation_token=token,
+        )
+
+    def test_and_configure(self, payload: str) -> None:
+        token = CancellationToken()
+        self._start(
+            "doctor_configure",
+            lambda _emit: self._controller.test_and_configure_doctor(
+                payload,
                 lambda: token.is_cancelled,
             ),
             cancellation_token=token,
@@ -153,15 +172,17 @@ class DesktopRuntime(QObject):
     def _on_finished(self, result: object) -> None:
         if self._operation == "benchmark":
             self.runFinished.emit(json.dumps(result, ensure_ascii=False))
-        elif self._operation in {"doctor_inspect", "doctor_install"}:
+        elif self._operation == "doctor_discover_models":
+            self.modelsDiscovered.emit(str(result))
+        elif self._operation in {"doctor_inspect", "doctor_install", "doctor_configure"}:
             self.doctorChanged.emit(str(result))
 
     @Slot(str)
     def _on_failed(self, message: str) -> None:
-        if self._operation in {"doctor_inspect", "doctor_install"}:
-            # Resolve frontend waiters even when a Doctor worker fails. The
-            # separate error signal carries the human-readable failure.
+        if self._operation in {"doctor_inspect", "doctor_install", "doctor_configure"}:
             self.doctorChanged.emit("{}")
+        elif self._operation == "doctor_discover_models":
+            self.modelsDiscovered.emit("{}")
         self.errorOccurred.emit(message)
 
     @Slot()
