@@ -14,7 +14,7 @@ class _Process:
 def test_doctor_probe_timeout_uses_owned_process_cleanup(monkeypatch) -> None:
     process = _Process()
     cleaned: list[object] = []
-    monkeypatch.setattr(doctor.shutil, "which", lambda executable: f"/bin/{executable}")
+    monkeypatch.setattr(doctor, "resolve_executable", lambda executable: f"/bin/{executable}")
     monkeypatch.setattr(doctor, "spawn_owned", lambda *args, **kwargs: process)
     monkeypatch.setattr(doctor, "terminate_owned", lambda value: cleaned.append(value))
 
