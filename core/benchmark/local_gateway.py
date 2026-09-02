@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -129,6 +131,92 @@ def hermes_binding(*, endpoint: str) -> dict[str, str]:
         "OPENAI_BASE_URL": endpoint,
         "OPENAI_API_KEY": _api_key(),
     }
+
+
+def _set_flag(command: list[str], flag: str, value: str) -> list[str]:
+    result = list(command)
+    if flag in result:
+        index = result.index(flag)
+        if index + 1 >= len(result):
+            raise RuntimeError(f"Malformed harness command: {flag} has no value")
+        result[index + 1] = value
+        return result
+    insert_at = max(len(result) - 1, 1)
+    result[insert_at:insert_at] = [flag, value]
+    return result
+
+
+def bind_invocation(
+    harness: str,
+    invocation: Any,
+    *,
+    workspace: Path,
+    model: str,
+) -> Any:
+    """Bind an adapter invocation to the canonical AIOS-Bench gateway profile.
+
+    This is deliberately one post-build boundary rather than eight adapter
+    special cases. It preserves concrete adapter types (notably Pi RPC) while
+    replacing ambient provider configuration with benchmark-owned runtime state.
+    """
+    endpoint = os.environ.get("AIOS_BENCH_ENDPOINT", "").strip()
+    requested = str(model or "").strip()
+    if not endpoint or not requested or requested == "unknown":
+        return invocation
+    if harness in {"agentzero", "claude", "deepseek"}:
+        return invocation
+
+    command = list(invocation.command)
+    environment = dict(invocation.environment)
+    provider = invocation.provider
+    effective_model = requested
+    configuration = dict(invocation.configuration)
+
+    if harness == "hermes":
+        environment.update(hermes_binding(endpoint=endpoint))
+        command = _set_flag(command, "--provider", "openai-api")
+        provider = "openai-api"
+    elif harness == "piagent":
+        effective_model, extra = pi_binding(workspace, endpoint=endpoint, model=requested)
+        environment.update(extra)
+        command = _set_flag(command, "--model", effective_model)
+        provider = PROVIDER_ID
+    elif harness == "opencode":
+        effective_model, extra = opencode_binding(endpoint=endpoint, model=requested)
+        environment.update(extra)
+        command = _set_flag(command, "--model", effective_model)
+        provider = PROVIDER_ID
+    elif harness == "goose":
+        environment.update(goose_binding(endpoint=endpoint, model=requested))
+        command = _set_flag(command, "--provider", "openai")
+        provider = "openai"
+    elif harness == "letta":
+        effective_model, extra = letta_binding(endpoint=endpoint, model=requested)
+        environment.update(extra)
+        command = _set_flag(command, "--model", effective_model)
+        provider = "llama-cpp"
+    else:
+        return invocation
+
+    configuration.update(
+        {
+            "gateway_profile": "aios_bench_canonical",
+            "gateway_configuration_scope": "isolated_runtime",
+            "ambient_provider_configuration": False,
+            "effective_model_handle": effective_model,
+        }
+    )
+    return replace(
+        invocation,
+        command=command,
+        environment=environment,
+        requested_model=requested,
+        resolved_model=requested,
+        model_resolution="aios_bench_gateway_profile",
+        provider=provider,
+        endpoint=endpoint,
+        configuration=configuration,
+    )
 
 
 def binding_summary(
