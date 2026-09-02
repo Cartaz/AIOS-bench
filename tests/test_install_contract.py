@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from core.benchmark.managed_runtimes import DEFAULT_NODE_VERSION, MANAGED_HARNESSES
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -23,20 +25,23 @@ def test_install_script_verifies_virtualenv_python_after_creation() -> None:
     assert "[ERROR] .venv uses unsupported Python" in source
 
 
-def test_install_script_bootstraps_project_local_node_and_managed_harnesses() -> None:
+def test_install_script_delegates_managed_bootstrap_to_python_owner() -> None:
     source = _source()
-    assert 'NODE_VERSION="${AIOS_BENCH_NODE_VERSION:-24.20.0}"' in source
     assert "AIOS_BENCH_SKIP_MANAGED_HARNESSES" in source
-    assert '"$VENV_BIN/nodeenv" -p --node="$NODE_VERSION" --prebuilt' in source
-    assert 'NPM_CONFIG_PREFIX="$VENV_DIR"' in source
-    for package in (
-        "@mariozechner/pi-coding-agent",
-        "opencode-ai",
-        "@letta-ai/letta-code",
-        "@anthropic-ai/claude-code",
-        "@deepseek-ai/dsh@0.1.2-alpha.5",
-    ):
-        assert package in source
+    assert '"$VENV_BIN/python" -m core.benchmark.managed_runtimes' in source
+    assert "npm install" not in source
+    assert "nodeenv" not in source
+
+
+def test_managed_runtime_versions_are_explicitly_pinned() -> None:
+    assert DEFAULT_NODE_VERSION == "24.20.0"
+    assert [(item.name, item.package, item.executable) for item in MANAGED_HARNESSES] == [
+        ("piagent", "@earendil-works/pi-coding-agent@0.84.4", "pi"),
+        ("opencode", "opencode-ai@1.18.26", "opencode"),
+        ("letta", "@letta-ai/letta-code@0.31.11", "letta"),
+        ("claude", "@anthropic-ai/claude-code@2.1.236", "claude"),
+        ("deepseek", "@deepseek-ai/dsh@0.1.2-alpha.5", "dsh"),
+    ]
 
 
 def test_install_script_does_not_silently_install_external_harnesses() -> None:
