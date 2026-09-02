@@ -79,7 +79,10 @@ def test_deepseek_endpoint_rejects_embedded_credentials(monkeypatch, tmp_path: P
 def test_deepseek_sandbox_mounts_settings_into_private_tmp_home(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://127.0.0.1:8080/v1")
     DeepSeekHarnessAdapter().build("task", tmp_path, "model")
-    monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    monkeypatch.setattr(
+        "aios_bench.sandbox.shutil.which",
+        lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
+    )
 
     plan = workspace_sandbox("deepseek", tmp_path)
 
@@ -92,6 +95,21 @@ def test_deepseek_sandbox_mounts_settings_into_private_tmp_home(monkeypatch, tmp
     index = prefix.index(source)
     assert prefix[index - 1] == "--ro-bind"
     assert prefix[index + 1] == target
+
+
+def test_deepseek_sandbox_fails_closed_without_bubblewrap(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: None)
+    with pytest.raises(RuntimeError, match="DeepSeek Harness isolation requires bubblewrap"):
+        workspace_sandbox("deepseek", tmp_path)
+
+
+def test_deepseek_sandbox_cannot_be_disabled(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(
+        "aios_bench.sandbox.shutil.which",
+        lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
+    )
+    with pytest.raises(RuntimeError, match="requires the AIOS-Bench Bubblewrap sandbox"):
+        workspace_sandbox("deepseek", tmp_path, "off")
 
 
 def test_deepseek_does_not_claim_unobservable_browser_or_subagent_events():
