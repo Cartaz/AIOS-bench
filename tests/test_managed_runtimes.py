@@ -23,7 +23,6 @@ def test_install_managed_harness_uses_project_npm_prefix(monkeypatch, tmp_path: 
     calls: list[tuple[list[str], dict]] = []
 
     monkeypatch.setattr(managed_runtimes, "PROJECT_BIN", bin_dir)
-    monkeypatch.setattr(managed_runtimes, "PROJECT_VENV", tmp_path)
     monkeypatch.setattr(managed_runtimes, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(
         managed_runtimes,
