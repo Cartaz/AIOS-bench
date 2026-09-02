@@ -10,6 +10,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       QTWEBENGINE_DISABLE_SANDBOX: "1"
+      AIOS_BENCH_SKIP_MANAGED_HARNESSES: "1"
     strategy:
       fail-fast: false
       matrix:
