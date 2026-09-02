@@ -5,6 +5,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .paths import REPO_ROOT
 from .processes import run_owned, spawn_owned, terminate_owned
@@ -95,7 +96,10 @@ def requested_node_version() -> str:
     return os.environ.get("AIOS_BENCH_NODE_VERSION", DEFAULT_NODE_VERSION).strip() or DEFAULT_NODE_VERSION
 
 
-def ensure_project_node() -> str:
+def ensure_project_node(
+    *,
+    cancellation_check: Callable[[], bool] | None = None,
+) -> str:
     """Install/repair the pinned Node runtime inside the Python virtualenv."""
     wanted = requested_node_version()
     node = PROJECT_BIN / "node"
@@ -115,7 +119,12 @@ def ensure_project_node() -> str:
     ]
     if node.exists():
         command.append("--force")
-    outcome = run_owned(command, cwd=REPO_ROOT, timeout=INSTALL_TIMEOUT_SECONDS)
+    outcome = run_owned(
+        command,
+        cwd=REPO_ROOT,
+        timeout=INSTALL_TIMEOUT_SECONDS,
+        cancellation_check=cancellation_check,
+    )
     if outcome.returncode != 0 or outcome.timed_out or outcome.cancelled:
         raise RuntimeError("project-local Node installation failed")
 
@@ -128,7 +137,12 @@ def ensure_project_node() -> str:
     return current
 
 
-def install_managed_harness(name: str, *, ensure_node: bool = True) -> Path:
+def install_managed_harness(
+    name: str,
+    *,
+    ensure_node: bool = True,
+    cancellation_check: Callable[[], bool] | None = None,
+) -> Path:
     """Install one pinned npm harness into the AIOS-Bench virtualenv."""
     try:
         spec = MANAGED_HARNESS_BY_NAME[name]
@@ -136,7 +150,7 @@ def install_managed_harness(name: str, *, ensure_node: bool = True) -> Path:
         raise ValueError(f"Unknown managed harness: {name}") from exc
 
     if ensure_node:
-        ensure_project_node()
+        ensure_project_node(cancellation_check=cancellation_check)
     npm = PROJECT_BIN / "npm"
     if not npm.is_file():
         raise RuntimeError("project-local npm is unavailable after Node bootstrap")
@@ -148,6 +162,7 @@ def install_managed_harness(name: str, *, ensure_node: bool = True) -> Path:
         env=npm_environment(),
         cwd=REPO_ROOT,
         timeout=INSTALL_TIMEOUT_SECONDS,
+        cancellation_check=cancellation_check,
     )
     if outcome.returncode != 0 or outcome.timed_out or outcome.cancelled:
         raise RuntimeError(f"{spec.display_name} installation failed")
