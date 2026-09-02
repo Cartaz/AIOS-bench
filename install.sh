@@ -5,7 +5,6 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-NODE_VERSION="${AIOS_BENCH_NODE_VERSION:-24.20.0}"
 SKIP_MANAGED_HARNESSES="${AIOS_BENCH_SKIP_MANAGED_HARNESSES:-0}"
 VENV_DIR="$ROOT_DIR/.venv"
 VENV_BIN="$VENV_DIR/bin"
@@ -64,50 +63,10 @@ else
   echo "[WARN] bubblewrap not found; strict black-box reconstruction grading is unavailable until it is installed and usable." >&2
 fi
 
-install_project_node() {
-  local current=""
-  if [[ -x "$VENV_BIN/node" ]]; then
-    current="$("$VENV_BIN/node" --version 2>/dev/null || true)"
-  fi
-  if [[ "$current" == "v$NODE_VERSION" ]]; then
-    echo "[OK] Project-local Node $current already installed"
-    return
-  fi
-
-  echo "[INFO] Installing project-local Node v$NODE_VERSION into .venv"
-  "$VENV_BIN/nodeenv" -p --node="$NODE_VERSION" --prebuilt
-  current="$("$VENV_BIN/node" --version 2>/dev/null || true)"
-  if [[ "$current" != "v$NODE_VERSION" ]]; then
-    echo "[ERROR] Project-local Node verification failed: expected v$NODE_VERSION, found '${current:-missing}'." >&2
-    exit 1
-  fi
-  echo "[OK] Project-local Node $current verified"
-}
-
-install_npm_harness() {
-  local label="$1"
-  local package="$2"
-  local executable="$3"
-  echo "[INFO] Installing $label into .venv"
-  NPM_CONFIG_PREFIX="$VENV_DIR" "$VENV_BIN/npm" install -g "$package"
-  if [[ ! -x "$VENV_BIN/$executable" ]]; then
-    echo "[ERROR] $label installation completed without expected executable '$VENV_BIN/$executable'." >&2
-    exit 1
-  fi
-  echo "[OK] $label available at $VENV_BIN/$executable"
-}
-
 if [[ "$SKIP_MANAGED_HARNESSES" == "1" ]]; then
   echo "[INFO] Managed harness bootstrap skipped by AIOS_BENCH_SKIP_MANAGED_HARNESSES=1"
 else
-  install_project_node
-  export PATH="$VENV_BIN:${PATH:-}"
-  install_npm_harness "Pi Agent" "@mariozechner/pi-coding-agent" "pi"
-  install_npm_harness "OpenCode" "opencode-ai" "opencode"
-  install_npm_harness "Letta Code" "@letta-ai/letta-code" "letta"
-  install_npm_harness "Claude Code" "@anthropic-ai/claude-code" "claude"
-  install_npm_harness "DeepSeek Harness" "@deepseek-ai/dsh@0.1.2-alpha.5" "dsh"
-  echo "[OK] Managed project-local harnesses installed"
+  "$VENV_BIN/python" -m core.benchmark.managed_runtimes
 fi
 
 cat <<'EOF'
