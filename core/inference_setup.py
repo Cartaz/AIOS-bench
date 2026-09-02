@@ -108,6 +108,18 @@ def _error_text(exc: BaseException) -> str:
     return str(exc) or exc.__class__.__name__
 
 
+def _safe_probe_endpoint(value: str) -> str:
+    """Return normalized public identity when possible, otherwise no endpoint.
+
+    Error reporting must never re-run a validator that already failed, and must
+    never echo credential-bearing or otherwise malformed user input.
+    """
+    try:
+        return normalize_endpoint(value)
+    except ValueError:
+        return ""
+
+
 def discover_openai_models(
     endpoint: str,
     *,
@@ -150,10 +162,9 @@ def probe_openai_gateway(
             cancellation_check=cancellation_check,
         )
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
-        normalized = normalize_endpoint(endpoint) if str(endpoint or "").strip() else ""
         return GatewayProbeResult(
             "openai",
-            normalized,
+            _safe_probe_endpoint(endpoint),
             requested,
             False,
             False,
