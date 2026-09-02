@@ -231,7 +231,8 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             strategy += "_agentzero_project_bridge"
         return SandboxPlan(strategy, prefix, write_confined=True, grader_hidden=grader_hidden)
 
-    if selected == "required" or adapter_name == "deepseek":
-        requirement = "DeepSeek Harness isolation" if adapter_name == "deepseek" else "workspace sandbox"
-        raise RuntimeError(f"{requirement} requires bubblewrap but it is unavailable")
+    if selected == "required":
+        raise RuntimeError("workspace sandbox required but bubblewrap is unavailable")
+    if adapter_name == "deepseek":
+        raise RuntimeError("DeepSeek Harness isolation requires bubblewrap but it is unavailable")
     return SandboxPlan("cwd_only_unconfined", write_confined=False, grader_hidden=False)
