@@ -17,13 +17,23 @@ def _api_key() -> str:
 
 
 def profile_source_dir(workspace: Path, harness: str) -> Path:
-    """Return a grader-side source directory for one task-scoped harness profile."""
+    """Return a grader-side source directory for one harness profile.
+
+    Real task workspaces store profiles under their run directory. Manifest-only
+    adapter builds use an ``_manifest`` scope inside the run directory so probe
+    construction never leaks state into a sibling run or the model directory.
+    """
     workspace = workspace.resolve()
     if workspace.parent.name == "workspaces":
         run_dir = workspace.parent.parent
+        scope = workspace.name
+    elif workspace.parent.name == "runs":
+        run_dir = workspace
+        scope = "_manifest"
     else:
         run_dir = workspace.parent
-    return run_dir / "harness_profiles" / workspace.name / harness
+        scope = workspace.name
+    return run_dir / "harness_profiles" / scope / harness
 
 
 def write_pi_profile(workspace: Path, *, endpoint: str, model: str) -> Path:
@@ -57,26 +67,31 @@ def pi_binding(workspace: Path, *, endpoint: str, model: str) -> tuple[str, dict
 
 
 def opencode_binding(*, endpoint: str, model: str) -> tuple[str, dict[str, str]]:
-    """Use inline runtime config so no personal OpenCode provider file is edited."""
+    """Use the pinned OpenCode 1.18.x inline-config schema.
+
+    Version 1.18 uses ``provider``/``npm``/``options`` rather than the future V2
+    ``providers``/``package``/``settings`` shape. The real server model id is the
+    key in ``provider.<id>.models``. Pin ``small_model`` to the same model so
+    OpenCode cannot silently use a different auxiliary model for light tasks.
+    """
+    model_handle = f"{PROVIDER_ID}/{model}"
+    provider: dict[str, object] = {
+        "name": "AIOS-Bench local gateway",
+        "npm": "@ai-sdk/openai-compatible",
+        "options": {"baseURL": endpoint},
+        "models": {model: {"name": model}},
+    }
+    configured_key = os.environ.get(OPENAI_API_KEY_ENV, "").strip()
+    if configured_key:
+        provider["options"] = {
+            "baseURL": endpoint,
+            "apiKey": f"{{env:{OPENAI_API_KEY_ENV}}}",
+        }
     config = {
         "$schema": "https://opencode.ai/config.json",
-        "model": f"{PROVIDER_ID}/benchmark-model",
-        "providers": {
-            PROVIDER_ID: {
-                "name": "AIOS-Bench local gateway",
-                "package": "@opencode-ai/ai/providers/openai-compatible",
-                "settings": {
-                    "baseURL": endpoint,
-                    "apiKey": "{env:AIOS_BENCH_OPENAI_API_KEY}",
-                },
-                "models": {
-                    "benchmark-model": {
-                        "modelID": model,
-                        "name": model,
-                    }
-                },
-            }
-        },
+        "model": model_handle,
+        "small_model": model_handle,
+        "provider": {PROVIDER_ID: provider},
     }
     environment = {
         "OPENCODE_CONFIG_CONTENT": json.dumps(config, separators=(",", ":")),
@@ -85,9 +100,10 @@ def opencode_binding(*, endpoint: str, model: str) -> tuple[str, dict[str, str]]
         "XDG_DATA_HOME": "/tmp/aios-bench-opencode/xdg-data",
         "XDG_STATE_HOME": "/tmp/aios-bench-opencode/xdg-state",
         "XDG_CACHE_HOME": "/tmp/aios-bench-opencode/xdg-cache",
-        OPENAI_API_KEY_ENV: _api_key(),
     }
-    return f"{PROVIDER_ID}/benchmark-model", environment
+    if configured_key:
+        environment[OPENAI_API_KEY_ENV] = configured_key
+    return model_handle, environment
 
 
 def _goose_route(endpoint: str) -> tuple[str, str]:
