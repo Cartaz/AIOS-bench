@@ -50,7 +50,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install native runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap libegl1 libgl1
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap libegl1 libgl1 libvips-dev
       - name: Verify bubblewrap sandbox capability
         run: |
           if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
@@ -61,12 +61,14 @@ jobs:
         run: |
           chmod +x install.sh
           ./install.sh
-      - name: Verify managed runtime ownership
+      - name: Verify managed runtime ownership and execution
         run: |
+          export PATH="$PWD/.venv/bin:$PATH"
           test "$(.venv/bin/node --version)" = "v24.20.0"
           .venv/bin/npm --version
           for executable in pi opencode letta claude dsh; do
             test -x ".venv/bin/$executable"
+            ".venv/bin/$executable" --version
           done
           .venv/bin/python - <<'PY'
           from pathlib import Path

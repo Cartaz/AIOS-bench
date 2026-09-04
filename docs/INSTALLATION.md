@@ -27,11 +27,17 @@ The installer pins Node.js `24.20.0` inside `.venv` through `nodeenv` and instal
 
 Pi uses the current upstream `@earendil-works` package. Its npm lifecycle scripts are disabled by the managed install contract; the RPC/`--no-session` surface used by AIOS-Bench remains available.
 
+OpenCode's pinned package requires its own `postinstall` lifecycle step. AIOS-Bench grants script permission only to `opencode-ai` for that install rather than enabling arbitrary npm lifecycle scripts globally.
+
+Letta Code transitively installs Sharp. On systems such as Arch/CachyOS where a global `libvips` may already be present, the managed install sets `SHARP_IGNORE_GLOBAL_LIBVIPS=1` and explicitly includes npm optional dependencies so Sharp uses its package-owned prebuilt runtime instead of unexpectedly compiling against host libraries. No system Node build toolchain is required for this path.
+
+After each npm install AIOS-Bench executes the harness's version command and fails the bootstrap if the CLI exists but cannot actually start. File presence alone is not considered a successful installation.
+
 AIOS-Bench-owned subprocesses prepend `.venv/bin` to `PATH`. Therefore project-local `node`, `npm` and harness executables win over ambient installations without requiring virtualenv activation.
 
 The in-app Doctor **Installa** action uses the same `managed_runtimes` registry and installer as `install.sh`. It does not maintain a second unpinned npm path.
 
-`AIOS_BENCH_NODE_VERSION` can override the managed Node version for explicit compatibility testing. `AIOS_BENCH_SKIP_MANAGED_HARNESSES=1` skips Node/harness downloads; the Python/Qt quality matrix uses this opt-out, while the separate `managed-bootstrap` CI job runs the ordinary installation path and verifies real project-local Node/npm/harness ownership.
+`AIOS_BENCH_NODE_VERSION` can override the managed Node version for explicit compatibility testing. `AIOS_BENCH_SKIP_MANAGED_HARNESSES=1` skips Node/harness downloads; the Python/Qt quality matrix uses this opt-out, while the separate `managed-bootstrap` CI job runs the ordinary installation path and verifies real project-local Node/npm/harness ownership and executable startup. The bootstrap job deliberately includes a host `libvips` installation so the Letta/Sharp isolation policy is continuously exercised.
 
 ## External runtimes
 
@@ -67,16 +73,16 @@ DeepSeek Harness additionally **requires** functional Bubblewrap for its isolate
 
 ## Verification
 
-After installation, managed executables should exist under `.venv/bin`:
+After installation, managed executables should exist under `.venv/bin` and be executable with the project-local Node runtime:
 
 ```bash
-.venv/bin/node --version
-.venv/bin/npm --version
-.venv/bin/pi --version
-.venv/bin/opencode --version
-.venv/bin/letta --version
-.venv/bin/claude --version
-.venv/bin/dsh --version
+PATH="$PWD/.venv/bin:$PATH" .venv/bin/node --version
+PATH="$PWD/.venv/bin:$PATH" .venv/bin/npm --version
+PATH="$PWD/.venv/bin:$PATH" .venv/bin/pi --version
+PATH="$PWD/.venv/bin:$PATH" .venv/bin/opencode --version
+PATH="$PWD/.venv/bin:$PATH" .venv/bin/letta --version
+PATH="$PWD/.venv/bin:$PATH" .venv/bin/claude --version
+PATH="$PWD/.venv/bin:$PATH" .venv/bin/dsh --version
 ```
 
-The automated `managed-bootstrap` CI job exercises this same ordinary installation path rather than replacing it with mocked runtime discovery.
+Ordinary AIOS-Bench launches do not require these explicit `PATH` prefixes because the benchmark process owner applies `.venv/bin` automatically. The automated `managed-bootstrap` CI job exercises the same ordinary installation path rather than replacing it with mocked runtime discovery.

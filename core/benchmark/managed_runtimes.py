@@ -24,6 +24,8 @@ class ManagedHarness:
     executable: str
     docs: str
     npm_args: tuple[str, ...] = ()
+    install_environment: tuple[tuple[str, str], ...] = ()
+    version_args: tuple[str, ...] = ("--version",)
 
     @property
     def install_command(self) -> tuple[str, ...]:
@@ -45,6 +47,7 @@ MANAGED_HARNESSES: tuple[ManagedHarness, ...] = (
         "opencode-ai@1.18.26",
         "opencode",
         "https://opencode.ai/docs/",
+        ("--allow-scripts=opencode-ai",),
     ),
     ManagedHarness(
         "letta",
@@ -52,6 +55,10 @@ MANAGED_HARNESSES: tuple[ManagedHarness, ...] = (
         "@letta-ai/letta-code@0.31.11",
         "letta",
         "https://github.com/letta-ai/letta-code",
+        install_environment=(
+            ("SHARP_IGNORE_GLOBAL_LIBVIPS", "1"),
+            ("NPM_CONFIG_INCLUDE", "optional"),
+        ),
     ),
     ManagedHarness(
         "claude",
@@ -137,6 +144,22 @@ def ensure_project_node(
     return current
 
 
+def _install_environment(spec: ManagedHarness) -> dict[str, str]:
+    environment = npm_environment()
+    environment.update(spec.install_environment)
+    return environment
+
+
+def _verify_harness_runtime(spec: ManagedHarness, executable: Path) -> str:
+    version = _first_output_line([str(executable), *spec.version_args])
+    if not version:
+        raise RuntimeError(
+            f"{spec.display_name} executable exists but runtime verification failed: "
+            f"{executable} {' '.join(spec.version_args)}"
+        )
+    return version
+
+
 def install_managed_harness(
     name: str,
     *,
@@ -159,7 +182,7 @@ def install_managed_harness(
     command = [str(npm), "install", "-g", *spec.npm_args, spec.package]
     outcome = run_owned(
         command,
-        env=npm_environment(),
+        env=_install_environment(spec),
         cwd=REPO_ROOT,
         timeout=INSTALL_TIMEOUT_SECONDS,
         cancellation_check=cancellation_check,
@@ -172,7 +195,9 @@ def install_managed_harness(
         raise RuntimeError(
             f"{spec.display_name} installation completed without executable {executable}"
         )
-    print(f"[OK] {spec.display_name} available at {executable}")
+
+    version = _verify_harness_runtime(spec, executable)
+    print(f"[OK] {spec.display_name} verified ({version}) at {executable}")
     return executable
 
 
