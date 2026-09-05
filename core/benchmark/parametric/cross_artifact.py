@@ -299,6 +299,9 @@ def _load_json_artifact(workspace: Path) -> tuple[dict[str, Any] | None, str | N
 
 
 _TABLE_ROW = re.compile(r"^\|\s*([^|]+?)\s*\|\s*(-?\d+)\s*\|\s*(-?\d+)\s*\|$")
+_TABLE_SEPARATOR = re.compile(
+    r"^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|$"
+)
 
 
 def _load_markdown_artifact(workspace: Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -317,7 +320,10 @@ def _load_markdown_artifact(workspace: Path) -> tuple[dict[str, Any] | None, str
         header_index = lines.index("| account | posted_count | net_cents |")
     except ValueError:
         return None, "human-readable table header mismatch"
-    if header_index + 1 >= len(lines) or lines[header_index + 1] != "| --- | ---: | ---: |":
+    if (
+        header_index + 1 >= len(lines)
+        or _TABLE_SEPARATOR.fullmatch(lines[header_index + 1]) is None
+    ):
         return None, "human-readable table separator mismatch"
 
     groups: dict[str, dict[str, Any]] = {}
