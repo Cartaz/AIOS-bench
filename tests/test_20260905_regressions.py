@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from aios_bench.harness_registry import AGENTS
+from core.benchmark.harness_registry import AGENTS
 from aios_bench.parametric import materialize_variant
 from aios_bench.parametric.cross_artifact import grade_cross_artifact_variant
 from aios_bench.tasks import load_tasks
