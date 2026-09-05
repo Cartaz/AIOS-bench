@@ -15,9 +15,14 @@ def test_goose_adapter_uses_reproducible_stream_json_mode(monkeypatch, tmp_path:
         "--provider", "openai", "--model", "local/model",
         "-t", "private benchmark prompt",
     ]
+    assert invocation.environment["XDG_STATE_HOME"] == "/tmp/aios-bench-goose/state"
+    assert invocation.environment["XDG_CACHE_HOME"] == "/tmp/aios-bench-goose/cache"
+    assert invocation.environment["GOOSE_TELEMETRY_ENABLED"] == "false"
+    assert invocation.environment["GOOSE_PROJECT_TRACKER_ENABLED"] == "false"
     assert invocation.configuration["output_format"] == "stream-json"
     assert invocation.configuration["builtin_extensions"] == ["developer"]
     assert invocation.configuration["summon_delegate"] == "default_enabled_platform_extension"
+    assert invocation.configuration["ephemeral_xdg_state"] is True
     assert GooseAdapter().assess_capabilities("subagents").is_supported
     assert not GooseAdapter().assess_capabilities("browser").is_supported
 
