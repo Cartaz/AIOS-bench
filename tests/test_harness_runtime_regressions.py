@@ -1,0 +1,69 @@
+from pathlib import Path
+
+from aios_bench.failures import UNAVAILABLE, classify_failure
+from aios_bench.manifest import probe_executable
+from aios_bench.sandbox import workspace_sandbox
+
+
+RUNTIME_ALIAS = "/tmp/aios-bench-runtime"
+
+
+def _has_sequence(command: list[str], sequence: list[str]) -> bool:
+    width = len(sequence)
+    return any(
+        command[index:index + width] == sequence
+        for index in range(len(command) - width + 1)
+    )
+
+
+def test_managed_project_runtime_survives_repository_mask(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    runtime = repo / ".venv"
+    (runtime / "bin").mkdir(parents=True)
+    workspace = (
+        repo / "results" / ".local" / "claude" / "m" / "runs" / "r"
+        / "workspaces" / "t"
+    )
+    workspace.mkdir(parents=True)
+
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("core.benchmark.sandbox.PROJECT_VENV", runtime)
+    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+
+    command = workspace_sandbox("claude", workspace, "required").wrap(["claude"])
+
+    runtime_bind = ["--ro-bind", str(runtime.resolve()), RUNTIME_ALIAS]
+    repo_hide = ["--tmpfs", str(repo.resolve())]
+    runtime_restore = ["--symlink", RUNTIME_ALIAS, str(runtime.resolve())]
+    assert _has_sequence(command, runtime_bind)
+    assert _has_sequence(command, repo_hide)
+    assert _has_sequence(command, runtime_restore)
+    assert command.index("--ro-bind", command.index("--tmpfs") + 2) < command.index(
+        "--tmpfs", command.index("--tmpfs") + 2
+    )
+
+
+def test_manifest_probe_uses_project_local_runtime(monkeypatch, tmp_path: Path):
+    project_bin = tmp_path / "bin"
+    project_bin.mkdir()
+    executable = project_bin / "claude"
+    executable.write_text("#!/bin/sh\necho claude-test-1.0\n", encoding="utf-8")
+    executable.chmod(0o755)
+
+    monkeypatch.setattr("core.benchmark.runtime_paths.PROJECT_BIN", project_bin)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    result = probe_executable("claude")
+
+    assert result["path"] == str(executable)
+    assert result["version"] == "claude-test-1.0"
+    assert result["probe_status"] == "ok"
+
+
+def test_missing_harness_is_noncomparable_unavailable_failure():
+    assert classify_failure(
+        status="unavailable",
+        success=False,
+        execution_success=False,
+        evaluation_passed=None,
+    ) == UNAVAILABLE
