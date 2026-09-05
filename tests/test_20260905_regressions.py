@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from aios_bench.harness_registry import AGENTS
 from aios_bench.parametric import materialize_variant
 from aios_bench.parametric.cross_artifact import grade_cross_artifact_variant
 from aios_bench.tasks import load_tasks
@@ -60,3 +61,21 @@ def test_escalation_tasks_make_exact_report_id_contract_explicit() -> None:
     for task in (stateful, dependency):
         assert "exact changed-ticket manifest" in task.prompt
         assert "do not mention identifiers of unchanged tickets" in task.prompt
+
+
+def test_letta_gateway_uses_ephemeral_home_and_disables_persistent_state(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "runs" / "run-1" / "workspaces" / "task-1"
+    workspace.mkdir(parents=True)
+    monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://127.0.0.1:8080/v1")
+
+    invocation = AGENTS["letta"].adapter.build("task", workspace, "Ornith")
+
+    assert invocation.environment["HOME"] == "/tmp/aios-bench-letta/home"
+    assert invocation.environment["LETTA_LOCAL_BACKEND_DIR"] == "/tmp/aios-bench-letta/backend"
+    assert invocation.environment["LETTA_SKIP_KEYCHAIN_CHECK"] == "1"
+    assert invocation.environment["LETTA_DISABLE_SESSION_PERSIST"] == "1"
+    assert invocation.environment["LETTA_CODE_TELEM"] == "0"
+    assert invocation.environment["XDG_STATE_HOME"].startswith("/tmp/aios-bench-letta/")
