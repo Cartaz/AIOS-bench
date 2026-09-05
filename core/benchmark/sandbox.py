@@ -8,9 +8,11 @@ from pathlib import Path
 from .deepseek_runtime import DEEPSEEK_SANDBOX_HOME, settings_path as deepseek_settings_path
 from .local_gateway import profile_source_dir
 from .paths import BENCHMARK_PACKAGE_ROOT, REPO_ROOT
+from .runtime_paths import PROJECT_VENV
 
 
 _WORKSPACE_ALIAS = Path("/tmp/aios-bench-workspace")
+_RUNTIME_ALIAS = Path("/tmp/aios-bench-runtime")
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,32 @@ def _benchmark_owned_paths(workspace: Path) -> tuple[list[Path], list[Path]]:
     hidden_directories.extend(result_directories)
     hidden_files.extend(result_files)
     return hidden_directories, hidden_files
+
+
+def _project_runtime_args() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Preserve the project-local runtime while the rest of the repo stays hidden.
+
+    Managed npm harnesses are intentionally installed under ``.venv``. Bubblewrap
+    later replaces the repository with tmpfs, so the runtime must be captured at
+    a neutral read-only alias before that replacement and rebound with a symlink
+    afterwards. No benchmark source or result directory is exposed by this bind.
+    """
+    runtime = PROJECT_VENV.resolve()
+    repo = REPO_ROOT.resolve()
+    if not runtime.is_dir():
+        return (), ()
+    try:
+        runtime.relative_to(repo)
+    except ValueError:
+        return (), ()
+    before_repo_hide = (
+        "--dir", str(_RUNTIME_ALIAS),
+        "--ro-bind", str(runtime), str(_RUNTIME_ALIAS),
+    )
+    after_repo_hide = (
+        "--symlink", str(_RUNTIME_ALIAS), str(runtime),
+    )
+    return before_repo_hide, after_repo_hide
 
 
 def _workspace_rebind_args(workspace: Path) -> tuple[str, ...]:
@@ -162,11 +190,13 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
 
     Local harnesses receive a read-only host plus one writable task workspace;
     the AIOS-bench repository itself is replaced by an empty tmpfs and therefore
-    cannot leak golden solutions, graders, docs or prior results. Agent Zero is
-    a special transport case whose trusted local client retains package access
-    while benchmark-owned answer material is masked. DeepSeek receives a private
-    DSH_HOME. Pi receives only a read-only benchmark-owned models.json when the
-    canonical local-gateway profile is active, rather than ambient ~/.pi state.
+    cannot leak golden solutions, graders, docs or prior results. The project
+    virtualenv is rebound read-only so Doctor-managed executables remain usable
+    without exposing repository source. Agent Zero is a special transport case
+    whose trusted local client retains package access while benchmark-owned
+    answer material is masked. DeepSeek receives a private DSH_HOME. Pi receives
+    only a read-only benchmark-owned models.json when the canonical local-gateway
+    profile is active, rather than ambient ~/.pi state.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
@@ -187,14 +217,21 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
             "--ro-bind", "/", "/", "--tmpfs", "/tmp",
         )
 
+        runtime_before, runtime_after = _project_runtime_args()
+        if adapter_name != "agentzero":
+            prefix += runtime_before
+
         if adapter_name == "agentzero":
             masks, grader_hidden = _remote_transport_args(workspace)
             prefix += masks
             strategy = "bubblewrap_remote_transport_grader_hidden"
         else:
             prefix += _workspace_rebind_args(workspace)
+            prefix += runtime_after
             grader_hidden = True
             strategy = "bubblewrap_repo_hidden_workspace_only"
+            if runtime_before:
+                strategy += "_project_runtime_readonly"
 
         if adapter_name == "deepseek":
             prefix += _deepseek_home_args(workspace)
