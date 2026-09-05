@@ -69,8 +69,8 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
     ]
     assert {task.id: task.revision for task in v4} == {
         "autonomy_expense_001": 4,
-        "stateful_support_001": 5,
-        "support_dependency_001": 4,
+        "stateful_support_001": 6,
+        "support_dependency_001": 5,
         "data_cross_artifact_001": 1,
         "learning_acquire_001": 1,
         "learning_transfer_001": 1,
