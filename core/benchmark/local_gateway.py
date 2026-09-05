@@ -149,7 +149,14 @@ def hermes_binding(*, endpoint: str) -> dict[str, str]:
     }
 
 
-def _set_flag(command: list[str], flag: str, value: str) -> list[str]:
+def _set_flag(
+    command: list[str],
+    flag: str,
+    value: str,
+    *,
+    before: str | None = None,
+) -> list[str]:
+    """Set an option without splitting a prompt-bearing flag from its value."""
     result = list(command)
     if flag in result:
         index = result.index(flag)
@@ -157,7 +164,10 @@ def _set_flag(command: list[str], flag: str, value: str) -> list[str]:
             raise RuntimeError(f"Malformed harness command: {flag} has no value")
         result[index + 1] = value
         return result
-    insert_at = max(len(result) - 1, 1)
+    if before is not None and before in result:
+        insert_at = result.index(before)
+    else:
+        insert_at = max(len(result) - 1, 1)
     result[insert_at:insert_at] = [flag, value]
     return result
 
@@ -190,7 +200,7 @@ def bind_invocation(
 
     if harness == "hermes":
         environment.update(hermes_binding(endpoint=endpoint))
-        command = _set_flag(command, "--provider", "openai-api")
+        command = _set_flag(command, "--provider", "openai-api", before="-z")
         provider = "openai-api"
     elif harness == "piagent":
         effective_model, extra = pi_binding(workspace, endpoint=endpoint, model=requested)
@@ -204,7 +214,7 @@ def bind_invocation(
         provider = PROVIDER_ID
     elif harness == "goose":
         environment.update(goose_binding(endpoint=endpoint, model=requested))
-        command = _set_flag(command, "--provider", "openai")
+        command = _set_flag(command, "--provider", "openai", before="-t")
         provider = "openai"
     elif harness == "letta":
         effective_model, extra = letta_binding(endpoint=endpoint, model=requested)
