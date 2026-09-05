@@ -10,6 +10,7 @@ TIMEOUT = "TIMEOUT"
 RUNAWAY = "RUNAWAY"
 REFUSED = "REFUSED"
 INFRA_ERROR = "INFRA_ERROR"
+UNAVAILABLE = "UNAVAILABLE"
 UNSUPPORTED = "UNSUPPORTED"
 BLOCKED = "BLOCKED"
 TOOL_SELECTION_ERROR = "TOOL_SELECTION_ERROR"
@@ -46,6 +47,7 @@ FAILURE_KINDS = frozenset({
     RUNAWAY,
     REFUSED,
     INFRA_ERROR,
+    UNAVAILABLE,
     UNSUPPORTED,
     BLOCKED,
     *DETERMINISTIC_EVALUATION_FAILURES,
@@ -98,6 +100,8 @@ def classify_failure(
     normalized = str(status).strip().lower()
     if success:
         return PASS
+    if normalized == "unavailable":
+        return UNAVAILABLE
     if normalized == "unsupported":
         return UNSUPPORTED
     if normalized == "blocked":
