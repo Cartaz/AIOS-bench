@@ -20,6 +20,15 @@ def _has_sequence(command: list[str], sequence: list[str]) -> bool:
     )
 
 
+def _sequence_index(command: list[str], sequence: list[str]) -> int:
+    width = len(sequence)
+    return next(
+        index
+        for index in range(len(command) - width + 1)
+        if command[index:index + width] == sequence
+    )
+
+
 def test_managed_project_runtime_survives_repository_mask(monkeypatch, tmp_path: Path):
     repo = tmp_path / "repo"
     runtime = repo / ".venv"
@@ -30,9 +39,9 @@ def test_managed_project_runtime_survives_repository_mask(monkeypatch, tmp_path:
     )
     workspace.mkdir(parents=True)
 
-    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
-    monkeypatch.setattr("core.benchmark.sandbox.PROJECT_VENV", runtime)
-    monkeypatch.setattr("core.benchmark.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setattr("aios_bench.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("aios_bench.sandbox.PROJECT_VENV", runtime)
+    monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
 
     command = workspace_sandbox("claude", workspace, "required").wrap(["claude"])
 
@@ -42,9 +51,8 @@ def test_managed_project_runtime_survives_repository_mask(monkeypatch, tmp_path:
     assert _has_sequence(command, runtime_bind)
     assert _has_sequence(command, repo_hide)
     assert _has_sequence(command, runtime_restore)
-    assert command.index("--ro-bind", command.index("--tmpfs") + 2) < command.index(
-        "--tmpfs", command.index("--tmpfs") + 2
-    )
+    assert _sequence_index(command, runtime_bind) < _sequence_index(command, repo_hide)
+    assert _sequence_index(command, repo_hide) < _sequence_index(command, runtime_restore)
 
 
 def test_managed_runtime_is_visible_while_repository_remains_hidden(
@@ -69,8 +77,8 @@ def test_managed_runtime_is_visible_while_repository_remains_hidden(
     secret = repo / "benchmark-secret.txt"
     secret.write_text("must-not-leak", encoding="utf-8")
 
-    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
-    monkeypatch.setattr("core.benchmark.sandbox.PROJECT_VENV", runtime)
+    monkeypatch.setattr("aios_bench.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("aios_bench.sandbox.PROJECT_VENV", runtime)
 
     command = workspace_sandbox("claude", workspace, "required").wrap([
         "/bin/sh",
@@ -101,7 +109,7 @@ def test_manifest_probe_uses_project_local_runtime(monkeypatch, tmp_path: Path):
     executable.write_text("#!/bin/sh\necho claude-test-1.0\n", encoding="utf-8")
     executable.chmod(0o755)
 
-    monkeypatch.setattr("core.benchmark.runtime_paths.PROJECT_BIN", project_bin)
+    monkeypatch.setattr("aios_bench.runtime_paths.PROJECT_BIN", project_bin)
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
 
     result = probe_executable("claude")
