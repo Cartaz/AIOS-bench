@@ -8,13 +8,20 @@ from typing import Any, Mapping
 
 from .experiments import TaskBlock, annotate_experiment, matched_schedule
 from .models import Task
-from .scoring import overall_score
 
 logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _task_outcome_text(runner: Any, task: Task, success: bool) -> tuple[str, str]:
+    """Return the persisted failure taxonomy and score shown to the operator."""
+    item = runner.latest_results().get(task.id, {})
+    label = "PASS" if success else str(item.get("failure_kind") or "FAIL")
+    score = item.get("score")
+    return label, f"{float(score):.1f}/100" if score is not None else "n/a"
 
 
 @dataclass(frozen=True)
@@ -166,9 +173,13 @@ class MatchedInterleavedScheduler:
                     trajectory = runner.run_task(task, timeout)
                     if budget is not None:
                         remaining_budget[name] = max(0.0, budget - trajectory.duration_seconds)
+                    label, score_text = _task_outcome_text(
+                        runner,
+                        task,
+                        bool(trajectory.success),
+                    )
                     print(
-                        f"    {'PASS' if trajectory.success else 'FAIL'}  "
-                        f"{overall_score(trajectory):.1f}/100  {trajectory.duration_seconds:.1f}s",
+                        f"    {label}  {score_text}  {trajectory.duration_seconds:.1f}s",
                         flush=True,
                     )
         except BaseException:
