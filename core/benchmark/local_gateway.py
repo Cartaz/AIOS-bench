@@ -132,12 +132,22 @@ def goose_binding(*, endpoint: str, model: str) -> dict[str, str]:
 
 
 def letta_binding(*, endpoint: str, model: str) -> tuple[str, dict[str, str]]:
+    runtime_root = "/tmp/aios-bench-letta"
     return (
         f"llama-cpp/{model}",
         {
             "LLAMA_CPP_BASE_URL": endpoint,
             "LLAMA_CPP_API_KEY": _api_key(),
-            "LETTA_LOCAL_BACKEND_DIR": "/tmp/aios-bench-letta/backend",
+            "HOME": f"{runtime_root}/home",
+            "XDG_CONFIG_HOME": f"{runtime_root}/xdg-config",
+            "XDG_DATA_HOME": f"{runtime_root}/xdg-data",
+            "XDG_STATE_HOME": f"{runtime_root}/xdg-state",
+            "XDG_CACHE_HOME": f"{runtime_root}/xdg-cache",
+            "LETTA_LOCAL_BACKEND_DIR": f"{runtime_root}/backend",
+            "LETTA_SKIP_KEYCHAIN_CHECK": "1",
+            "LETTA_DISABLE_SESSION_PERSIST": "1",
+            "LETTA_CODE_TELEM": "0",
+            "DISABLE_AUTOUPDATER": "1",
         },
     )
 
