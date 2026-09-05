@@ -6,6 +6,7 @@ import pytest
 
 from aios_bench.failures import UNAVAILABLE, classify_failure
 from aios_bench.manifest import probe_executable
+from aios_bench.runtime_paths import resolve_executable
 from aios_bench.sandbox import workspace_sandbox
 
 
@@ -29,6 +30,11 @@ def _sequence_index(command: list[str], sequence: list[str]) -> int:
     )
 
 
+def _patch_sandbox_roots(monkeypatch, repo: Path, runtime: Path) -> None:
+    monkeypatch.setitem(workspace_sandbox.__globals__, "REPO_ROOT", repo)
+    monkeypatch.setitem(workspace_sandbox.__globals__, "PROJECT_VENV", runtime)
+
+
 def test_managed_project_runtime_survives_repository_mask(monkeypatch, tmp_path: Path):
     repo = tmp_path / "repo"
     runtime = repo / ".venv"
@@ -39,9 +45,12 @@ def test_managed_project_runtime_survives_repository_mask(monkeypatch, tmp_path:
     )
     workspace.mkdir(parents=True)
 
-    monkeypatch.setattr("aios_bench.sandbox.REPO_ROOT", repo)
-    monkeypatch.setattr("aios_bench.sandbox.PROJECT_VENV", runtime)
-    monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: "/usr/bin/bwrap")
+    _patch_sandbox_roots(monkeypatch, repo, runtime)
+    monkeypatch.setattr(
+        workspace_sandbox.__globals__["shutil"],
+        "which",
+        lambda name: "/usr/bin/bwrap",
+    )
 
     command = workspace_sandbox("claude", workspace, "required").wrap(["claude"])
 
@@ -77,8 +86,7 @@ def test_managed_runtime_is_visible_while_repository_remains_hidden(
     secret = repo / "benchmark-secret.txt"
     secret.write_text("must-not-leak", encoding="utf-8")
 
-    monkeypatch.setattr("aios_bench.sandbox.REPO_ROOT", repo)
-    monkeypatch.setattr("aios_bench.sandbox.PROJECT_VENV", runtime)
+    _patch_sandbox_roots(monkeypatch, repo, runtime)
 
     command = workspace_sandbox("claude", workspace, "required").wrap([
         "/bin/sh",
@@ -109,8 +117,9 @@ def test_manifest_probe_uses_project_local_runtime(monkeypatch, tmp_path: Path):
     executable.write_text("#!/bin/sh\necho claude-test-1.0\n", encoding="utf-8")
     executable.chmod(0o755)
 
-    monkeypatch.setattr("aios_bench.runtime_paths.PROJECT_BIN", project_bin)
+    monkeypatch.setitem(resolve_executable.__globals__, "PROJECT_BIN", project_bin)
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setitem(probe_executable.__globals__, "resolve_executable", resolve_executable)
 
     result = probe_executable("claude")
 
