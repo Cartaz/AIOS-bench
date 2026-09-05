@@ -5,7 +5,6 @@ import json
 import os
 import platform
 import re
-import shutil
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -15,6 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from .adapters import Adapter, AgentInvocation
+from .runtime_paths import resolve_executable, with_project_bin
 
 
 MANIFEST_SCHEMA = "aios-bench/run-manifest/v2"
@@ -124,15 +124,24 @@ def sanitize_endpoint(endpoint: str | None) -> str | None:
 
 
 def probe_executable(command: str, *, timeout: float = 3.0) -> dict[str, object]:
-    """Resolve and version an invocation executable without failing the run."""
-    resolved = shutil.which(command)
+    """Resolve and version an invocation executable without failing the run.
+
+    Use the same project-local lookup contract as Doctor and task execution so a
+    managed harness cannot be reported as missing merely because the desktop app
+    was launched without activating the virtualenv in the parent shell.
+    """
+    resolved = resolve_executable(command)
     if resolved is None and Path(command).is_file():
         resolved = str(Path(command).resolve())
     result: dict[str, object] = {"command": command, "path": resolved, "version": None}
     if resolved is None:
         result["probe_status"] = "not_found"
         return result
-    probe_environment = {"PATH": os.environ.get("PATH", ""), "LC_ALL": "C", "LANG": "C"}
+    probe_environment = with_project_bin({
+        "PATH": os.environ.get("PATH", ""),
+        "LC_ALL": "C",
+        "LANG": "C",
+    })
     if os.name == "nt" and "SYSTEMROOT" in os.environ:
         probe_environment["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     try:
@@ -166,7 +175,7 @@ def build_run_manifest(
         if probe_version and invocation.command
         else {
             "command": invocation.command[0] if invocation.command else None,
-            "path": shutil.which(invocation.command[0]) if invocation.command else None,
+            "path": resolve_executable(invocation.command[0]) if invocation.command else None,
             "version": None,
             "probe_status": "skipped",
         }
