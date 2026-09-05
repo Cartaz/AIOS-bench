@@ -1,4 +1,8 @@
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from aios_bench.failures import UNAVAILABLE, classify_failure
 from aios_bench.manifest import probe_executable
@@ -41,6 +45,53 @@ def test_managed_project_runtime_survives_repository_mask(monkeypatch, tmp_path:
     assert command.index("--ro-bind", command.index("--tmpfs") + 2) < command.index(
         "--tmpfs", command.index("--tmpfs") + 2
     )
+
+
+def test_managed_runtime_is_visible_while_repository_remains_hidden(
+    monkeypatch,
+    tmp_path: Path,
+):
+    executable = shutil.which("bwrap")
+    if executable is None:
+        pytest.skip("bubblewrap is unavailable")
+
+    repo = tmp_path / "repo"
+    runtime = repo / ".venv"
+    runtime_bin = runtime / "bin"
+    runtime_bin.mkdir(parents=True)
+    marker = runtime_bin / "runtime-marker"
+    marker.write_text("managed-runtime-visible", encoding="utf-8")
+    workspace = (
+        repo / "results" / ".local" / "claude" / "m" / "runs" / "r"
+        / "workspaces" / "t"
+    )
+    workspace.mkdir(parents=True)
+    secret = repo / "benchmark-secret.txt"
+    secret.write_text("must-not-leak", encoding="utf-8")
+
+    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("core.benchmark.sandbox.PROJECT_VENV", runtime)
+
+    command = workspace_sandbox("claude", workspace, "required").wrap([
+        "/bin/sh",
+        "-c",
+        (
+            f"test \"$(cat {marker})\" = managed-runtime-visible && "
+            f"test ! -e {secret} && "
+            "printf workspace-write > runtime-check.txt"
+        ),
+    ])
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert (workspace / "runtime-check.txt").read_text(encoding="utf-8") == "workspace-write"
+    assert secret.read_text(encoding="utf-8") == "must-not-leak"
 
 
 def test_manifest_probe_uses_project_local_runtime(monkeypatch, tmp_path: Path):
