@@ -106,10 +106,10 @@ def test_deepseek_settings_are_captured_before_repository_mask(monkeypatch, tmp_
         / "workspaces" / "t"
     )
     workspace.mkdir(parents=True)
-    monkeypatch.setattr("core.benchmark.sandbox.REPO_ROOT", repo)
-    monkeypatch.setattr("core.benchmark.sandbox.PROJECT_VENV", runtime)
+    monkeypatch.setattr("aios_bench.sandbox.REPO_ROOT", repo)
+    monkeypatch.setattr("aios_bench.sandbox.PROJECT_VENV", runtime)
     monkeypatch.setattr(
-        "core.benchmark.sandbox.shutil.which",
+        "aios_bench.sandbox.shutil.which",
         lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
     )
     monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://127.0.0.1:8080/v1")
