@@ -150,7 +150,7 @@ def test_manifest_accepts_harness_observed_model(tmp_path: Path):
 
 
 def test_executable_probe_is_best_effort(monkeypatch):
-    monkeypatch.setattr("aios_bench.manifest.shutil.which", lambda command: "/opt/bin/harness")
+    monkeypatch.setattr("aios_bench.manifest.resolve_executable", lambda command: "/opt/bin/harness")
     monkeypatch.setattr(
         "aios_bench.manifest.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(stdout="Harness 1.2.3\nextra detail\n", stderr="", returncode=0),
