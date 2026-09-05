@@ -106,10 +106,16 @@ def test_deepseek_settings_are_captured_before_repository_mask(monkeypatch, tmp_
         / "workspaces" / "t"
     )
     workspace.mkdir(parents=True)
-    monkeypatch.setattr("aios_bench.sandbox.REPO_ROOT", repo)
-    monkeypatch.setattr("aios_bench.sandbox.PROJECT_VENV", runtime)
+
+    # Tests import the historical aios_bench compatibility namespace, while the
+    # callable retains the canonical core.benchmark module globals. Patch the
+    # function's actual execution namespace rather than relying on the alias.
+    sandbox_globals = workspace_sandbox.__globals__
+    monkeypatch.setitem(sandbox_globals, "REPO_ROOT", repo)
+    monkeypatch.setitem(sandbox_globals, "PROJECT_VENV", runtime)
     monkeypatch.setattr(
-        "aios_bench.sandbox.shutil.which",
+        sandbox_globals["shutil"],
+        "which",
         lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
     )
     monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://127.0.0.1:8080/v1")
