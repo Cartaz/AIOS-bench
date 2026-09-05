@@ -13,13 +13,14 @@ from core.cancellation import RunCancelled
 
 from .adapters import PiAgentAdapter
 from .evaluators import evaluate_artifacts
-from .failures import classify_failure
+from .failures import CRASH, INFRA_ERROR, UNAVAILABLE, classify_failure
 from .goose_telemetry import parse_goose_stream_json
 from .hermes_telemetry import parse_hermes_usage_report
 from .letta_telemetry import parse_letta_stream_json
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
 from .processes import spawn_owned, terminate_owned
+from .runtime_paths import with_project_bin
 from .sandbox import workspace_sandbox
 from .scoring import overall_score
 from .server_metrics import NullServerMetricsClient, OutputTokenGuard
@@ -162,7 +163,7 @@ def run_frontier_task(
         command = [*shlex.split(custom), prompt]
     sandbox = workspace_sandbox(runner.agent.name, workspace)
     command = sandbox.wrap(command)
-    env = os.environ.copy()
+    env = with_project_bin()
     env.update(invocation.environment)
     env.update({
         "AIOS_BENCH_TASK_ID": task.id,
@@ -276,7 +277,7 @@ def run_frontier_task(
     except RunCancelled:
         raise
     except FileNotFoundError as exc:
-        status = "error"
+        status = "unavailable"
         trajectory.errors = 1
         trajectory.events.append({
             "type": "error",
@@ -384,19 +385,21 @@ def run_frontier_task(
         evaluation_passed=evaluation_passed,
         events=trajectory.events,
     )
+    comparable = failure_kind not in {CRASH, INFRA_ERROR, UNAVAILABLE}
+    score = overall_score(trajectory) if comparable else None
     result = trajectory.to_dict()
     result.update({
         "status": status,
         "failure_kind": failure_kind,
         "evaluation": evaluation,
-        "score": overall_score(trajectory),
+        "score": score,
         **runner.result_identity(task),
-        "comparable": True,
+        "comparable": comparable,
         "capability_assessment": runner.agent.adapter.assess_task(task).to_dict(),
         "stdout": str(stdout_path),
         "stderr": str(stderr_path),
         "usage_source": _usage_source(trajectory, server_usage),
-        "efficiency_comparable": bool(server_usage.get("trusted_for_efficiency")),
+        "efficiency_comparable": bool(comparable and server_usage.get("trusted_for_efficiency")),
         "server_usage": server_usage,
     })
     runner.record_result(result)
