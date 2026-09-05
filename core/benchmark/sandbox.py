@@ -194,9 +194,10 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
     virtualenv is rebound read-only so Doctor-managed executables remain usable
     without exposing repository source. Agent Zero is a special transport case
     whose trusted local client retains package access while benchmark-owned
-    answer material is masked. DeepSeek receives a private DSH_HOME. Pi receives
-    only a read-only benchmark-owned models.json when the canonical local-gateway
-    profile is active, rather than ambient ~/.pi state.
+    answer material is masked. DeepSeek receives a private DSH_HOME whose retained
+    settings are captured before repository masking. Pi receives only a read-only
+    benchmark-owned models.json when the canonical local-gateway profile is active,
+    rather than ambient ~/.pi state.
     """
     selected = (mode or os.environ.get("AIOS_BENCH_SANDBOX", "auto")).strip().lower()
     if selected not in {"auto", "required", "off"}:
@@ -221,6 +222,12 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
         if adapter_name != "agentzero":
             prefix += runtime_before
 
+        # DeepSeek settings live under the owning run directory, which is hidden
+        # together with the repository below. Capture that single non-secret file
+        # into private /tmp while the source path is still visible.
+        if adapter_name == "deepseek":
+            prefix += _deepseek_home_args(workspace)
+
         if adapter_name == "agentzero":
             masks, grader_hidden = _remote_transport_args(workspace)
             prefix += masks
@@ -234,7 +241,6 @@ def workspace_sandbox(adapter_name: str, workspace: Path, mode: str | None = Non
                 strategy += "_project_runtime_readonly"
 
         if adapter_name == "deepseek":
-            prefix += _deepseek_home_args(workspace)
             strategy += "_deepseek_ephemeral_home"
 
         if adapter_name == "blackbox-verifier":
