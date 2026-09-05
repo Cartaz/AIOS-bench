@@ -156,9 +156,9 @@ class HermesAdapter(Adapter):
     })
 
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
-        # Hermes one-shot mode is purpose-built for scripts and emits only the
-        # final response on stdout. Pin an explicit built-in tool surface so a
-        # developer's `hermes tools` configuration cannot add native memory,
+        # Hermes -z is the documented script-safe one-shot surface and emits only
+        # the final response on stdout. Pin an explicit built-in tool surface so
+        # a developer's `hermes tools` configuration cannot add native memory,
         # session recall, plugins, or MCP tools to the benchmark run. Rules and
         # ambient memory/AGENTS.md injection are disabled independently while
         # provider configuration remains available for local/custom endpoints.
@@ -177,7 +177,7 @@ class HermesAdapter(Adapter):
             command += ["--provider", provider]
         if model and model != "unknown":
             command += ["--model", model]
-        command += ["--oneshot", prompt]
+        command += ["-z", prompt]
         requested = _requested_model(model)
         return AgentInvocation(
             command,
@@ -264,7 +264,9 @@ class GooseAdapter(Adapter):
         # stream-json is NDJSON and exposes native toolRequest/toolResponse
         # records, including Summon's default-enabled delegate tool. Explicitly
         # request Developer so shell/write/edit behavior does not depend on a
-        # user's local extension toggle.
+        # user's local extension toggle. Goose writes logs/cache under XDG state;
+        # keep those writes in Bubblewrap's private /tmp rather than the read-only
+        # host home used by benchmark tasks.
         command = [
             "goose", "run", "--no-session", "--quiet",
             "--output-format", "stream-json",
@@ -277,9 +279,16 @@ class GooseAdapter(Adapter):
             command += ["--model", model]
         command += ["-t", prompt]
         requested = _requested_model(model)
+        runtime_root = "/tmp/aios-bench-goose"
         return AgentInvocation(
             command,
-            {"AIOS_BENCH_WORKSPACE": str(workspace.resolve())},
+            {
+                "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
+                "XDG_STATE_HOME": f"{runtime_root}/state",
+                "XDG_CACHE_HOME": f"{runtime_root}/cache",
+                "GOOSE_TELEMETRY_ENABLED": "false",
+                "GOOSE_PROJECT_TRACKER_ENABLED": "false",
+            },
             requested_model=requested,
             resolved_model=requested,
             provider=provider,
@@ -289,6 +298,9 @@ class GooseAdapter(Adapter):
                 "output_format": "stream-json",
                 "builtin_extensions": ["developer"],
                 "summon_delegate": "default_enabled_platform_extension",
+                "ephemeral_xdg_state": True,
+                "telemetry": "disabled",
+                "project_tracker": "disabled",
             },
         )
 

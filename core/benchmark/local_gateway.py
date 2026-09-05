@@ -132,12 +132,22 @@ def goose_binding(*, endpoint: str, model: str) -> dict[str, str]:
 
 
 def letta_binding(*, endpoint: str, model: str) -> tuple[str, dict[str, str]]:
+    runtime_root = "/tmp/aios-bench-letta"
     return (
         f"llama-cpp/{model}",
         {
             "LLAMA_CPP_BASE_URL": endpoint,
             "LLAMA_CPP_API_KEY": _api_key(),
-            "LETTA_LOCAL_BACKEND_DIR": "/tmp/aios-bench-letta/backend",
+            "HOME": f"{runtime_root}/home",
+            "XDG_CONFIG_HOME": f"{runtime_root}/xdg-config",
+            "XDG_DATA_HOME": f"{runtime_root}/xdg-data",
+            "XDG_STATE_HOME": f"{runtime_root}/xdg-state",
+            "XDG_CACHE_HOME": f"{runtime_root}/xdg-cache",
+            "LETTA_LOCAL_BACKEND_DIR": f"{runtime_root}/backend",
+            "LETTA_SKIP_KEYCHAIN_CHECK": "1",
+            "LETTA_DISABLE_SESSION_PERSIST": "1",
+            "LETTA_CODE_TELEM": "0",
+            "DISABLE_AUTOUPDATER": "1",
         },
     )
 
@@ -149,7 +159,14 @@ def hermes_binding(*, endpoint: str) -> dict[str, str]:
     }
 
 
-def _set_flag(command: list[str], flag: str, value: str) -> list[str]:
+def _set_flag(
+    command: list[str],
+    flag: str,
+    value: str,
+    *,
+    before: str | None = None,
+) -> list[str]:
+    """Set an option without splitting a prompt-bearing flag from its value."""
     result = list(command)
     if flag in result:
         index = result.index(flag)
@@ -157,7 +174,10 @@ def _set_flag(command: list[str], flag: str, value: str) -> list[str]:
             raise RuntimeError(f"Malformed harness command: {flag} has no value")
         result[index + 1] = value
         return result
-    insert_at = max(len(result) - 1, 1)
+    if before is not None and before in result:
+        insert_at = result.index(before)
+    else:
+        insert_at = max(len(result) - 1, 1)
     result[insert_at:insert_at] = [flag, value]
     return result
 
@@ -190,7 +210,7 @@ def bind_invocation(
 
     if harness == "hermes":
         environment.update(hermes_binding(endpoint=endpoint))
-        command = _set_flag(command, "--provider", "openai-api")
+        command = _set_flag(command, "--provider", "openai-api", before="-z")
         provider = "openai-api"
     elif harness == "piagent":
         effective_model, extra = pi_binding(workspace, endpoint=endpoint, model=requested)
@@ -204,7 +224,7 @@ def bind_invocation(
         provider = PROVIDER_ID
     elif harness == "goose":
         environment.update(goose_binding(endpoint=endpoint, model=requested))
-        command = _set_flag(command, "--provider", "openai")
+        command = _set_flag(command, "--provider", "openai", before="-t")
         provider = "openai"
     elif harness == "letta":
         effective_model, extra = letta_binding(endpoint=endpoint, model=requested)

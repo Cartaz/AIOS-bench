@@ -71,10 +71,14 @@ def test_opencode_binding_references_api_key_without_embedding_secret(monkeypatc
 def test_goose_binding_pins_provider_main_and_fast_model(monkeypatch, tmp_path: Path):
     workspace = _workspace(tmp_path)
     monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://192.168.1.20:8080/v1")
+    monkeypatch.delenv("AIOS_BENCH_GOOSE_PROVIDER", raising=False)
     invocation = AGENTS["goose"].adapter.build("task", workspace, "Ornith")
 
     provider_index = invocation.command.index("--provider")
+    prompt_index = invocation.command.index("-t")
     assert invocation.command[provider_index + 1] == "openai"
+    assert provider_index < prompt_index
+    assert invocation.command[prompt_index + 1] == "task"
     assert invocation.environment["GOOSE_MODEL"] == "Ornith"
     assert invocation.environment["GOOSE_FAST_MODEL"] == "Ornith"
     assert invocation.environment["OPENAI_HOST"] == "http://192.168.1.20:8080"
@@ -96,11 +100,14 @@ def test_letta_binding_uses_current_llama_cpp_provider(monkeypatch, tmp_path: Pa
 def test_hermes_binding_forces_openai_compatible_route(monkeypatch, tmp_path: Path):
     workspace = _workspace(tmp_path)
     monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://127.0.0.1:8080/v1")
-    monkeypatch.setenv("AIOS_BENCH_HERMES_PROVIDER", "something-ambient")
+    monkeypatch.delenv("AIOS_BENCH_HERMES_PROVIDER", raising=False)
     invocation = AGENTS["hermes"].adapter.build("task", workspace, "Ornith")
 
     provider_index = invocation.command.index("--provider")
+    prompt_index = invocation.command.index("-z")
     assert invocation.command[provider_index + 1] == "openai-api"
+    assert provider_index < prompt_index
+    assert invocation.command[prompt_index + 1] == "task"
     assert invocation.provider == "openai-api"
     assert invocation.environment["OPENAI_BASE_URL"] == "http://127.0.0.1:8080/v1"
 

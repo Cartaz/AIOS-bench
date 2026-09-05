@@ -20,7 +20,7 @@ def test_hermes_adapter_pins_isolated_oneshot_tool_surface(monkeypatch, tmp_path
     assert "memory" not in toolsets
     assert "session_search" not in toolsets
     assert invocation.command[-4:] == [
-        "--model", "local/model", "--oneshot", "private benchmark prompt",
+        "--model", "local/model", "-z", "private benchmark prompt",
     ]
     assert invocation.provider == "openai"
     assert invocation.requested_model == "local/model"

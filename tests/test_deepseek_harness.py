@@ -97,6 +97,42 @@ def test_deepseek_sandbox_mounts_settings_into_private_tmp_home(monkeypatch, tmp
     assert prefix[index + 1] == target
 
 
+def test_deepseek_settings_are_captured_before_repository_mask(monkeypatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    runtime = repo / ".venv"
+    (runtime / "bin").mkdir(parents=True)
+    workspace = (
+        repo / "results" / ".local" / "deepseek" / "m" / "runs" / "r"
+        / "workspaces" / "t"
+    )
+    workspace.mkdir(parents=True)
+
+    # Tests import the historical aios_bench compatibility namespace, while the
+    # callable retains the canonical core.benchmark module globals. Patch the
+    # function's actual execution namespace rather than relying on the alias.
+    sandbox_globals = workspace_sandbox.__globals__
+    monkeypatch.setitem(sandbox_globals, "REPO_ROOT", repo)
+    monkeypatch.setitem(sandbox_globals, "PROJECT_VENV", runtime)
+    monkeypatch.setattr(
+        sandbox_globals["shutil"],
+        "which",
+        lambda name: "/usr/bin/bwrap" if name == "bwrap" else None,
+    )
+    monkeypatch.setenv("AIOS_BENCH_ENDPOINT", "http://127.0.0.1:8080/v1")
+    DeepSeekHarnessAdapter().build("task", workspace, "model")
+
+    prefix = list(workspace_sandbox("deepseek", workspace, "required").command_prefix)
+    source = str(settings_path(workspace).resolve())
+    source_index = prefix.index(source)
+    repo_hide_index = next(
+        index
+        for index in range(len(prefix) - 1)
+        if prefix[index] == "--tmpfs" and prefix[index + 1] == str(repo.resolve())
+    )
+
+    assert source_index < repo_hide_index
+
+
 def test_deepseek_sandbox_fails_closed_without_bubblewrap(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("aios_bench.sandbox.shutil.which", lambda name: None)
     with pytest.raises(RuntimeError, match="DeepSeek Harness isolation requires bubblewrap"):
