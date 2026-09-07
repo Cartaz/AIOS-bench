@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from aios_bench.processes import OwnedProcessOutcome
-from aios_bench.runtime_readiness import probe_runtime_readiness
+from aios_bench.runtime_readiness import RUNTIME_PROBE_MARKER, probe_runtime_readiness
 
 
 class _Runner:
@@ -35,6 +35,8 @@ def test_runtime_probe_success_is_ready_unscored_and_cleans_workspace(monkeypatc
 
     def fake_run_owned(command, **kwargs):
         observed.update(kwargs)
+        kwargs["stdout"].write(f'{{"message":"{RUNTIME_PROBE_MARKER}"}}\n')
+        kwargs["stdout"].flush()
         return OwnedProcessOutcome(returncode=0)
 
     monkeypatch.setattr("aios_bench.runtime_readiness.run_owned", fake_run_owned)
@@ -48,6 +50,27 @@ def test_runtime_probe_success_is_ready_unscored_and_cleans_workspace(monkeypatc
     assert not (runner.run_dir / "workspaces" / "_runtime_probe").exists()
     assert runner.events[-1]["event"] == "harness_runtime_probe"
     assert runner.events[-1]["status"] == "ready"
+
+
+def test_runtime_probe_zero_exit_without_model_marker_is_blocked(monkeypatch, tmp_path):
+    runner = _Runner(tmp_path)
+    monkeypatch.setattr(
+        "aios_bench.runtime_readiness.prepare_harness_process",
+        lambda **kwargs: _prepared(),
+    )
+
+    def fake_run_owned(command, **kwargs):
+        kwargs["stdout"].write("CLI exited without an inference result\n")
+        kwargs["stdout"].flush()
+        return OwnedProcessOutcome(returncode=0)
+
+    monkeypatch.setattr("aios_bench.runtime_readiness.run_owned", fake_run_owned)
+
+    result = probe_runtime_readiness(runner)
+
+    assert result.ready is False
+    assert result.kind == "invalid_probe_response"
+    assert result.returncode == 0
 
 
 def test_runtime_probe_timeout_becomes_blocked_not_a_scored_task(monkeypatch, tmp_path):
