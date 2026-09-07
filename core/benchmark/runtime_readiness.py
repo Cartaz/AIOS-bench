@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import time
@@ -94,15 +95,50 @@ def _result(
     return result
 
 
-def _has_model_ready_marker(stdout_path: Path) -> bool:
+def _goose_assistant_text(stream_text: str) -> str:
+    """Reassemble assistant text chunks from Goose ``stream-json`` output.
+
+    Goose may split even a short response across multiple NDJSON message events.
+    Readiness needs the reconstructed model response, while normal telemetry
+    intentionally continues to discard message text.
+    """
+    chunks: list[str] = []
+    for line in stream_text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict) or item.get("type") != "message":
+            continue
+        message = item.get("message")
+        if not isinstance(message, dict):
+            continue
+        if str(message.get("role", "")).strip().lower() != "assistant":
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "text":
+                continue
+            text = part.get("text")
+            if isinstance(text, str):
+                chunks.append(text)
+    return "".join(chunks)
+
+
+def _has_model_ready_marker(stdout_path: Path, *, adapter_name: str) -> bool:
     """Require evidence that the model, not merely the CLI, completed the probe."""
     try:
-        return RUNTIME_PROBE_MARKER in stdout_path.read_text(
-            encoding="utf-8",
-            errors="replace",
-        )
+        stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return False
+
+    if adapter_name == "goose":
+        return RUNTIME_PROBE_MARKER in _goose_assistant_text(stdout)
+    return RUNTIME_PROBE_MARKER in stdout
 
 
 def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
@@ -226,7 +262,7 @@ def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
             )
-        if not _has_model_ready_marker(stdout_path):
+        if not _has_model_ready_marker(stdout_path, adapter_name=runner.agent.name):
             return _result(
                 runner,
                 ready=False,
