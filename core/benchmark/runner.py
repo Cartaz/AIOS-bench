@@ -14,6 +14,11 @@ from .harness_registry import AGENTS, AgentConfig
 from .manifest import build_run_manifest
 from .models import Task, Trajectory
 from .retention import prune_run_artifacts
+from .runtime_readiness import (
+    RUNTIME_PROBE_TIMEOUT_SECONDS,
+    RuntimeReadiness,
+    probe_runtime_readiness,
+)
 from .scoring import overall_score
 from .sandbox import workspace_sandbox
 
@@ -99,6 +104,8 @@ class BenchmarkRunner:
         self.resume = resume
         self.model = model
         self.keep_raw = keep_raw
+        self.cancellation_check = getattr(self, "cancellation_check", None)
+        self._runtime_readiness_result: RuntimeReadiness | None = None
         self.model_dir = results_dir / agent.name / _model_path_component(model)
         self.model_dir.mkdir(parents=True, exist_ok=True)
         if run_id is None:
@@ -155,6 +162,13 @@ class BenchmarkRunner:
                 "task_timeout_seconds": self.task_timeout,
                 "total_timeout_seconds": self.total_timeout,
                 "total_timeout_semantics": "active_execution_budget_per_harness",
+                "runtime_readiness_probe": {
+                    "enabled": True,
+                    "timeout_seconds": min(self.task_timeout, RUNTIME_PROBE_TIMEOUT_SECONDS),
+                    "scored": False,
+                    "charged_to_total_timeout": False,
+                    "workspace_scope": "ephemeral",
+                },
                 "custom_command_configured": bool(custom_command),
                 "custom_command_sha256": (
                     hashlib.sha256(custom_command.encode("utf-8")).hexdigest()
@@ -389,6 +403,12 @@ class BenchmarkRunner:
             assessment,
         )
 
+    def runtime_readiness(self) -> RuntimeReadiness:
+        """Return one cached runtime probe result for this in-process run."""
+        if self._runtime_readiness_result is None:
+            self._runtime_readiness_result = probe_runtime_readiness(self)
+        return self._runtime_readiness_result
+
     def cleanup(self) -> dict[str, int | bool]:
         return prune_run_artifacts(self.run_dir, keep_raw=self.keep_raw)
 
@@ -429,6 +449,16 @@ class BenchmarkRunner:
         remaining = [task for task in tasks if task.id not in done]
         print(f"AIOS-bench | {self.agent.display_name} | model={self.model} | run={self.run_id}")
         print(f"Tasks: {len(remaining)} (resume={'on' if self.resume else 'off'})")
+
+        readiness = None
+        if any(self.agent.adapter.assess_task(task).is_supported for task in remaining):
+            readiness = self.runtime_readiness()
+            state = "READY" if readiness.ready else "BLOCKED"
+            print(
+                f"Runtime readiness: {state} ({readiness.kind}, "
+                f"{readiness.duration_seconds:.1f}s)"
+            )
+
         for index, task in enumerate(remaining, 1):
             assessment = self.agent.adapter.assess_task(task)
             if not assessment.is_supported:
@@ -438,6 +468,19 @@ class BenchmarkRunner:
                     flush=True,
                 )
                 self._write_unsupported(task, assessment)
+                continue
+            if readiness is not None and not readiness.ready:
+                print(
+                    f"[{index}/{len(remaining)}] {task.id} [T{task.tier}] ... BLOCKED "
+                    f"(runtime readiness: {readiness.kind})",
+                    flush=True,
+                )
+                self._write_noncomparable(
+                    task,
+                    "blocked",
+                    readiness.task_reason(),
+                    assessment,
+                )
                 continue
             latest = self._latest_results()
             missing_dependencies = [
