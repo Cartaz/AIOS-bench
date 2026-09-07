@@ -125,6 +125,7 @@ def goose_binding(*, endpoint: str, model: str) -> dict[str, str]:
         "GOOSE_PROVIDER": "openai",
         "GOOSE_MODEL": model,
         "GOOSE_FAST_MODEL": model,
+        "GOOSE_PATH_ROOT": "/tmp/aios-bench-goose",
         "OPENAI_HOST": host,
         "OPENAI_BASE_PATH": base_path,
         "OPENAI_API_KEY": key,
@@ -154,9 +155,53 @@ def letta_binding(*, endpoint: str, model: str) -> tuple[str, dict[str, str]]:
 
 def hermes_binding(*, endpoint: str) -> dict[str, str]:
     return {
+        "HERMES_HOME": "/tmp/aios-bench-hermes",
         "OPENAI_BASE_URL": endpoint,
         "OPENAI_API_KEY": _api_key(),
     }
+
+
+def _environment_value(environment: dict[str, str], key: str) -> str:
+    return str(environment.get(key) or os.environ.get(key) or "").strip()
+
+
+def _is_first_party_anthropic_endpoint(endpoint: str) -> bool:
+    hostname = (urlsplit(endpoint).hostname or "").lower()
+    return hostname == "api.anthropic.com" or hostname.endswith(".anthropic.com")
+
+
+def _bind_claude_gateway(invocation: Any) -> Any:
+    """Make isolated Claude gateway runs non-interactive without borrowing login state.
+
+    ``CLAUDE_CONFIG_DIR`` intentionally hides ambient subscription credentials.
+    For a non-Anthropic gateway that does not require authentication, Claude Code
+    still requires a credential source before it will enter ``-p`` mode. Supply
+    the benchmark's non-secret local placeholder only when no explicit credential
+    is already available. Authenticated gateways can override it through the
+    normal AIOS/Anthropic environment variables.
+    """
+
+    endpoint = str(invocation.endpoint or "").strip()
+    if not endpoint or _is_first_party_anthropic_endpoint(endpoint):
+        return invocation
+
+    environment = dict(invocation.environment)
+    configuration = dict(invocation.configuration)
+    credential_keys = (
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+    )
+    if any(_environment_value(environment, key) for key in credential_keys):
+        configuration["gateway_auth_strategy"] = "explicit_or_inherited_credential"
+    else:
+        environment["ANTHROPIC_API_KEY"] = _api_key()
+        configuration.update({
+            "api_key_configured": True,
+            "api_key_source": "benchmark_local_placeholder",
+            "gateway_auth_strategy": "benchmark_local_placeholder",
+        })
+    return replace(invocation, environment=environment, configuration=configuration)
 
 
 def _set_flag(
@@ -195,11 +240,14 @@ def bind_invocation(
     special cases. It preserves concrete adapter types (notably Pi RPC) while
     replacing ambient provider configuration with benchmark-owned runtime state.
     """
+    if harness == "claude":
+        return _bind_claude_gateway(invocation)
+
     endpoint = os.environ.get("AIOS_BENCH_ENDPOINT", "").strip()
     requested = str(model or "").strip()
     if not endpoint or not requested or requested == "unknown":
         return invocation
-    if harness in {"agentzero", "claude", "deepseek"}:
+    if harness in {"agentzero", "deepseek"}:
         return invocation
 
     command = list(invocation.command)
@@ -212,6 +260,7 @@ def bind_invocation(
         environment.update(hermes_binding(endpoint=endpoint))
         command = _set_flag(command, "--provider", "openai-api", before="-z")
         provider = "openai-api"
+        configuration["runtime_state_root"] = "/tmp/aios-bench-hermes"
     elif harness == "piagent":
         effective_model, extra = pi_binding(workspace, endpoint=endpoint, model=requested)
         environment.update(extra)
@@ -226,11 +275,17 @@ def bind_invocation(
         environment.update(goose_binding(endpoint=endpoint, model=requested))
         command = _set_flag(command, "--provider", "openai", before="-t")
         provider = "openai"
+        configuration["runtime_state_root"] = "/tmp/aios-bench-goose"
     elif harness == "letta":
         effective_model, extra = letta_binding(endpoint=endpoint, model=requested)
         environment.update(extra)
+        command = _set_flag(command, "--backend", "local", before="-p")
         command = _set_flag(command, "--model", effective_model)
         provider = "llama-cpp"
+        configuration.update({
+            "backend": "local",
+            "runtime_state_root": "/tmp/aios-bench-letta",
+        })
     else:
         return invocation
 
