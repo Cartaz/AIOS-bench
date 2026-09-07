@@ -11,6 +11,25 @@ from .runtime_paths import with_project_bin
 from .sandbox import SandboxPlan, workspace_sandbox
 
 
+_CLAUDE_RUNTIME_ROOT = "/tmp/aios-bench-claude"
+_CLAUDE_INHERITED_ENVIRONMENT_KEYS = (
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "COLORTERM",
+    "TZ",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+)
+
+
 @dataclass(frozen=True)
 class PreparedHarnessProcess:
     """Fully resolved local harness launch, before benchmark-owned services start."""
@@ -21,17 +40,48 @@ class PreparedHarnessProcess:
     sandbox: SandboxPlan
 
 
-def _apply_harness_environment_policy(adapter_name: str, environment: dict[str, str]) -> None:
-    """Apply execution-boundary environment isolation required by a harness.
+def _base_environment(adapter_name: str) -> dict[str, str]:
+    """Return the host environment intentionally inherited by one harness.
 
-    Claude Code's subprocess credential scrub uses ``$HOME`` as a Bubblewrap
-    mask target before Bash commands run. AIOS-Bench deliberately makes the host
-    home read-only, so point Claude at the already-private temporary filesystem
-    instead. The scrub remains enabled; no real user home or credentials are
-    made writable to the harness.
+    Most harnesses still rely on their existing ambient-environment contract.
+    Claude is different: its subprocess credential scrub derives Bubblewrap mask
+    paths from the parent environment. Passing unrelated harness state (for
+    example an ``OPENCODE_CONFIG_DIR`` below the read-only host home) can make
+    Claude's Bash sandbox fail before the requested command starts. Give Claude
+    only process/runtime values it actually needs; adapter-owned configuration is
+    merged afterwards.
     """
-    if adapter_name == "claude":
-        environment["HOME"] = "/tmp"
+    if adapter_name != "claude":
+        return with_project_bin()
+
+    inherited = {
+        key: value
+        for key in _CLAUDE_INHERITED_ENVIRONMENT_KEYS
+        if (value := os.environ.get(key))
+    }
+    return with_project_bin(inherited)
+
+
+def _apply_harness_environment_policy(adapter_name: str, environment: dict[str, str]) -> None:
+    """Apply execution-boundary state isolation required by a harness."""
+    if adapter_name != "claude":
+        return
+
+    # Claude Code's subprocess scrub creates/masks shell and credential paths
+    # before Bash executes. Keep every derived user-state path inside the outer
+    # Bubblewrap private /tmp. The scrub itself stays enabled, and the real user
+    # home remains read-only and absent from Claude's operational environment.
+    environment.update(
+        {
+            "HOME": f"{_CLAUDE_RUNTIME_ROOT}/home",
+            "TMPDIR": f"{_CLAUDE_RUNTIME_ROOT}/tmp",
+            "XDG_CONFIG_HOME": f"{_CLAUDE_RUNTIME_ROOT}/xdg-config",
+            "XDG_DATA_HOME": f"{_CLAUDE_RUNTIME_ROOT}/xdg-data",
+            "XDG_STATE_HOME": f"{_CLAUDE_RUNTIME_ROOT}/xdg-state",
+            "XDG_CACHE_HOME": f"{_CLAUDE_RUNTIME_ROOT}/xdg-cache",
+            "CLAUDE_BASH_NO_LOGIN": "1",
+        }
+    )
 
 
 def prepare_harness_process(
@@ -58,11 +108,11 @@ def prepare_harness_process(
         command = [*shlex.split(custom), prompt]
 
     sandbox = workspace_sandbox(adapter_name, workspace)
-    environment = with_project_bin()
+    environment = _base_environment(adapter_name)
     environment.update(invocation.environment)
-    _apply_harness_environment_policy(adapter_name, environment)
     if extra_environment:
         environment.update({str(key): str(value) for key, value in extra_environment.items()})
+    _apply_harness_environment_policy(adapter_name, environment)
 
     return PreparedHarnessProcess(
         invocation=invocation,
