@@ -60,10 +60,15 @@ MANAGED_HARNESSES: tuple[ManagedHarness, ...] = (
             ("NPM_CONFIG_INCLUDE", "optional"),
         ),
     ),
+    # 2.1.216 introduced a Linux Bubblewrap regression in Claude's subprocess
+    # sandbox: deny-bind mountpoints below read-only ancestors can abort every
+    # Bash call before the requested command starts. AIOS-Bench itself runs each
+    # harness inside a strict outer Bubblewrap sandbox, so keep the latest known
+    # compatible pre-regression release until upstream fixes this path.
     ManagedHarness(
         "claude",
         "Claude Code",
-        "@anthropic-ai/claude-code@2.1.236",
+        "@anthropic-ai/claude-code@2.1.215",
         "claude",
         "https://code.claude.com/docs/",
     ),
