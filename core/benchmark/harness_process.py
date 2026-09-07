@@ -29,10 +29,9 @@ _CLAUDE_INHERITED_ENVIRONMENT_KEYS = (
     "ANTHROPIC_AUTH_TOKEN",
     "CLAUDE_CODE_OAUTH_TOKEN",
 )
-# ENV_SCRUB hardening forces Claude Code back to its default permission mode
-# unless allowedTools is declared in settings (the CLI --allowedTools flag alone
-# does not satisfy that gate). These are the native tool families AIOS-Bench
-# expects Claude to use unattended inside the outer workspace sandbox.
+# Claude runs inside AIOS-Bench's outer Bubblewrap workspace sandbox. Keep the
+# native tool surface explicit for unattended execution, but disable Claude's
+# own Bash sandbox so Linux never has to nest another Bubblewrap boundary.
 _CLAUDE_ALLOWED_TOOLS = (
     "Bash",
     "Edit",
@@ -44,7 +43,13 @@ _CLAUDE_ALLOWED_TOOLS = (
     "Write",
 )
 _CLAUDE_SETTINGS_JSON = json.dumps(
-    {"allowedTools": list(_CLAUDE_ALLOWED_TOOLS)},
+    {
+        "allowedTools": list(_CLAUDE_ALLOWED_TOOLS),
+        "sandbox": {
+            "enabled": False,
+            "failIfUnavailable": False,
+        },
+    },
     separators=(",", ":"),
 )
 
@@ -63,12 +68,9 @@ def _base_environment(adapter_name: str) -> dict[str, str]:
     """Return the host environment intentionally inherited by one harness.
 
     Most harnesses still rely on their existing ambient-environment contract.
-    Claude is different: its subprocess credential scrub derives Bubblewrap mask
-    paths from the parent environment. Passing unrelated harness state (for
-    example an ``OPENCODE_CONFIG_DIR`` below the read-only host home) can make
-    Claude's Bash sandbox fail before the requested command starts. Give Claude
-    only process/runtime values it actually needs; adapter-owned configuration is
-    merged afterwards.
+    Claude is different: its runtime can discover a broad set of user and tool
+    configuration from the parent process. Give Claude only process/runtime
+    values it actually needs; adapter-owned configuration is merged afterwards.
     """
     if adapter_name != "claude":
         return with_project_bin()
@@ -106,10 +108,13 @@ def _apply_harness_environment_policy(adapter_name: str, environment: dict[str, 
     if adapter_name != "claude":
         return
 
-    # Claude Code's subprocess scrub creates/masks shell and credential paths
-    # before Bash executes. Keep every derived user-state path inside the outer
-    # Bubblewrap private /tmp. The scrub itself stays enabled, and the real user
-    # home remains read-only and absent from Claude's operational environment.
+    # The outer AIOS-Bench Bubblewrap process is the canonical filesystem and
+    # process boundary. Claude's subprocess credential scrub also enables Linux
+    # subprocess isolation and can start a nested Bubblewrap instance before a
+    # Bash command runs, which conflicts with the read-only host mounted by the
+    # outer sandbox. Strip that switch even if an adapter/custom command supplied
+    # it, while keeping all Claude user-state paths inside private /tmp.
+    environment.pop("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", None)
     environment.update(
         {
             "HOME": f"{_CLAUDE_RUNTIME_ROOT}/home",
