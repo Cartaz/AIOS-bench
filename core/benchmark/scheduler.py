@@ -24,6 +24,15 @@ def _task_outcome_text(runner: Any, task: Task, success: bool) -> tuple[str, str
     return label, f"{float(score):.1f}/100" if score is not None else "n/a"
 
 
+def _needs_runtime_probe(runner: Any, tasks: list[Task]) -> bool:
+    """Skip readiness work when no supported task remains for this runner."""
+    done = runner.completed(tasks)
+    return any(
+        task.id not in done and runner.agent.adapter.assess_task(task).is_supported
+        for task in tasks
+    )
+
+
 @dataclass(frozen=True)
 class InterleavedResult:
     exit_code: int
@@ -115,6 +124,7 @@ class MatchedInterleavedScheduler:
             name: runner.total_timeout for name, runner in self.runners.items()
         }
         aborted: set[str] = set()
+        runtime_readiness: dict[str, Any] = {}
         by_id = {task.id: task for task in self.tasks}
 
         print(
@@ -124,6 +134,18 @@ class MatchedInterleavedScheduler:
         try:
             for runner in self.runners.values():
                 self._annotate(runner)
+
+            for name, runner in self.runners.items():
+                if not _needs_runtime_probe(runner, self.tasks):
+                    continue
+                readiness = runner.runtime_readiness()
+                runtime_readiness[name] = readiness
+                state = "READY" if readiness.ready else "BLOCKED"
+                print(
+                    f"Runtime readiness {name}: {state} "
+                    f"({readiness.kind}, {readiness.duration_seconds:.1f}s)"
+                )
+
             for block in self.blocks:
                 task = by_id[block.task_id]
                 print(
@@ -145,6 +167,21 @@ class MatchedInterleavedScheduler:
                             f"({', '.join(sorted(assessment.missing))})"
                         )
                         continue
+
+                    readiness = runtime_readiness.get(name)
+                    if readiness is not None and not readiness.ready:
+                        runner.record_noncomparable(
+                            task,
+                            "blocked",
+                            readiness.task_reason(),
+                            assessment,
+                        )
+                        print(
+                            f"[{position}/{len(block.harness_order)}] {name}: BLOCKED "
+                            f"(runtime readiness: {readiness.kind})"
+                        )
+                        continue
+
                     latest = runner.latest_results()
                     missing_dependencies = [
                         dependency for dependency in task.depends_on
