@@ -19,9 +19,15 @@ from .processes import run_owned
 RUNTIME_PROBE_TASK_ID = "_runtime_probe"
 RUNTIME_PROBE_TIMEOUT_SECONDS = 120.0
 RUNTIME_PROBE_MARKER = "AIOS_BENCH_READY"
+CLAUDE_BASH_PROBE_MARKER = "AIOS_BENCH_BASH_READY"
 RUNTIME_PROBE_PROMPT = (
     "AIOS-Bench runtime readiness probe. Do not use tools or modify files. "
     f"Reply exactly: {RUNTIME_PROBE_MARKER}"
+)
+CLAUDE_RUNTIME_PROBE_PROMPT = (
+    "AIOS-Bench runtime readiness probe. Use the Bash tool exactly once to run: "
+    f"`printf {CLAUDE_BASH_PROBE_MARKER}`. Do not use any other tools or modify files. "
+    f"After Bash succeeds, reply exactly: {RUNTIME_PROBE_MARKER}"
 )
 
 
@@ -95,6 +101,12 @@ def _result(
     return result
 
 
+def _probe_prompt(adapter_name: str) -> str:
+    if adapter_name == "claude":
+        return CLAUDE_RUNTIME_PROBE_PROMPT
+    return RUNTIME_PROBE_PROMPT
+
+
 def _goose_assistant_text(stream_text: str) -> str:
     """Reassemble assistant text chunks from Goose ``stream-json`` output.
 
@@ -129,16 +141,84 @@ def _goose_assistant_text(stream_text: str) -> str:
     return "".join(chunks)
 
 
+def _claude_probe_evidence(stream_text: str) -> tuple[str, bool]:
+    """Return reconstructed assistant text and proof of one successful Bash probe."""
+    assistant_chunks: list[str] = []
+    bash_calls: set[str] = set()
+    bash_succeeded = False
+
+    for line in stream_text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict):
+            continue
+
+        message = item.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+
+        if item.get("type") == "assistant":
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "text":
+                    text = part.get("text")
+                    if isinstance(text, str):
+                        assistant_chunks.append(text)
+                elif part.get("type") == "tool_use" and part.get("name") == "Bash":
+                    call_id = part.get("id")
+                    if call_id is not None:
+                        bash_calls.add(str(call_id))
+        elif item.get("type") == "user":
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") != "tool_result":
+                    continue
+                call_id = part.get("tool_use_id")
+                if call_id is None or str(call_id) not in bash_calls or part.get("is_error") is True:
+                    continue
+                result_text = part.get("content")
+                if isinstance(result_text, str) and CLAUDE_BASH_PROBE_MARKER in result_text:
+                    bash_succeeded = True
+
+    return "".join(assistant_chunks), bash_succeeded
+
+
+def _read_stdout(stdout_path: Path) -> str | None:
+    try:
+        return stdout_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
 def _has_model_ready_marker(stdout_path: Path, *, adapter_name: str) -> bool:
     """Require evidence that the model, not merely the CLI, completed the probe."""
-    try:
-        stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    stdout = _read_stdout(stdout_path)
+    if stdout is None:
         return False
 
     if adapter_name == "goose":
         return RUNTIME_PROBE_MARKER in _goose_assistant_text(stdout)
+    if adapter_name == "claude":
+        assistant_text, _ = _claude_probe_evidence(stdout)
+        return RUNTIME_PROBE_MARKER in assistant_text
     return RUNTIME_PROBE_MARKER in stdout
+
+
+def _has_required_tool_evidence(stdout_path: Path, *, adapter_name: str) -> bool:
+    if adapter_name != "claude":
+        return True
+    stdout = _read_stdout(stdout_path)
+    if stdout is None:
+        return False
+    _, bash_succeeded = _claude_probe_evidence(stdout)
+    return bash_succeeded
 
 
 def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
@@ -148,13 +228,16 @@ def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
     Bubblewrap plan and environment builder as a scored task. Its workspace is
     separate and deleted afterwards, and no server metrics or task score are
     collected. A failed probe therefore represents runtime/configuration health,
-    not model capability.
+    not model capability. Harness-specific probes may additionally exercise a
+    critical tool path when plain inference would not validate task readiness.
     """
 
     cancellation_check = runner.cancellation_check
     if cancellation_check is not None and cancellation_check():
         raise RunCancelled("Benchmark run cancelled")
 
+    adapter_name = runner.agent.name
+    probe_prompt = _probe_prompt(adapter_name)
     timeout = min(float(runner.task_timeout), RUNTIME_PROBE_TIMEOUT_SECONDS)
     workspace = runner.run_dir / "workspaces" / RUNTIME_PROBE_TASK_ID
     shutil.rmtree(workspace, ignore_errors=True)
@@ -169,14 +252,14 @@ def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
 
     try:
         prepared = prepare_harness_process(
-            adapter_name=runner.agent.name,
+            adapter_name=adapter_name,
             adapter=runner.agent.adapter,
-            prompt=RUNTIME_PROBE_PROMPT,
+            prompt=probe_prompt,
             workspace=workspace,
             model=runner.model,
             extra_environment={
                 "AIOS_BENCH_TASK_ID": RUNTIME_PROBE_TASK_ID,
-                "AIOS_BENCH_AGENT": runner.agent.name,
+                "AIOS_BENCH_AGENT": adapter_name,
                 "AIOS_BENCH_MODEL": runner.model,
                 "AIOS_BENCH_RUN_ID": runner.run_id,
                 "AIOS_BENCH_TASK_TIMEOUT_SECONDS": str(timeout),
@@ -193,7 +276,7 @@ def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
                 command=prepared.command,
                 runaway_check=None,
                 cancellation_check=cancellation_check,
-            ).run(RUNTIME_PROBE_PROMPT)
+            ).run(probe_prompt)
             stdout_path.write_text(outcome.stdout, encoding="utf-8")
             stderr_path.write_text(outcome.stderr, encoding="utf-8")
             if outcome.cancelled:
@@ -262,7 +345,18 @@ def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
             )
-        if not _has_model_ready_marker(stdout_path, adapter_name=runner.agent.name):
+        if not _has_required_tool_evidence(stdout_path, adapter_name=adapter_name):
+            return _result(
+                runner,
+                ready=False,
+                kind="tool_probe_failed",
+                message="runtime inference succeeded but the required harness tool path did not",
+                started=started,
+                returncode=returncode,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+            )
+        if not _has_model_ready_marker(stdout_path, adapter_name=adapter_name):
             return _result(
                 runner,
                 ready=False,

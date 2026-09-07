@@ -4,7 +4,11 @@ import json
 from types import SimpleNamespace
 
 from aios_bench.processes import OwnedProcessOutcome
-from aios_bench.runtime_readiness import RUNTIME_PROBE_MARKER, probe_runtime_readiness
+from aios_bench.runtime_readiness import (
+    CLAUDE_BASH_PROBE_MARKER,
+    RUNTIME_PROBE_MARKER,
+    probe_runtime_readiness,
+)
 
 
 class _Runner:
@@ -33,6 +37,34 @@ def _goose_message(role: str, text: str) -> str:
             "message": {
                 "role": role,
                 "content": [{"type": "text", "text": text}],
+            },
+        }
+    ) + "\n"
+
+
+def _claude_assistant(content: list[dict]) -> str:
+    return json.dumps(
+        {
+            "type": "assistant",
+            "message": {"role": "assistant", "content": content},
+        }
+    ) + "\n"
+
+
+def _claude_tool_result(call_id: str, text: str, *, is_error: bool = False) -> str:
+    return json.dumps(
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": call_id,
+                        "content": text,
+                        "is_error": is_error,
+                    }
+                ],
             },
         }
     ) + "\n"
@@ -106,6 +138,76 @@ def test_runtime_probe_does_not_accept_goose_prompt_echo_as_model_marker(monkeyp
 
     assert result.ready is False
     assert result.kind == "invalid_probe_response"
+
+
+def test_claude_runtime_probe_requires_successful_bash_tool_result(monkeypatch, tmp_path):
+    runner = _Runner(tmp_path)
+    runner.agent = SimpleNamespace(name="claude", adapter=object())
+    observed_prompt = {}
+
+    def fake_prepare(**kwargs):
+        observed_prompt["prompt"] = kwargs["prompt"]
+        return _prepared()
+
+    monkeypatch.setattr("aios_bench.runtime_readiness.prepare_harness_process", fake_prepare)
+
+    def fake_run_owned(command, **kwargs):
+        call_id = "bash-1"
+        kwargs["stdout"].write(
+            _claude_assistant(
+                [{"type": "tool_use", "id": call_id, "name": "Bash", "input": {"command": "printf"}}]
+            )
+        )
+        kwargs["stdout"].write(_claude_tool_result(call_id, CLAUDE_BASH_PROBE_MARKER))
+        kwargs["stdout"].write(
+            _claude_assistant([{"type": "text", "text": RUNTIME_PROBE_MARKER}])
+        )
+        kwargs["stdout"].flush()
+        return OwnedProcessOutcome(returncode=0)
+
+    monkeypatch.setattr("aios_bench.runtime_readiness.run_owned", fake_run_owned)
+
+    result = probe_runtime_readiness(runner)
+
+    assert "Use the Bash tool exactly once" in observed_prompt["prompt"]
+    assert result.ready is True
+    assert result.kind == "ready"
+
+
+def test_claude_runtime_probe_blocks_when_bash_tool_fails(monkeypatch, tmp_path):
+    runner = _Runner(tmp_path)
+    runner.agent = SimpleNamespace(name="claude", adapter=object())
+    monkeypatch.setattr(
+        "aios_bench.runtime_readiness.prepare_harness_process",
+        lambda **kwargs: _prepared(),
+    )
+
+    def fake_run_owned(command, **kwargs):
+        call_id = "bash-1"
+        kwargs["stdout"].write(
+            _claude_assistant(
+                [{"type": "tool_use", "id": call_id, "name": "Bash", "input": {"command": "printf"}}]
+            )
+        )
+        kwargs["stdout"].write(
+            _claude_tool_result(
+                call_id,
+                "bwrap: Can't create file /home/user/.bash_aliases: Read-only file system",
+                is_error=True,
+            )
+        )
+        kwargs["stdout"].write(
+            _claude_assistant([{"type": "text", "text": RUNTIME_PROBE_MARKER}])
+        )
+        kwargs["stdout"].flush()
+        return OwnedProcessOutcome(returncode=0)
+
+    monkeypatch.setattr("aios_bench.runtime_readiness.run_owned", fake_run_owned)
+
+    result = probe_runtime_readiness(runner)
+
+    assert result.ready is False
+    assert result.kind == "tool_probe_failed"
 
 
 def test_runtime_probe_zero_exit_without_model_marker_is_blocked(monkeypatch, tmp_path):

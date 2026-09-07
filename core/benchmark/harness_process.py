@@ -21,6 +21,19 @@ class PreparedHarnessProcess:
     sandbox: SandboxPlan
 
 
+def _apply_harness_environment_policy(adapter_name: str, environment: dict[str, str]) -> None:
+    """Apply execution-boundary environment isolation required by a harness.
+
+    Claude Code's subprocess credential scrub uses ``$HOME`` as a Bubblewrap
+    mask target before Bash commands run. AIOS-Bench deliberately makes the host
+    home read-only, so point Claude at the already-private temporary filesystem
+    instead. The scrub remains enabled; no real user home or credentials are
+    made writable to the harness.
+    """
+    if adapter_name == "claude":
+        environment["HOME"] = "/tmp"
+
+
 def prepare_harness_process(
     *,
     adapter_name: str,
@@ -47,6 +60,7 @@ def prepare_harness_process(
     sandbox = workspace_sandbox(adapter_name, workspace)
     environment = with_project_bin()
     environment.update(invocation.environment)
+    _apply_harness_environment_policy(adapter_name, environment)
     if extra_environment:
         environment.update({str(key): str(value) for key, value in extra_environment.items()})
 
