@@ -63,6 +63,14 @@ from .learning_transfer import (
     generate_learning_transfer_variant,
     grade_learning_transfer_variant,
 )
+from .partial_credit import (
+    grade_config_traversal_partial,
+    grade_dependency_world_partial,
+    grade_expense_partial,
+    grade_stateful_world_partial,
+    grade_tool_recovery_partial,
+    grade_workspace_lineage_partial,
+)
 from .persistent_memory import (
     PersistentMemoryPressure,
     generate_persistent_memory_variant,
@@ -156,7 +164,12 @@ def _grade_expense(
     task_id: str | None,
 ) -> VariantGrade:
     passed, detail = check_expense_variant(workspace, oracle)
-    return VariantGrade.binary(passed, detail)
+    return grade_expense_partial(
+        workspace,
+        oracle,
+        passed=passed,
+        detail=detail,
+    )
 
 
 def _grade_config(
@@ -166,7 +179,12 @@ def _grade_config(
     task_id: str | None,
 ) -> VariantGrade:
     passed, detail = check_config_traversal_variant(workspace, oracle)
-    return VariantGrade.binary(passed, detail)
+    return grade_config_traversal_partial(
+        workspace,
+        oracle,
+        passed=passed,
+        detail=detail,
+    )
 
 
 def _grade_lineage(
@@ -176,7 +194,12 @@ def _grade_lineage(
     task_id: str | None,
 ) -> VariantGrade:
     passed, detail = check_workspace_lineage_variant(workspace, oracle)
-    return VariantGrade.binary(passed, detail)
+    return grade_workspace_lineage_partial(
+        workspace,
+        oracle,
+        passed=passed,
+        detail=detail,
+    )
 
 
 def _grade_wide_retrieval(
@@ -254,18 +277,18 @@ def _check_mediated_world(
     *,
     run_dir: Path | None,
     task_id: str | None,
-) -> tuple[bool, str]:
-    passed, detail = checker(workspace, oracle)
-    if not passed:
-        return passed, detail
+) -> tuple[bool, str, bool]:
+    artifact_passed, artifact_detail = checker(workspace, oracle)
     provenance_ok, provenance_detail = verify_support_action_log(
         oracle,
         run_dir=run_dir,
         task_id=task_id,
     )
+    if not artifact_passed:
+        return False, artifact_detail, provenance_ok
     if not provenance_ok:
-        return False, provenance_detail
-    return True, f"{detail}; {provenance_detail}"
+        return False, provenance_detail, False
+    return True, f"{artifact_detail}; {provenance_detail}", True
 
 
 def _grade_stateful_world(
@@ -274,14 +297,20 @@ def _grade_stateful_world(
     run_dir: Path | None,
     task_id: str | None,
 ) -> VariantGrade:
-    passed, detail = _check_mediated_world(
+    passed, detail, provenance_ok = _check_mediated_world(
         check_stateful_world_variant,
         workspace,
         oracle,
         run_dir=run_dir,
         task_id=task_id,
     )
-    return VariantGrade.binary(passed, detail)
+    return grade_stateful_world_partial(
+        workspace,
+        oracle,
+        passed=passed,
+        detail=detail,
+        provenance_ok=provenance_ok,
+    )
 
 
 def _grade_dependency_world(
@@ -290,14 +319,20 @@ def _grade_dependency_world(
     run_dir: Path | None,
     task_id: str | None,
 ) -> VariantGrade:
-    passed, detail = _check_mediated_world(
+    passed, detail, provenance_ok = _check_mediated_world(
         check_dependency_world_variant,
         workspace,
         oracle,
         run_dir=run_dir,
         task_id=task_id,
     )
-    return VariantGrade.binary(passed, detail)
+    return grade_dependency_world_partial(
+        workspace,
+        oracle,
+        passed=passed,
+        detail=detail,
+        provenance_ok=provenance_ok,
+    )
 
 
 def _grade_tool_recovery(
@@ -306,22 +341,32 @@ def _grade_tool_recovery(
     run_dir: Path | None,
     task_id: str | None,
 ) -> VariantGrade:
-    passed, detail = check_tool_recovery_variant(workspace, oracle)
-    if passed:
-        provenance_ok, provenance_detail = verify_tool_recovery_log(
-            oracle,
-            run_dir=run_dir,
-            task_id=task_id,
-        )
-        if provenance_ok:
-            return VariantGrade.binary(True, f"{detail}; {provenance_detail}")
-        detail = provenance_detail
-    failure_kind = diagnose_tool_recovery_failure(
+    artifact_passed, artifact_detail = check_tool_recovery_variant(workspace, oracle)
+    provenance_ok, provenance_detail = verify_tool_recovery_log(
         oracle,
         run_dir=run_dir,
         task_id=task_id,
     )
-    return VariantGrade.binary(False, detail, failure_kind=failure_kind)
+    passed = artifact_passed and provenance_ok
+    if not artifact_passed:
+        detail = artifact_detail
+    elif not provenance_ok:
+        detail = provenance_detail
+    else:
+        detail = f"{artifact_detail}; {provenance_detail}"
+    failure_kind = None if passed else diagnose_tool_recovery_failure(
+        oracle,
+        run_dir=run_dir,
+        task_id=task_id,
+    )
+    return grade_tool_recovery_partial(
+        workspace,
+        oracle,
+        passed=passed,
+        detail=detail,
+        provenance_ok=provenance_ok,
+        failure_kind=failure_kind,
+    )
 
 
 def _diagnose_tool_recovery(
