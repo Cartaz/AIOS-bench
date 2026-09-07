@@ -17,9 +17,10 @@ from .processes import run_owned
 
 RUNTIME_PROBE_TASK_ID = "_runtime_probe"
 RUNTIME_PROBE_TIMEOUT_SECONDS = 120.0
+RUNTIME_PROBE_MARKER = "AIOS_BENCH_READY"
 RUNTIME_PROBE_PROMPT = (
     "AIOS-Bench runtime readiness probe. Do not use tools or modify files. "
-    "Reply exactly: AIOS_BENCH_READY"
+    f"Reply exactly: {RUNTIME_PROBE_MARKER}"
 )
 
 
@@ -91,6 +92,17 @@ def _result(
         "stderr": str(stderr_path),
     })
     return result
+
+
+def _has_model_ready_marker(stdout_path: Path) -> bool:
+    """Require evidence that the model, not merely the CLI, completed the probe."""
+    try:
+        return RUNTIME_PROBE_MARKER in stdout_path.read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError:
+        return False
 
 
 def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
@@ -214,6 +226,17 @@ def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
             )
+        if not _has_model_ready_marker(stdout_path):
+            return _result(
+                runner,
+                ready=False,
+                kind="invalid_probe_response",
+                message="runtime exited successfully without the model readiness marker",
+                started=started,
+                returncode=returncode,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+            )
         return _result(
             runner,
             ready=True,
@@ -238,15 +261,11 @@ def probe_runtime_readiness(runner: RuntimeProbeRunner) -> RuntimeReadiness:
             stderr_path=stderr_path,
         )
     except Exception as exc:
-        detail = str(exc).strip()
-        message = f"runtime probe setup failed: {type(exc).__name__}"
-        if detail:
-            message += f": {detail[:200]}"
         return _result(
             runner,
             ready=False,
             kind="probe_error",
-            message=message,
+            message=f"runtime probe setup failed: {type(exc).__name__}",
             started=started,
             returncode=None,
             stdout_path=stdout_path,
