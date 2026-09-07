@@ -39,7 +39,7 @@ def test_managed_runtime_versions_are_explicitly_pinned() -> None:
         ("piagent", "@earendil-works/pi-coding-agent@0.84.4", "pi"),
         ("opencode", "opencode-ai@1.18.26", "opencode"),
         ("letta", "@letta-ai/letta-code@0.31.11", "letta"),
-        ("claude", "@anthropic-ai/claude-code@2.1.236", "claude"),
+        ("claude", "@anthropic-ai/claude-code@2.1.215", "claude"),
         ("deepseek", "@deepseek-ai/dsh@0.1.2-alpha.5", "dsh"),
     ]
 
