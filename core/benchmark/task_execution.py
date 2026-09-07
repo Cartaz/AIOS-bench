@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
-import shlex
 import subprocess
 import time
 from dataclasses import dataclass
@@ -15,13 +13,12 @@ from .adapters import PiAgentAdapter
 from .evaluators import evaluate_artifacts
 from .failures import CRASH, INFRA_ERROR, UNAVAILABLE, classify_failure
 from .goose_telemetry import parse_goose_stream_json
+from .harness_process import prepare_harness_process
 from .hermes_telemetry import parse_hermes_usage_report
 from .letta_telemetry import parse_letta_stream_json
 from .models import Task, Trajectory
 from .pi_rpc import PiRPCClient
 from .processes import spawn_owned, terminate_owned
-from .runtime_paths import with_project_bin
-from .sandbox import workspace_sandbox
 from .scoring import overall_score
 from .server_metrics import NullServerMetricsClient, OutputTokenGuard
 from .task_runtime import TaskRuntime
@@ -78,6 +75,7 @@ def _run_process(
         command,
         cwd=cwd,
         env=env,
+        stdin=subprocess.DEVNULL,
         stdout=stdout,
         stderr=stderr,
         text=True,
@@ -156,27 +154,28 @@ def run_frontier_task(
     stdout_path = logs / f"{task.id}.stdout.log"
     stderr_path = logs / f"{task.id}.stderr.log"
     prompt = runner.build_task_prompt(task)
-    invocation = runner.agent.adapter.build(prompt, workspace, runner.model)
-    command = invocation.command
-    custom = os.environ.get(f"AIOS_BENCH_{runner.agent.name.upper()}_COMMAND")
-    if custom:
-        command = [*shlex.split(custom), prompt]
-    sandbox = workspace_sandbox(runner.agent.name, workspace)
-    command = sandbox.wrap(command)
-    env = with_project_bin()
-    env.update(invocation.environment)
-    env.update({
-        "AIOS_BENCH_TASK_ID": task.id,
-        "AIOS_BENCH_AGENT": runner.agent.name,
-        "AIOS_BENCH_MODEL": runner.model,
-        "AIOS_BENCH_RUN_ID": runner.run_id,
-        "AIOS_BENCH_FIXTURE_ROOT": str(
-            runner.repo_root / "benchmarks" / "fixtures" / "workspace"
-        ),
-        # Remote harness clients use the same active task budget as the local
-        # process owner rather than introducing an unbounded network wait.
-        "AIOS_BENCH_TASK_TIMEOUT_SECONDS": str(timeout),
-    })
+    prepared = prepare_harness_process(
+        adapter_name=runner.agent.name,
+        adapter=runner.agent.adapter,
+        prompt=prompt,
+        workspace=workspace,
+        model=runner.model,
+        extra_environment={
+            "AIOS_BENCH_TASK_ID": task.id,
+            "AIOS_BENCH_AGENT": runner.agent.name,
+            "AIOS_BENCH_MODEL": runner.model,
+            "AIOS_BENCH_RUN_ID": runner.run_id,
+            "AIOS_BENCH_FIXTURE_ROOT": str(
+                runner.repo_root / "benchmarks" / "fixtures" / "workspace"
+            ),
+            # Remote harness clients use the same active task budget as the local
+            # process owner rather than introducing an unbounded network wait.
+            "AIOS_BENCH_TASK_TIMEOUT_SECONDS": str(timeout),
+        },
+    )
+    invocation = prepared.invocation
+    command = prepared.command
+    env = prepared.environment
 
     metrics_client = runner.server_metrics or NullServerMetricsClient()
     metrics_before = metrics_client.snapshot()
