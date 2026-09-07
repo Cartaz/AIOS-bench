@@ -9,6 +9,7 @@ import pytest
 from aios_bench.adapters import Adapter, AgentInvocation
 from aios_bench.models import Task, Trajectory
 from aios_bench.runner import AgentConfig, BenchmarkRunner
+from aios_bench.runtime_readiness import RuntimeReadiness
 
 
 class CommandAdapter(Adapter):
@@ -27,6 +28,11 @@ class LifecycleRunner(BenchmarkRunner):
 
     def _catalog_task_count(self) -> list[str]:
         return ["coding_001", "subagents_001"]
+
+    def runtime_readiness(self) -> RuntimeReadiness:
+        # Lifecycle tests use a deliberately inert command adapter and exercise
+        # persistence/budget semantics, not the separate runtime-probe contract.
+        return RuntimeReadiness(True, "ready", "test runtime ready", 0.0, returncode=0)
 
     def run_task(self, task: Task, timeout: float) -> Trajectory:
         self.observed_timeouts = [*getattr(self, "observed_timeouts", []), timeout]
