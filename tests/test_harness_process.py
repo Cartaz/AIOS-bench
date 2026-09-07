@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from aios_bench.adapters import Adapter, AgentInvocation
@@ -14,6 +15,15 @@ class _Adapter(Adapter):
                 "HOME": "/home/real-user",
                 "ADAPTER_OWNED_VALUE": "kept",
             },
+        )
+
+
+class _SettingsAdapter(_Adapter):
+    def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
+        invocation = super().build(prompt, workspace, model)
+        return AgentInvocation(
+            ["claude", "--settings", '{"allowedTools":["Read"]}', prompt],
+            invocation.environment,
         )
 
 
@@ -37,6 +47,11 @@ def _patch_boundary(monkeypatch):
         "aios_bench.harness_process.workspace_sandbox",
         lambda adapter_name, workspace: SandboxPlan("test"),
     )
+
+
+def _claude_settings(command: list[str]) -> dict:
+    index = command.index("--settings")
+    return json.loads(command[index + 1])
 
 
 def test_claude_process_uses_isolated_runtime_environment(monkeypatch, tmp_path):
@@ -69,6 +84,19 @@ def test_claude_process_uses_isolated_runtime_environment(monkeypatch, tmp_path)
     assert "OPENCODE_CONFIG_DIR" not in environment
     assert "GOOSE_PATH_ROOT" not in environment
 
+    assert prepared.command[-1] == "probe"
+    settings = _claude_settings(prepared.command)
+    assert settings["allowedTools"] == [
+        "Bash",
+        "Edit",
+        "NotebookEdit",
+        "Read",
+        "Task",
+        "WebFetch",
+        "WebSearch",
+        "Write",
+    ]
+
 
 def test_claude_process_policy_cannot_be_overridden_by_extra_environment(monkeypatch, tmp_path):
     _patch_boundary(monkeypatch)
@@ -86,6 +114,22 @@ def test_claude_process_policy_cannot_be_overridden_by_extra_environment(monkeyp
     assert prepared.environment["XDG_CONFIG_HOME"] == "/tmp/aios-bench-claude/xdg-config"
 
 
+def test_claude_process_replaces_conflicting_inline_settings(monkeypatch, tmp_path):
+    _patch_boundary(monkeypatch)
+
+    prepared = prepare_harness_process(
+        adapter_name="claude",
+        adapter=_SettingsAdapter(),
+        prompt="probe",
+        workspace=tmp_path,
+        model="Ornith",
+    )
+
+    assert prepared.command.count("--settings") == 1
+    assert _claude_settings(prepared.command)["allowedTools"][0] == "Bash"
+    assert "Read" in _claude_settings(prepared.command)["allowedTools"]
+
+
 def test_other_harness_process_preserves_ambient_environment(monkeypatch, tmp_path):
     _patch_boundary(monkeypatch)
 
@@ -100,3 +144,4 @@ def test_other_harness_process_preserves_ambient_environment(monkeypatch, tmp_pa
     assert prepared.environment["HOME"] == "/home/real-user"
     assert prepared.environment["OPENCODE_CONFIG_DIR"] == "/home/real-user/.opencode"
     assert prepared.environment["GOOSE_PATH_ROOT"] == "/home/real-user/.config/goose"
+    assert "--settings" not in prepared.command
