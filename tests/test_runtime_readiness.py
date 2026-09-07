@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from aios_bench.processes import OwnedProcessOutcome
@@ -25,6 +26,18 @@ def _prepared():
     return SimpleNamespace(command=["fake-harness"], environment={})
 
 
+def _goose_message(role: str, text: str) -> str:
+    return json.dumps(
+        {
+            "type": "message",
+            "message": {
+                "role": role,
+                "content": [{"type": "text", "text": text}],
+            },
+        }
+    ) + "\n"
+
+
 def test_runtime_probe_success_is_ready_unscored_and_cleans_workspace(monkeypatch, tmp_path):
     runner = _Runner(tmp_path)
     monkeypatch.setattr(
@@ -35,7 +48,7 @@ def test_runtime_probe_success_is_ready_unscored_and_cleans_workspace(monkeypatc
 
     def fake_run_owned(command, **kwargs):
         observed.update(kwargs)
-        kwargs["stdout"].write(f'{{"message":"{RUNTIME_PROBE_MARKER}"}}\n')
+        kwargs["stdout"].write(_goose_message("assistant", RUNTIME_PROBE_MARKER))
         kwargs["stdout"].flush()
         return OwnedProcessOutcome(returncode=0)
 
@@ -50,6 +63,49 @@ def test_runtime_probe_success_is_ready_unscored_and_cleans_workspace(monkeypatc
     assert not (runner.run_dir / "workspaces" / "_runtime_probe").exists()
     assert runner.events[-1]["event"] == "harness_runtime_probe"
     assert runner.events[-1]["status"] == "ready"
+
+
+def test_runtime_probe_reassembles_chunked_goose_assistant_marker(monkeypatch, tmp_path):
+    runner = _Runner(tmp_path)
+    monkeypatch.setattr(
+        "aios_bench.runtime_readiness.prepare_harness_process",
+        lambda **kwargs: _prepared(),
+    )
+
+    def fake_run_owned(command, **kwargs):
+        split = len(RUNTIME_PROBE_MARKER) // 2
+        kwargs["stdout"].write(_goose_message("assistant", RUNTIME_PROBE_MARKER[:split]))
+        kwargs["stdout"].write(_goose_message("assistant", RUNTIME_PROBE_MARKER[split:]))
+        kwargs["stdout"].flush()
+        return OwnedProcessOutcome(returncode=0)
+
+    monkeypatch.setattr("aios_bench.runtime_readiness.run_owned", fake_run_owned)
+
+    result = probe_runtime_readiness(runner)
+
+    assert result.ready is True
+    assert result.kind == "ready"
+
+
+def test_runtime_probe_does_not_accept_goose_prompt_echo_as_model_marker(monkeypatch, tmp_path):
+    runner = _Runner(tmp_path)
+    monkeypatch.setattr(
+        "aios_bench.runtime_readiness.prepare_harness_process",
+        lambda **kwargs: _prepared(),
+    )
+
+    def fake_run_owned(command, **kwargs):
+        kwargs["stdout"].write(_goose_message("user", RUNTIME_PROBE_MARKER))
+        kwargs["stdout"].write(_goose_message("assistant", "READY"))
+        kwargs["stdout"].flush()
+        return OwnedProcessOutcome(returncode=0)
+
+    monkeypatch.setattr("aios_bench.runtime_readiness.run_owned", fake_run_owned)
+
+    result = probe_runtime_readiness(runner)
+
+    assert result.ready is False
+    assert result.kind == "invalid_probe_response"
 
 
 def test_runtime_probe_zero_exit_without_model_marker_is_blocked(monkeypatch, tmp_path):
