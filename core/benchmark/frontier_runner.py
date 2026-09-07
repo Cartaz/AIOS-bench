@@ -12,6 +12,7 @@ from .interventions import ExecutionCondition
 from .materialization import TaskMaterializer
 from .models import Task
 from .runner import BenchmarkRunner
+from .scoring import SCORING_SCHEMA
 from .server_metrics import build_server_metrics_client
 from .task_execution import run_frontier_task
 from .task_runtime import TaskRuntime
@@ -150,6 +151,12 @@ class FrontierRunner(BenchmarkRunner):
 
     def _execution_manifest(self) -> dict:
         manifest = super()._execution_manifest()
+        manifest["scoring"] = {
+            "schema": SCORING_SCHEMA,
+            "scale": "integer_0_100",
+            "basis": "deterministic_acceptance",
+            "outcome_orthogonal": True,
+        }
         manifest["server_metrics"] = {
             "source": self.server_metrics.source,
             "enabled": bool(self.server_metrics.enabled),
