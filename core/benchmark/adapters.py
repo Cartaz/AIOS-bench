@@ -489,7 +489,6 @@ class ClaudeCodeAdapter(Adapter):
             "AIOS_BENCH_WORKSPACE": str(workspace.resolve()),
             "CLAUDE_CONFIG_DIR": str(config_dir),
             "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1",
-            "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
             "DISABLE_TELEMETRY": "1",
             "DISABLE_AUTOUPDATER": "1",
         }
@@ -543,7 +542,8 @@ class ClaudeCodeAdapter(Adapter):
                 "ambient_customizations": "disabled",
                 "config_scope": "ephemeral_temp_dir_per_workspace",
                 "prompt_history": False,
-                "subprocess_credential_scrub": True,
+                "subprocess_credential_scrub": False,
+                "subprocess_isolation": "aios_bench_outer_sandbox",
                 "default_model_aliases_pinned": bool(requested),
                 "subagent_model_pinned": bool(requested),
                 "custom_base_url_configured": bool(endpoint),

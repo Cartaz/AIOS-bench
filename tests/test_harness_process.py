@@ -13,6 +13,7 @@ class _Adapter(Adapter):
             {
                 "AIOS_BENCH_WORKSPACE": str(workspace),
                 "HOME": "/home/real-user",
+                "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
                 "ADAPTER_OWNED_VALUE": "kept",
             },
         )
@@ -22,7 +23,7 @@ class _SettingsAdapter(_Adapter):
     def build(self, prompt: str, workspace: Path, model: str) -> AgentInvocation:
         invocation = super().build(prompt, workspace, model)
         return AgentInvocation(
-            ["claude", "--settings", '{"allowedTools":["Read"]}', prompt],
+            ["claude", "--settings", '{"allowedTools":["Read"],"sandbox":{"enabled":true}}', prompt],
             invocation.environment,
         )
 
@@ -81,6 +82,7 @@ def test_claude_process_uses_isolated_runtime_environment(monkeypatch, tmp_path)
     assert environment["ANTHROPIC_API_KEY"] == "benchmark-key"
     assert environment["ADAPTER_OWNED_VALUE"] == "kept"
     assert environment["AIOS_BENCH_WORKSPACE"] == str(tmp_path)
+    assert "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" not in environment
     assert "OPENCODE_CONFIG_DIR" not in environment
     assert "GOOSE_PATH_ROOT" not in environment
 
@@ -96,6 +98,10 @@ def test_claude_process_uses_isolated_runtime_environment(monkeypatch, tmp_path)
         "WebSearch",
         "Write",
     ]
+    assert settings["sandbox"] == {
+        "enabled": False,
+        "failIfUnavailable": False,
+    }
 
 
 def test_claude_process_policy_cannot_be_overridden_by_extra_environment(monkeypatch, tmp_path):
@@ -107,11 +113,16 @@ def test_claude_process_policy_cannot_be_overridden_by_extra_environment(monkeyp
         prompt="probe",
         workspace=tmp_path,
         model="Ornith",
-        extra_environment={"HOME": "/home/escape", "XDG_CONFIG_HOME": "/home/config"},
+        extra_environment={
+            "HOME": "/home/escape",
+            "XDG_CONFIG_HOME": "/home/config",
+            "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
+        },
     )
 
     assert prepared.environment["HOME"] == "/tmp/aios-bench-claude/home"
     assert prepared.environment["XDG_CONFIG_HOME"] == "/tmp/aios-bench-claude/xdg-config"
+    assert "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" not in prepared.environment
 
 
 def test_claude_process_replaces_conflicting_inline_settings(monkeypatch, tmp_path):
@@ -126,8 +137,10 @@ def test_claude_process_replaces_conflicting_inline_settings(monkeypatch, tmp_pa
     )
 
     assert prepared.command.count("--settings") == 1
-    assert _claude_settings(prepared.command)["allowedTools"][0] == "Bash"
-    assert "Read" in _claude_settings(prepared.command)["allowedTools"]
+    settings = _claude_settings(prepared.command)
+    assert settings["allowedTools"][0] == "Bash"
+    assert "Read" in settings["allowedTools"]
+    assert settings["sandbox"]["enabled"] is False
 
 
 def test_other_harness_process_preserves_ambient_environment(monkeypatch, tmp_path):
@@ -142,6 +155,7 @@ def test_other_harness_process_preserves_ambient_environment(monkeypatch, tmp_pa
     )
 
     assert prepared.environment["HOME"] == "/home/real-user"
+    assert prepared.environment["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] == "1"
     assert prepared.environment["OPENCODE_CONFIG_DIR"] == "/home/real-user/.opencode"
     assert prepared.environment["GOOSE_PATH_ROOT"] == "/home/real-user/.config/goose"
     assert "--settings" not in prepared.command
