@@ -30,6 +30,12 @@ def test_platform_sensitive_install_policies_are_scoped_to_their_harnesses():
             assert "SHARP_IGNORE_GLOBAL_LIBVIPS" not in dict(spec.install_environment)
 
 
+def test_claude_runtime_is_pinned_before_linux_bubblewrap_regression():
+    claude = managed_runtimes.MANAGED_HARNESS_BY_NAME["claude"]
+
+    assert claude.package == "@anthropic-ai/claude-code@2.1.215"
+
+
 def test_install_managed_harness_uses_project_npm_prefix(monkeypatch, tmp_path: Path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shlex
 from dataclasses import dataclass
@@ -27,6 +28,24 @@ _CLAUDE_INHERITED_ENVIRONMENT_KEYS = (
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
     "CLAUDE_CODE_OAUTH_TOKEN",
+)
+# ENV_SCRUB hardening forces Claude Code back to its default permission mode
+# unless allowedTools is declared in settings (the CLI --allowedTools flag alone
+# does not satisfy that gate). These are the native tool families AIOS-Bench
+# expects Claude to use unattended inside the outer workspace sandbox.
+_CLAUDE_ALLOWED_TOOLS = (
+    "Bash",
+    "Edit",
+    "NotebookEdit",
+    "Read",
+    "Task",
+    "WebFetch",
+    "WebSearch",
+    "Write",
+)
+_CLAUDE_SETTINGS_JSON = json.dumps(
+    {"allowedTools": list(_CLAUDE_ALLOWED_TOOLS)},
+    separators=(",", ":"),
 )
 
 
@@ -60,6 +79,26 @@ def _base_environment(adapter_name: str) -> dict[str, str]:
         if (value := os.environ.get(key))
     }
     return with_project_bin(inherited)
+
+
+def _apply_harness_command_policy(adapter_name: str, command: list[str]) -> list[str]:
+    """Apply benchmark-owned command settings required for deterministic execution."""
+    if adapter_name != "claude":
+        return command
+
+    result = list(command)
+    if "--settings" in result:
+        index = result.index("--settings")
+        if index + 1 >= len(result):
+            raise RuntimeError("Malformed Claude command: --settings has no value")
+        result[index + 1] = _CLAUDE_SETTINGS_JSON
+        return result
+
+    # Adapter and custom-command contracts both place the prompt last. Insert the
+    # settings immediately before it so the prompt remains the terminal argument.
+    insert_at = max(len(result) - 1, 1)
+    result[insert_at:insert_at] = ["--settings", _CLAUDE_SETTINGS_JSON]
+    return result
 
 
 def _apply_harness_environment_policy(adapter_name: str, environment: dict[str, str]) -> None:
@@ -106,6 +145,7 @@ def prepare_harness_process(
     custom = os.environ.get(f"AIOS_BENCH_{adapter_name.upper()}_COMMAND")
     if custom:
         command = [*shlex.split(custom), prompt]
+    command = _apply_harness_command_policy(adapter_name, command)
 
     sandbox = workspace_sandbox(adapter_name, workspace)
     environment = _base_environment(adapter_name)
