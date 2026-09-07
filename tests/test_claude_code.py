@@ -38,7 +38,7 @@ def test_claude_adapter_isolates_and_pins_local_model(monkeypatch, tmp_path: Pat
     assert environment["ANTHROPIC_BASE_URL"] == endpoint
     assert environment["ANTHROPIC_API_KEY"] == "super-secret-value"
     assert environment["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] == "1"
-    assert environment["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] == "1"
+    assert "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" not in environment
     assert environment["DISABLE_TELEMETRY"] == "1"
     assert environment["DISABLE_AUTOUPDATER"] == "1"
     assert str(environment["CLAUDE_CONFIG_DIR"]).startswith("/tmp/")
@@ -63,6 +63,8 @@ def test_claude_adapter_isolates_and_pins_local_model(monkeypatch, tmp_path: Pat
     assert manifest["model"]["resolved"] == "local/model"
     assert manifest["model"]["endpoint"] == "http://127.0.0.1:8081/v1"
     assert manifest["configuration"]["safe_mode"] is True
+    assert manifest["configuration"]["subprocess_credential_scrub"] is False
+    assert manifest["configuration"]["subprocess_isolation"] == "aios_bench_outer_sandbox"
     assert manifest["configuration"]["api_key_configured"] is True
     assert manifest["configuration"]["default_model_aliases_pinned"] is True
     assert manifest["configuration"]["subagent_model_pinned"] is True
