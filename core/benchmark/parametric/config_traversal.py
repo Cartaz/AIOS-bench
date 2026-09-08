@@ -51,6 +51,78 @@ def _canonical_digest(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+_ASSIGNMENT_LINE = re.compile(
+    r"^\s*(?P<key>[A-Za-z_][A-Za-z0-9_.-]*)\s*[:=]\s*(?P<value>.+?)\s*$"
+)
+_TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
+
+
+def _strip_inline_markup(value: str) -> str:
+    text = value.strip()
+    changed = True
+    while changed:
+        changed = False
+        for marker in ("**", "__", "`", "*", "_"):
+            if (
+                len(text) >= 2 * len(marker)
+                and text.startswith(marker)
+                and text.endswith(marker)
+            ):
+                text = text[len(marker) : -len(marker)].strip()
+                changed = True
+    return text
+
+
+def _markdown_cells(line: str) -> list[str] | None:
+    text = line.strip()
+    if "|" not in text:
+        return None
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|"):
+        text = text[:-1]
+    cells = [_strip_inline_markup(cell) for cell in text.split("|")]
+    return cells if len(cells) >= 2 else None
+
+
+def parse_effective_config_report(text: str) -> dict[str, tuple[str, ...]]:
+    """Extract candidate settings without coupling grading to one Markdown style."""
+    settings: dict[str, list[str]] = {}
+    for raw_line in text.splitlines():
+        assignment = _ASSIGNMENT_LINE.fullmatch(raw_line)
+        if assignment is not None:
+            key = assignment.group("key")
+            value = _strip_inline_markup(assignment.group("value"))
+            settings.setdefault(key, []).append(value)
+            continue
+
+        cells = _markdown_cells(raw_line)
+        if not cells:
+            continue
+        if all(_TABLE_SEPARATOR_CELL.fullmatch(cell or "") for cell in cells):
+            continue
+        key, value = cells[0], cells[1]
+        if (
+            key.casefold() in {"setting", "key", "name"}
+            and value.casefold() in {"value", "effective value", "effective_value"}
+        ):
+            continue
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", key):
+            settings.setdefault(key, []).append(value)
+    return {key: tuple(values) for key, values in settings.items()}
+
+
+def setting_matches(actual: object, expected: object) -> bool:
+    if isinstance(actual, str):
+        values = (actual,)
+    elif isinstance(actual, tuple) and all(isinstance(value, str) for value in actual):
+        values = actual
+    else:
+        return False
+    normalized = {value.casefold() for value in values}
+    return normalized == {str(expected).casefold()}
+
+
 def generate_config_traversal_variant(
     workspace: Path,
     *,
@@ -176,9 +248,9 @@ def check_config_traversal_variant(
         if not isinstance(settings, Mapping) or not isinstance(chain, list):
             return False, "invalid config traversal oracle"
 
+        reported_settings = parse_effective_config_report(text)
         for key, value in settings.items():
-            pattern = rf"\b{re.escape(str(key))}\b\s*[:=]\s*{re.escape(str(value))}\b"
-            if not re.search(pattern, text, re.I):
+            if not setting_matches(reported_settings.get(str(key)), value):
                 return False, f"effective setting missing or incorrect: {key}"
 
         position = -1
@@ -191,7 +263,10 @@ def check_config_traversal_variant(
             return False, "consumer path missing from report"
 
         for decoy_port in oracle.get("decoy_ports") or []:
-            if re.search(rf"\bport\b\s*[:=]\s*{int(decoy_port)}\b", text, re.I):
+            port_values = reported_settings.get("port", ())
+            if isinstance(port_values, tuple) and str(decoy_port).casefold() in {
+                value.casefold() for value in port_values
+            }:
                 return False, "report selected a distractor configuration"
 
         return True, "generated config traversal and source integrity verified"

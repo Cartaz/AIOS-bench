@@ -37,14 +37,18 @@ For V4.10 the only declared persistent path is `.agent_memory`. The interface is
 
 ## Oracle and grader boundary
 
-Generated oracles remain outside the agent workspace. The family grader verifies:
+Generated oracles remain outside the agent workspace. The capture workspace now contains a benchmark-owned, protected `docs/memory_schema.md` describing the canonical durable-memory representation, and its generated README points to that document. Agents therefore do not need to infer a hidden serialization contract.
 
-- all protected generated inputs remain byte-identical;
-- `.agent_memory/preferences.json` equals the complete canonical durable state;
-- transient values are absent by exact-state comparison;
+The family grader keeps strict PASS semantics. It verifies:
+
+- all protected generated inputs, including the capture-phase schema document, remain byte-identical;
+- `.agent_memory/preferences.json` uses the canonical persistent-memory schema and contains the complete durable state;
+- transient values are absent;
 - unrelated durable preferences survive updates;
-- update history is exact;
-- the phase-specific report is exact.
+- previous history is preserved and new history rows are appended in the required sequence with exact previous/current values;
+- the phase-specific report contains the exact required semantic state.
+
+Failed strict acceptance no longer collapses every otherwise useful result to a binary score. The grader reports deterministic component metrics for durable-preference accuracy, history content, history ordering, canonical-schema conformance and phase-specific report accuracy. Equivalent presentation details that are not part of the semantic contract, such as the order of capture-report key inventories, do not cause a false negative. Conversely, a non-canonical memory representation or reordered persistent history can receive partial credit but cannot PASS or receive full credit.
 
 Warm phases can also be constructed independently by benchmark-health/preflight validation. In that context the generator derives an oracle-only synthetic prior state; it does not materialize that state into the agent workspace. Real runs still require the preceding task to create and persist the state.
 
@@ -52,7 +56,7 @@ Warm phases can also be constructed independently by benchmark-health/preflight 
 
 Both `validate_benchmark_health` and `validate_parametric_baseline` consume the same catalog-owned `variant_context` parser from `ParametricTaskMaterializer`. This prevents the two validation paths from silently materializing a contextual family with different semantics.
 
-The full Frontier v4 health gate now includes the memory tasks, while dedicated tests additionally exercise the actual capture → restore → apply → persist → update lifecycle.
+The full Frontier v4 health gate includes the memory tasks, while dedicated tests additionally exercise the actual capture → restore → apply → persist → update lifecycle. Regression coverage also checks the boundary between semantic partial credit and strict canonical PASS behavior.
 
 ## AIOS-Index
 

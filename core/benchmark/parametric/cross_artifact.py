@@ -298,10 +298,22 @@ def _load_json_artifact(workspace: Path) -> tuple[dict[str, Any] | None, str | N
     }, None
 
 
-_TABLE_ROW = re.compile(r"^\|\s*([^|]+?)\s*\|\s*(-?\d+)\s*\|\s*(-?\d+)\s*\|$")
-_TABLE_SEPARATOR = re.compile(
-    r"^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|$"
-)
+_TABLE_SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
+
+
+def _table_cells(line: str) -> list[str] | None:
+    """Parse a three-column GFM row with optional boundary pipes."""
+    text = line.strip()
+    if "|" not in text:
+        return None
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|"):
+        text = text[:-1]
+    cells = [cell.strip() for cell in text.split("|")]
+    if len(cells) != len(GROUP_FIELDS):
+        return None
+    return cells
 
 
 def _load_markdown_artifact(workspace: Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -316,29 +328,48 @@ def _load_markdown_artifact(workspace: Path) -> tuple[dict[str, Any] | None, str
         return None, "human-readable heading mismatch"
     if "source: source/current/ledger.csv" not in lines:
         return None, "human-readable source is not authoritative"
-    try:
-        header_index = lines.index("| account | posted_count | net_cents |")
-    except ValueError:
+
+    header_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if (cells := _table_cells(line)) is not None
+            and tuple(cell.casefold() for cell in cells) == GROUP_FIELDS
+        ),
+        None,
+    )
+    if header_index is None:
         return None, "human-readable table header mismatch"
-    if (
-        header_index + 1 >= len(lines)
-        or _TABLE_SEPARATOR.fullmatch(lines[header_index + 1]) is None
+    separator = (
+        _table_cells(lines[header_index + 1])
+        if header_index + 1 < len(lines)
+        else None
+    )
+    if separator is None or not all(
+        _TABLE_SEPARATOR_CELL.fullmatch(cell) for cell in separator
     ):
         return None, "human-readable table separator mismatch"
 
     groups: dict[str, dict[str, Any]] = {}
     index = header_index + 2
-    while index < len(lines) and lines[index].startswith("|"):
-        match = _TABLE_ROW.fullmatch(lines[index])
-        if match is None:
-            return None, "human-readable table row malformed"
-        account = match.group(1).strip()
+    while index < len(lines):
+        cells = _table_cells(lines[index])
+        if cells is None:
+            break
+        account, raw_count, raw_total = cells
         if account in groups:
             return None, "human-readable account rows must be unique"
+        try:
+            posted_count = int(raw_count)
+            net_cents = int(raw_total)
+        except ValueError:
+            return None, "human-readable table row malformed"
+        if posted_count < 0:
+            return None, f"invalid posted_count for {account}"
         groups[account] = {
             "account": account,
-            "posted_count": int(match.group(2)),
-            "net_cents": int(match.group(3)),
+            "posted_count": posted_count,
+            "net_cents": net_cents,
         }
         index += 1
 
