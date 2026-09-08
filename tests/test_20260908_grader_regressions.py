@@ -171,6 +171,7 @@ def test_persistent_memory_noncanonical_semantic_state_gets_partial_credit(
     assert 0.85 <= grade.score < 1.0
     assert grade.metrics["preference_accuracy"] == 1.0
     assert grade.metrics["history_accuracy"] == 1.0
+    assert grade.metrics["history_order_conformity"] == 1.0
     assert grade.metrics["schema_conformity"] == 0.0
     assert grade.metrics["report_accuracy"] == 1.0
 
@@ -195,3 +196,49 @@ def test_persistent_memory_capture_report_list_order_is_not_semantic(
 
     assert grade.passed is True, grade.detail
     assert grade.score == 1.0
+
+
+def test_persistent_memory_history_order_remains_strict_for_pass(tmp_path: Path) -> None:
+    oracle = materialize_variant(
+        "persistent_memory",
+        tmp_path,
+        seed=65125655,
+        context={"phase": "update", "state_scope": "persistent_memory_v1"},
+    )
+    materialize_parametric_golden("persistent_memory", tmp_path, oracle)
+    memory_path = tmp_path / ".agent_memory" / "preferences.json"
+    memory = json.loads(memory_path.read_text(encoding="utf-8"))
+    assert len(memory["history"]) >= 2
+    memory["history"].reverse()
+    memory_path.write_text(json.dumps(memory), encoding="utf-8")
+
+    grade = evaluate_variant("persistent_memory", tmp_path, oracle)
+
+    assert grade.passed is False
+    assert grade.metrics["history_accuracy"] == 1.0
+    assert grade.metrics["history_order_conformity"] == 0.0
+    assert grade.metrics["semantic_state_matches"] is False
+    assert 0.0 < grade.score < 1.0
+
+
+def test_persistent_memory_update_report_order_is_partial_not_full_credit(
+    tmp_path: Path,
+) -> None:
+    oracle = materialize_variant(
+        "persistent_memory",
+        tmp_path,
+        seed=65125655,
+        context={"phase": "update", "state_scope": "persistent_memory_v1"},
+    )
+    materialize_parametric_golden("persistent_memory", tmp_path, oracle)
+    report_path = tmp_path / oracle["report_path"]
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert len(report["changed"]) >= 2
+    report["changed"].reverse()
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    grade = evaluate_variant("persistent_memory", tmp_path, oracle)
+
+    assert grade.passed is False
+    assert 0.0 < grade.metrics["report_accuracy"] < 1.0
+    assert 0.0 < grade.score < 1.0
