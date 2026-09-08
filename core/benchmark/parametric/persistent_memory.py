@@ -623,15 +623,7 @@ def _report_accuracy(
         score = 0.45 * changed_accuracy + 0.35 * preserved_accuracy + 0.20 * transient_accuracy
         exact = (
             set(actual) == set(expected)
-            and actual_changed is not None
-            and Counter(
-                (row["key"], row["previous"], row["current"])
-                for row in actual_changed
-            )
-            == Counter(
-                (row["key"], row["previous"], row["current"])
-                for row in expected_changed
-            )
+            and actual_changed == expected_changed
             and isinstance(actual_preserved, Mapping)
             and dict(actual_preserved) == dict(expected_preserved or {})
             and actual_transient == expected_transient
@@ -678,17 +670,7 @@ def grade_persistent_memory_variant(
         semantic_memory["history"],
         semantic_expected["history"],
     )
-    semantic_state_matches = (
-        semantic_memory["preferences"] == semantic_expected["preferences"]
-        and Counter(
-            (row["key"], row["previous"], row["current"])
-            for row in semantic_memory["history"]
-        )
-        == Counter(
-            (row["key"], row["previous"], row["current"])
-            for row in semantic_expected["history"]
-        )
-    )
+    semantic_state_matches = semantic_memory == semantic_expected
 
     report_path = oracle.get("report_path")
     if not isinstance(report_path, str) or not report_path:
