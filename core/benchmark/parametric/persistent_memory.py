@@ -4,6 +4,7 @@ import hashlib
 import json
 import random
 import string
+from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -174,6 +175,29 @@ def _write_json(path: Path, value: Any) -> None:
     )
 
 
+def _write_memory_schema_document(workspace: Path) -> str:
+    relative = "docs/memory_schema.md"
+    path = workspace / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# Durable memory schema\n\n"
+        "Persist durable memory in `.agent_memory/preferences.json` as one JSON object with exactly "
+        "these top-level fields:\n\n"
+        "```json\n"
+        "{\n"
+        f'  "schema": "{MEMORY_SCHEMA}",\n'
+        '  "preferences": {"preference_key": "string value"},\n'
+        '  "history": [{"key": "preference_key", "previous": "old", "current": "new"}]\n'
+        "}\n"
+        "```\n\n"
+        "`preferences` contains durable values only. During initial capture, `history` is an empty "
+        "array. During updates, preserve existing history and append one row for each durable change. "
+        "Do not store transient values or source-format metadata in the durable memory artifact.\n",
+        encoding="utf-8",
+    )
+    return relative
+
+
 def _protected(workspace: Path, paths: list[str]) -> dict[str, str]:
     return {relative: _sha256(workspace / relative) for relative in sorted(paths)}
 
@@ -220,12 +244,14 @@ def _capture_workspace(
             "preferences": distractors,
         },
     )
+    schema_document = _write_memory_schema_document(workspace)
     (workspace / "README.md").write_text(
         "# Durable memory capture\n\n"
         "Read `notes/current_preferences.json`. Persist every entry marked `durable` and no entry "
-        "marked `transient` in `.agent_memory/preferences.json` using the documented memory schema. "
-        "Historical archive values are distractors. Save `reports/memory_capture.json` listing "
-        "`stored_keys` and `excluded_transient_keys`. Do not modify any supplied input file.\n",
+        "marked `transient` in `.agent_memory/preferences.json` using the canonical schema documented "
+        "in `docs/memory_schema.md`. Historical archive values are distractors. Save "
+        "`reports/memory_capture.json` listing `stored_keys` and `excluded_transient_keys`. Do not "
+        "modify any supplied input file.\n",
         encoding="utf-8",
     )
     transient_keys = sorted(row["key"] for row in transient_entries)
@@ -239,7 +265,12 @@ def _capture_workspace(
         "excluded_transient_keys": transient_keys,
     }
     return (
-        ["README.md", "notes/current_preferences.json", "notes/archive_preferences.json"],
+        [
+            "README.md",
+            schema_document,
+            "notes/current_preferences.json",
+            "notes/archive_preferences.json",
+        ],
         {"memory": expected_memory, "report": expected_report, "report_path": "reports/memory_capture.json"},
     )
 
@@ -410,6 +441,206 @@ def _load_json_object(path: Path, label: str) -> tuple[dict[str, Any] | None, st
     return value, None
 
 
+_CANONICAL_MEMORY_KEYS = frozenset({"schema", "preferences", "history"})
+_HISTORY_KEYS = frozenset({"key", "previous", "current"})
+_MEMORY_METADATA_KEYS = frozenset({"schema", "authority", "durability_filter", "history"})
+
+
+def _normalize_history(value: object) -> list[dict[str, str]] | None:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return None
+    rows: list[dict[str, str]] = []
+    for raw in value:
+        if not isinstance(raw, Mapping):
+            return None
+        key = raw.get("key")
+        previous = raw.get("previous")
+        current = raw.get("current")
+        if not all(isinstance(item, str) for item in (key, previous, current)):
+            return None
+        rows.append({"key": key, "previous": previous, "current": current})
+    return rows
+
+
+def _semantic_memory_state(
+    value: Mapping[str, Any],
+) -> tuple[dict[str, Any] | None, bool]:
+    raw_preferences = value.get("preferences")
+    if isinstance(raw_preferences, Mapping):
+        if not all(
+            isinstance(key, str) and isinstance(item, str)
+            for key, item in raw_preferences.items()
+        ):
+            return None, False
+        preferences = dict(raw_preferences)
+    elif "preferences" in value:
+        return None, False
+    elif isinstance(value.get("entries"), list):
+        preferences = {}
+        for raw in value["entries"]:
+            if not isinstance(raw, Mapping):
+                return None, False
+            key = raw.get("key")
+            item = raw.get("value")
+            if not isinstance(key, str) or not isinstance(item, str) or key in preferences:
+                return None, False
+            preferences[key] = item
+    elif "entries" in value:
+        return None, False
+    else:
+        preferences = {}
+        for key, item in value.items():
+            if key in _MEMORY_METADATA_KEYS:
+                continue
+            if not isinstance(key, str) or not isinstance(item, str):
+                return None, False
+            preferences[key] = item
+
+    history = _normalize_history(value.get("history", []))
+    if history is None:
+        return None, False
+    canonical_shape = (
+        set(value) == _CANONICAL_MEMORY_KEYS
+        and value.get("schema") == MEMORY_SCHEMA
+        and isinstance(value.get("preferences"), Mapping)
+        and isinstance(value.get("history"), list)
+        and all(
+            isinstance(row, Mapping)
+            and set(row) == _HISTORY_KEYS
+            and all(isinstance(row.get(key), str) for key in _HISTORY_KEYS)
+            for row in value.get("history", [])
+        )
+    )
+    return {
+        "preferences": dict(sorted(preferences.items())),
+        "history": history,
+    }, canonical_shape
+
+
+def _mapping_accuracy(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> float:
+    denominator = max(len(actual), len(expected), 1)
+    correct = sum(actual.get(key) == value for key, value in expected.items())
+    return correct / denominator
+
+
+def _history_similarity(
+    actual: list[dict[str, str]],
+    expected: list[dict[str, str]],
+) -> float:
+    actual_rows = Counter(
+        (row["key"], row["previous"], row["current"])
+        for row in actual
+    )
+    expected_rows = Counter(
+        (row["key"], row["previous"], row["current"])
+        for row in expected
+    )
+    if not actual_rows and not expected_rows:
+        return 1.0
+    if not actual_rows or not expected_rows:
+        return 0.0
+    overlap = sum((actual_rows & expected_rows).values())
+    return 2.0 * overlap / (sum(actual_rows.values()) + sum(expected_rows.values()))
+
+
+def _normalized_string_list(value: object) -> list[str] | None:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None
+    if len(value) != len(set(value)):
+        return None
+    return sorted(value)
+
+
+def _set_similarity(actual: list[str] | None, expected: list[str]) -> float:
+    if actual is None:
+        return 0.0
+    actual_set = set(actual)
+    expected_set = set(expected)
+    if not actual_set and not expected_set:
+        return 1.0
+    if not actual_set or not expected_set:
+        return 0.0
+    return 2.0 * len(actual_set & expected_set) / (len(actual_set) + len(expected_set))
+
+
+def _report_accuracy(
+    phase: str,
+    actual: Mapping[str, Any],
+    expected: Mapping[str, Any],
+) -> tuple[float, bool]:
+    if phase == "capture":
+        actual_stored = _normalized_string_list(actual.get("stored_keys"))
+        actual_excluded = _normalized_string_list(actual.get("excluded_transient_keys"))
+        expected_stored = _normalized_string_list(expected.get("stored_keys")) or []
+        expected_excluded = _normalized_string_list(expected.get("excluded_transient_keys")) or []
+        score = 0.5 * _set_similarity(actual_stored, expected_stored)
+        score += 0.5 * _set_similarity(actual_excluded, expected_excluded)
+        exact = (
+            set(actual) == set(expected)
+            and actual_stored == expected_stored
+            and actual_excluded == expected_excluded
+        )
+        return score, exact
+
+    if phase == "apply":
+        actual_applied = actual.get("applied")
+        expected_applied = expected.get("applied")
+        applied_accuracy = (
+            _mapping_accuracy(actual_applied, expected_applied)
+            if isinstance(actual_applied, Mapping) and isinstance(expected_applied, Mapping)
+            else 0.0
+        )
+        request_accuracy = 1.0 if actual.get("request_id") == expected.get("request_id") else 0.0
+        token_accuracy = (
+            1.0
+            if actual.get("preference_token") == expected.get("preference_token")
+            else 0.0
+        )
+        score = 0.2 * request_accuracy + 0.2 * token_accuracy + 0.6 * applied_accuracy
+        exact = set(actual) == set(expected) and actual == dict(expected)
+        return score, exact
+
+    if phase == "update":
+        actual_changed = _normalize_history(actual.get("changed"))
+        expected_changed = _normalize_history(expected.get("changed")) or []
+        changed_accuracy = (
+            _history_similarity(actual_changed, expected_changed)
+            if actual_changed is not None
+            else 0.0
+        )
+        actual_preserved = actual.get("preserved")
+        expected_preserved = expected.get("preserved")
+        preserved_accuracy = (
+            _mapping_accuracy(actual_preserved, expected_preserved)
+            if isinstance(actual_preserved, Mapping) and isinstance(expected_preserved, Mapping)
+            else 0.0
+        )
+        actual_transient = _normalized_string_list(actual.get("transient_ignored"))
+        expected_transient = _normalized_string_list(expected.get("transient_ignored")) or []
+        transient_accuracy = _set_similarity(actual_transient, expected_transient)
+        score = 0.45 * changed_accuracy + 0.35 * preserved_accuracy + 0.20 * transient_accuracy
+        exact = (
+            set(actual) == set(expected)
+            and actual_changed is not None
+            and Counter(
+                (row["key"], row["previous"], row["current"])
+                for row in actual_changed
+            )
+            == Counter(
+                (row["key"], row["previous"], row["current"])
+                for row in expected_changed
+            )
+            and isinstance(actual_preserved, Mapping)
+            and dict(actual_preserved) == dict(expected_preserved or {})
+            and actual_transient == expected_transient
+        )
+        return score, exact
+
+    return 0.0, False
+
+
 def grade_persistent_memory_variant(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -431,20 +662,100 @@ def grade_persistent_memory_variant(
     if memory is None:
         return VariantGrade.binary(False, str(error))
     expected_memory = oracle.get("expected_memory")
-    if not isinstance(expected_memory, Mapping) or memory != dict(expected_memory):
-        return VariantGrade.binary(False, "durable memory does not match the required canonical state")
+    if not isinstance(expected_memory, Mapping):
+        return VariantGrade.binary(False, "persistent-memory oracle missing expected state")
+
+    semantic_memory, canonical_shape = _semantic_memory_state(memory)
+    semantic_expected, _ = _semantic_memory_state(expected_memory)
+    if semantic_memory is None or semantic_expected is None:
+        return VariantGrade.binary(False, "durable memory has an unsupported structure")
+
+    preferences_accuracy = _mapping_accuracy(
+        semantic_memory["preferences"],
+        semantic_expected["preferences"],
+    )
+    history_accuracy = _history_similarity(
+        semantic_memory["history"],
+        semantic_expected["history"],
+    )
+    semantic_state_matches = (
+        semantic_memory["preferences"] == semantic_expected["preferences"]
+        and Counter(
+            (row["key"], row["previous"], row["current"])
+            for row in semantic_memory["history"]
+        )
+        == Counter(
+            (row["key"], row["previous"], row["current"])
+            for row in semantic_expected["history"]
+        )
+    )
 
     report_path = oracle.get("report_path")
     if not isinstance(report_path, str) or not report_path:
         return VariantGrade.binary(False, "persistent-memory oracle missing report path")
-    report, error = _load_json_object(workspace / report_path, "memory report")
-    if report is None:
-        return VariantGrade.binary(False, str(error))
+    report, report_error = _load_json_object(workspace / report_path, "memory report")
     expected_report = oracle.get("expected_report")
-    if not isinstance(expected_report, Mapping) or report != dict(expected_report):
-        return VariantGrade.binary(False, "memory report does not match the required application state")
+    if not isinstance(expected_report, Mapping):
+        return VariantGrade.binary(False, "persistent-memory oracle missing expected report")
+    phase = str(oracle.get("phase", ""))
+    if report is None:
+        report_accuracy = 0.0
+        report_matches = False
+    else:
+        report_accuracy, report_matches = _report_accuracy(phase, report, expected_report)
 
-    return VariantGrade.binary(True, f"persistent memory {oracle.get('phase')} phase verified")
+    if phase == "capture":
+        score = (
+            0.55 * preferences_accuracy
+            + 0.10 * history_accuracy
+            + 0.10 * (1.0 if canonical_shape else 0.0)
+            + 0.25 * report_accuracy
+        )
+    elif phase == "apply":
+        score = (
+            0.45 * preferences_accuracy
+            + 0.10 * history_accuracy
+            + 0.10 * (1.0 if canonical_shape else 0.0)
+            + 0.35 * report_accuracy
+        )
+    else:
+        score = (
+            0.35 * preferences_accuracy
+            + 0.25 * history_accuracy
+            + 0.10 * (1.0 if canonical_shape else 0.0)
+            + 0.30 * report_accuracy
+        )
+
+    passed = canonical_shape and semantic_state_matches and report_matches
+    metrics = {
+        "protected_integrity": 1.0,
+        "preference_accuracy": preferences_accuracy,
+        "history_accuracy": history_accuracy,
+        "schema_conformity": 1.0 if canonical_shape else 0.0,
+        "report_accuracy": report_accuracy,
+        "semantic_state_matches": semantic_state_matches,
+    }
+    if passed:
+        return VariantGrade(
+            True,
+            f"persistent memory {phase} phase verified",
+            1.0,
+            metrics,
+        )
+    if report is None:
+        detail = str(report_error)
+    elif not semantic_state_matches:
+        detail = "durable memory does not match the required canonical state"
+    elif not canonical_shape:
+        detail = "durable memory state is correct but canonical schema is not satisfied"
+    else:
+        detail = "memory report does not match the required application state"
+    return VariantGrade(
+        passed=False,
+        detail=detail,
+        score=max(0.0, min(1.0, score)),
+        metrics=metrics,
+    )
 
 
 __all__ = [
