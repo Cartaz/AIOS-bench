@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..reference_checks_core import eval_path
+from .config_traversal import parse_effective_config_report, setting_matches
 from .grading import VariantGrade
 
 
@@ -109,10 +110,11 @@ def grade_config_traversal_partial(
     if not isinstance(settings, Mapping) or not isinstance(chain, list):
         return VariantGrade(passed, detail, 1.0 if passed else 0.0, {"oracle_valid": False})
 
-    settings_correct = 0
-    for key, value in settings.items():
-        pattern = rf"\b{re.escape(str(key))}\b\s*[:=]\s*{re.escape(str(value))}(?!\w)"
-        settings_correct += re.search(pattern, text, re.I) is not None
+    reported_settings = parse_effective_config_report(text)
+    settings_correct = sum(
+        setting_matches(reported_settings.get(str(key)), value)
+        for key, value in settings.items()
+    )
 
     ordered_found = 0
     position = -1
@@ -122,9 +124,15 @@ def grade_config_traversal_partial(
             ordered_found += 1
             position = next_position
 
+    port_values = reported_settings.get("port", ())
+    normalized_port_values = (
+        {value.casefold() for value in port_values}
+        if isinstance(port_values, tuple)
+        else set()
+    )
     decoys = [str(value) for value in oracle.get("decoy_ports") or []]
     decoys_avoided = sum(
-        re.search(rf"\bport\b\s*[:=]\s*{re.escape(value)}\b", text, re.I) is None
+        value.casefold() not in normalized_port_values
         for value in decoys
     )
     consumer = str(oracle.get("consumer_path", ""))
@@ -262,8 +270,8 @@ def grade_workspace_lineage_partial(
         "lineage_path_accuracy": (
             0.25,
             _set_similarity(
-                {"\u241f".join(path) for path in actual_paths},
-                {"\u241f".join(path) for path in expected_paths},
+                {"␟".join(path) for path in actual_paths},
+                {"␟".join(path) for path in expected_paths},
             ),
         ),
         "effective_settings_accuracy": (0.30, settings_accuracy),
