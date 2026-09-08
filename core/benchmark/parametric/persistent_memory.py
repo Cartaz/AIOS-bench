@@ -605,11 +605,11 @@ def _report_accuracy(
     if phase == "update":
         actual_changed = _normalize_history(actual.get("changed"))
         expected_changed = _normalize_history(expected.get("changed")) or []
-        changed_accuracy = (
-            _history_similarity(actual_changed, expected_changed)
-            if actual_changed is not None
-            else 0.0
-        )
+        if actual_changed is None:
+            changed_accuracy = 0.0
+        else:
+            changed_accuracy = 0.8 * _history_similarity(actual_changed, expected_changed)
+            changed_accuracy += 0.2 * (actual_changed == expected_changed)
         actual_preserved = actual.get("preserved")
         expected_preserved = expected.get("preserved")
         preserved_accuracy = (
@@ -670,6 +670,9 @@ def grade_persistent_memory_variant(
         semantic_memory["history"],
         semantic_expected["history"],
     )
+    history_order_conformity = (
+        1.0 if semantic_memory["history"] == semantic_expected["history"] else 0.0
+    )
     semantic_state_matches = semantic_memory == semantic_expected
 
     report_path = oracle.get("report_path")
@@ -689,21 +692,24 @@ def grade_persistent_memory_variant(
     if phase == "capture":
         score = (
             0.55 * preferences_accuracy
-            + 0.10 * history_accuracy
+            + 0.05 * history_accuracy
+            + 0.05 * history_order_conformity
             + 0.10 * (1.0 if canonical_shape else 0.0)
             + 0.25 * report_accuracy
         )
     elif phase == "apply":
         score = (
             0.45 * preferences_accuracy
-            + 0.10 * history_accuracy
+            + 0.05 * history_accuracy
+            + 0.05 * history_order_conformity
             + 0.10 * (1.0 if canonical_shape else 0.0)
             + 0.35 * report_accuracy
         )
     else:
         score = (
             0.35 * preferences_accuracy
-            + 0.25 * history_accuracy
+            + 0.15 * history_accuracy
+            + 0.10 * history_order_conformity
             + 0.10 * (1.0 if canonical_shape else 0.0)
             + 0.30 * report_accuracy
         )
@@ -713,6 +719,7 @@ def grade_persistent_memory_variant(
         "protected_integrity": 1.0,
         "preference_accuracy": preferences_accuracy,
         "history_accuracy": history_accuracy,
+        "history_order_conformity": history_order_conformity,
         "schema_conformity": 1.0 if canonical_shape else 0.0,
         "report_accuracy": report_accuracy,
         "semantic_state_matches": semantic_state_matches,
