@@ -270,8 +270,8 @@ def grade_workspace_lineage_partial(
         "lineage_path_accuracy": (
             0.25,
             _set_similarity(
-                {"␟".join(path) for path in actual_paths},
-                {"␟".join(path) for path in expected_paths},
+                {"\u241f".join(path) for path in actual_paths},
+                {"\u241f".join(path) for path in expected_paths},
             ),
         ),
         "effective_settings_accuracy": (0.30, settings_accuracy),
