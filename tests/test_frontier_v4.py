@@ -62,6 +62,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "reasoning_epistemic_001",
         "retrieval_wide_001",
         "software_black_box_001",
+        "software_repair_001",
         "subagents_reconcile_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
@@ -81,6 +82,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "reasoning_epistemic_001": 1,
         "retrieval_wide_001": 1,
         "software_black_box_001": 1,
+        "software_repair_001": 1,
         "subagents_reconcile_001": 1,
         "tool_use_config_001": 4,
         "tool_use_lineage_001": 1,
@@ -93,6 +95,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
             "stateful_support_001",
             "support_dependency_001",
             "software_black_box_001",
+            "software_repair_001",
             "tool_recovery_001",
         }
     }
@@ -100,6 +103,7 @@ def test_frontier_v4_is_separate_from_frozen_v3_catalog() -> None:
         "stateful_support_001",
         "support_dependency_001",
         "software_black_box_001",
+        "software_repair_001",
         "tool_recovery_001",
     }
     assert all(
@@ -212,9 +216,11 @@ def test_frontier_v4_semantic_fingerprint_auto_discovers_generators_and_runtime(
         "epistemic_twins.py",
         "grading.py",
         "interventions.py",
+        "isolated_verifier.py",
         "learning_transfer.py",
         "materialization.py",
         "persistent_memory.py",
+        "software_repair.py",
         "suites.py",
         "task_runtime.py",
         "tool_recovery.py",
