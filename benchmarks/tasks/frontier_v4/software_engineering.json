@@ -12,5 +12,21 @@
       {"type": "exists", "path": "solution/reconstruct.py", "weight": 1, "fatal": true},
       {"type": "parametric_reference", "family": "black_box_reconstruction", "task_id": "software_black_box_001", "weight": 9, "fatal": true}
     ]
+  },
+  {
+    "id": "software_repair_001",
+    "category": "software_engineering",
+    "tier": 5,
+    "revision": 1,
+    "prompt": "Maintain the generated ledger CLI rather than replacing its external contract. Read README.md and docs/contract.md, reproduce and repair two independent faults in src/ledger.py, preserve benchmark-owned sources and supplied tests, add meaningful tests/test_regression.py, run the public and regression tests, and write reports/repair.json with the documented diagnosis schema. Hidden generated tests will assess signed amounts, posted-only selection, exact cutoff boundaries and JSONL protocol. Do not hard-code provided examples.",
+    "mode": "cold",
+    "tags": ["software_engineering", "frontier_v4", "parametric", "debugging", "regression", "maintenance", "hidden_tests"],
+    "required_capabilities": ["benchmark_local_runtime"],
+    "acceptance": [
+      {"type": "exists", "path": "src/ledger.py", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "tests/test_regression.py", "weight": 1, "fatal": true},
+      {"type": "exists", "path": "reports/repair.json", "weight": 1, "fatal": true},
+      {"type": "parametric_reference", "family": "software_repair", "task_id": "software_repair_001", "weight": 9, "fatal": true}
+    ]
   }
 ]
