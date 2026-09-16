@@ -109,11 +109,17 @@ def test_parametric_preflight_checks_all_catalog_families():
                 "distractor_fields": 5,
                 "max_units": 700,
             },
+            "software_repair": {
+                "public_cases": 24,
+                "hidden_cases": 112,
+                "max_rows": 24,
+                "distractor_files": 4,
+            },
         },
     )
 
     assert result["ok"] is True, result["failures"]
-    assert result["checked_tasks"] == 17
+    assert result["checked_tasks"] == 18
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
         "config_traversal",
@@ -126,6 +132,7 @@ def test_parametric_preflight_checks_all_catalog_families():
         "delegation_reconciliation",
         "epistemic_twins",
         "black_box_reconstruction",
+        "software_repair",
         "persistent_memory",
         "learning_transfer",
     }

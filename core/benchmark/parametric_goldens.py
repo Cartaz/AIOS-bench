@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .golden_solutions import materialize_parametric_golden as _legacy_materializer
+from .parametric.software_repair import materialize_software_repair_golden
 from .tool_recovery_service import (
     ToolRecoveryError,
     ToolRecoveryService,
@@ -312,9 +313,7 @@ def _persistent_memory_golden(
         workspace,
         report_path,
         json.dumps(
-            dict(expected_report),
-            indent=2,
-            sort_keys=True,
+            dict(expected_report), indent=2, sort_keys=True,
             ensure_ascii=False,
         ) + "\n",
     )
@@ -477,6 +476,9 @@ def materialize_parametric_golden(
         return _delegation_reconciliation_golden(workspace, oracle)
     if family == "epistemic_twins":
         return _epistemic_twins_golden(workspace, oracle)
+    if family == "software_repair":
+        materialize_software_repair_golden(workspace, oracle)
+        return []
     if family == "black_box_reconstruction":
         return _black_box_golden(workspace, oracle)
     if family == "persistent_memory":

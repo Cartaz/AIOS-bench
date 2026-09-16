@@ -95,7 +95,7 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
     )
 
     assert result["schema"] == "aios-bench/parametric-validation/v2"
-    assert result["checked_tasks"] == 17
+    assert result["checked_tasks"] == 18
     assert result["ok"] is True, result["failures"]
     assert {item["family"] for item in result["observations"]} == {
         "expense_report",
@@ -109,6 +109,7 @@ def test_frontier_v4_graders_reject_generated_baseline_and_accept_goldens():
         "delegation_reconciliation",
         "epistemic_twins",
         "black_box_reconstruction",
+        "software_repair",
         "persistent_memory",
         "learning_transfer",
     }

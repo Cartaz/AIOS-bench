@@ -76,6 +76,11 @@ from .persistent_memory import (
     generate_persistent_memory_variant,
     grade_persistent_memory_variant,
 )
+from .software_repair import (
+    SoftwareRepairPressure,
+    generate_software_repair_variant,
+    grade_software_repair_variant,
+)
 from .stateful_world import (
     StatefulWorldPressure,
     check_stateful_world_variant,
@@ -238,6 +243,15 @@ def _grade_epistemic_twins(
     return grade_epistemic_twins_variant(workspace, oracle)
 
 
+def _grade_software_repair(
+    workspace: Path,
+    oracle: Mapping[str, Any],
+    run_dir: Path | None,
+    task_id: str | None,
+) -> VariantGrade:
+    return grade_software_repair_variant(workspace, oracle)
+
+
 def _grade_black_box(
     workspace: Path,
     oracle: Mapping[str, Any],
@@ -374,11 +388,7 @@ def _diagnose_tool_recovery(
     run_dir: Path | None,
     task_id: str | None,
 ) -> str | None:
-    return diagnose_tool_recovery_failure(
-        oracle,
-        run_dir=run_dir,
-        task_id=task_id,
-    )
+    return diagnose_tool_recovery_failure(oracle, run_dir=run_dir, task_id=task_id)
 
 
 FAMILY_SPECS: dict[str, ParametricFamilySpec] = {
@@ -438,6 +448,11 @@ FAMILY_SPECS: dict[str, ParametricFamilySpec] = {
         EpistemicTwinPressure,
         generate_epistemic_twins_variant,
         _grade_epistemic_twins,
+    ),
+    "software_repair": ParametricFamilySpec(
+        SoftwareRepairPressure,
+        generate_software_repair_variant,
+        _grade_software_repair,
     ),
     "black_box_reconstruction": ParametricFamilySpec(
         BlackBoxReconstructionPressure,
@@ -592,6 +607,7 @@ __all__ = [
     "LearningTransferPressure",
     "ParametricFamilySpec",
     "PersistentMemoryPressure",
+    "SoftwareRepairPressure",
     "StatefulWorldPressure",
     "ToolRecoveryPressure",
     "VariantGrade",
