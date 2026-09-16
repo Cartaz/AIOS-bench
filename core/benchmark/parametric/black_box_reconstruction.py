@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import random
-import subprocess
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from ..black_box_service import PLANS, REGIONS, TAGS, probe_log_path, reference_transform
 from ..failures import VERIFICATION_FAILURE
-from ..sandbox import workspace_sandbox
+from ..isolated_verifier import run_isolated_python
 from .grading import VariantGrade
 
 
@@ -139,8 +136,7 @@ def _record(
 
 def _public_examples(
     spec: Mapping[str, Any],
-    *,
-    seed: int,
+    *,    seed: int,
     pressure: BlackBoxReconstructionPressure,
 ) -> list[dict[str, Any]]:
     rng = random.Random(_derived_seed(seed, "black-box-public"))
@@ -295,37 +291,10 @@ def _run_solution(
     solution: Path,
     cases: list[dict[str, Any]],
 ) -> tuple[int, str, str, bool]:
-    plan = workspace_sandbox("blackbox-verifier", workspace)
-    if not plan.grader_hidden:
-        return 126, "", "grader-hidden bubblewrap sandbox unavailable", False
     payload = "".join(json.dumps(item, separators=(",", ":")) + "\n" for item in cases)
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "LANG": "C.UTF-8",
-        "LC_ALL": "C.UTF-8",
-        "PYTHONIOENCODING": "utf-8",
-        "PYTHONHASHSEED": "0",
-    }
-    base_executable = getattr(sys, "_base_executable", None) or sys.executable
-    verification_python = Path(base_executable).resolve()
-    try:
-        process = subprocess.run(
-            plan.wrap([str(verification_python), "-I", str(solution.relative_to(workspace))]),
-            cwd=workspace,
-            input=payload,
-            text=True,
-            capture_output=True,
-            timeout=15,
-            env=env,
-            check=False,
-        )
-        return process.returncode, process.stdout, process.stderr[-4000:], True
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-        return 124, stdout, (stderr + "\nverification timeout")[-4000:], True
-    except OSError as exc:
-        return 126, "", f"{type(exc).__name__}: {exc}", True
+    return run_isolated_python(
+        workspace, [str(solution.relative_to(workspace))], stdin=payload, timeout=15
+    )
 
 
 def _parse_outputs(stdout: str, expected_count: int) -> tuple[list[dict[str, Any] | None], int]:
