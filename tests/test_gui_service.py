@@ -39,6 +39,7 @@ def test_gui_catalog_switches_suite_without_mixing_tasks():
         "reasoning_epistemic_001",
         "retrieval_wide_001",
         "software_black_box_001",
+        "software_repair_001",
         "subagents_reconcile_001",
         "tool_use_config_001",
         "tool_use_lineage_001",
@@ -90,6 +91,7 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "delegation_reconciliation",
             "epistemic_twins",
             "black_box_reconstruction",
+            "software_repair",
             "persistent_memory",
             "learning_transfer",
         }
@@ -147,6 +149,12 @@ def test_gui_frontier_v4_runner_records_all_default_pressure_coordinates(tmp_pat
             "probe_budget": 48,
             "distractor_fields": 3,
             "max_units": 500,
+        }
+        assert coordinates["software_repair"] == {
+            "public_cases": 16,
+            "hidden_cases": 96,
+            "max_rows": 20,
+            "distractor_files": 3,
         }
         assert coordinates["persistent_memory"] == {
             "durable_fact_count": 6,
